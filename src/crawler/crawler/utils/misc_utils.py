@@ -74,3 +74,21 @@ def get_video_urls_for_user(username: str) -> Tuple[List[str], List[str]]:
     video_ids: List[str] = load_json(video_ids_json_fname)
     urls = make_video_urls(video_ids)
     return video_ids, urls
+
+
+def convert_num_str_to_int(s: str) -> int:
+    """
+    Convert number strings to integers. Assumes resulting number is an integer. Handles strings of the form:
+    - 535
+    - 54,394
+    - 52.3K
+    - 3.8M
+    - 40M
+    """
+    s = s.replace(',', '')
+    if 'K' in s:
+        s = int(float(s[:-1]) * 1e3)
+    elif 'M' in s:
+        s = int(float(s[:-1]) * 1e6)
+    num = int(s)
+    return num

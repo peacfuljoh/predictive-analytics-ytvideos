@@ -77,6 +77,14 @@ class MySQLEngine():
                     cursor.execute(f"CREATE DATABASE {db_name}")
         return self._sql_query_wrapper(func)
 
+    def drop_db(self, db_name: str):
+        """Delete a database"""
+        def func():
+            with self._get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(f"DROP DATABASE {db_name}")
+        return self._sql_query_wrapper(func)
+
 
     ### operations on tables ###
     def create_tables(self,
@@ -120,6 +128,8 @@ class MySQLEngine():
         assert mode in ['list', 'pandas']
         if mode == 'pandas':
             assert tablename is not None
+        if mode == 'list':
+            assert tablename is None
         def func():
             with self._get_connection(database=database) as connection:
                 with connection.cursor() as cursor:
