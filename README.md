@@ -17,6 +17,32 @@ Web crawling for YouTube videos.
 6. Set up the database by running `scripts/setup_videos_db.py`.
 
 
+## Config file
+
+The file `config.json` is kept outside of the repo and contains sensitive db info (credentials) and paths, 
+plus other non-sensitive info needed by the crawler.
+
+```json
+{
+  "DB_CONFIG": {
+    "host": "localhost",
+    "user": "<USER>",
+    "password": "<PASSWORD>"
+  },
+  "DATA_ROOT": "<DATA_DIR_PATH>",
+  "REPO_ROOT": "<REPO_DIR_PATH>",
+  "DB_INFO": {
+    "DB_VIDEOS_DATABASE": "ytvideos",
+    "DB_VIDEOS_TABLENAMES": {
+      "users": "users",
+      "meta": "video_meta",
+      "stats": "video_stats"
+    }
+  }
+}
+```
+
+
 ## Helpful links
 
 Managing Conda environments: https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#activating-an-environment
