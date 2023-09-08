@@ -31,9 +31,8 @@ def make_video_urls(video_ids: List[str]) -> List[str]:
 
 def get_user_video_page_urls(usernames_json_path: str) -> List[str]:
     """Get user video page URLs from usernames JSON file"""
-    usernames = load_json(usernames_json_path)
-    usernames_flat = flatten_dict_of_lists(usernames)
-    urls = make_videos_page_urls_from_usernames(usernames_flat)
+    usernames = load_json(usernames_json_path)['usernames']
+    urls = make_videos_page_urls_from_usernames(usernames)
     return urls
 
 def get_video_ids_json_fname(username: str) -> str:
@@ -43,23 +42,16 @@ def get_video_stats_json_fname(username: str) -> str:
     return os.path.join(VIDEO_STATS_DIR, f"{username}.json")
 
 def get_video_urls(usernames_json_path: str,
-                   categories: Optional[List[str]] = None,
                    usernames_desired: Optional[List[str]] = None) -> pd.DataFrame:
-    """
-    Intended usage:
-    - for users being tracked, get video urls for videos posted in the last x days (don't care about old videos)
-    """
+    """For users being tracked, get recently-posted video urls"""
     # get usernames
-    usernames = load_json(usernames_json_path)
-    if categories is not None:
-        assert all([cat in usernames for cat in categories])
-        usernames = {key: val for key, val in usernames.items() if key in categories}
-    usernames_flat: List[str] = flatten_dict_of_lists(usernames)
+    usernames: List[str] = load_json(usernames_json_path)['usernames']
     if usernames_desired is not None:
-        usernames_flat = list(set(usernames_flat).intersection(set(usernames_desired)))
+        usernames = list(set(usernames).intersection(set(usernames_desired)))
 
+    # get info
     d: Dict[str, List[str]] = dict(username=[], video_id=[], video_url=[])
-    for username in usernames_flat:
+    for username in usernames:
         video_ids, video_urls = get_video_urls_for_user(username)
         num_ids = len(video_ids)
         d['username'] += [username] * num_ids

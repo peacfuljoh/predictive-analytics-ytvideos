@@ -3,7 +3,11 @@
 from pprint import pprint
 
 from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine
-from src.crawler.crawler.db_info import DB_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES
+from src.crawler.crawler.config import DB_CONFIG, DB_INFO
+
+DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
+DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
+
 
 # initialize MySQL engine
 engine = MySQLEngine(DB_CONFIG)

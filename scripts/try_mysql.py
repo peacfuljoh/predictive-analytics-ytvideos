@@ -3,7 +3,7 @@ from try_mysql_data import insert_reviewers_query, reviewers_records, queries_cr
     insert_ratings_query, ratings_records, insert_movies_query
 
 from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine
-from src.crawler.crawler.db_info import DB_CONFIG
+from src.crawler.crawler.config import DB_CONFIG
 
 
 

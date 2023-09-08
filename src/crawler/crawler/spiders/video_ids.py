@@ -6,8 +6,11 @@ import scrapy
 
 from ..utils.misc_utils import save_json, get_user_video_page_urls, get_video_ids_json_fname
 from ..utils.db_mysql_utils import MySQLEngine
-from ..db_info import DB_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES
 from ..paths import USERNAMES_JSON_PATH
+from ..config import DB_CONFIG, DB_INFO
+
+DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
+DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
 
 
 class YouTubeLatestVideoIds(scrapy.Spider):

@@ -1,0 +1,11 @@
+name: crawler
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - scrapy=2.10.1
+  - pandas=2.0.3
+  - pip=23.2.1
+  - pip:
+    - mysql-connector-python==8.1.0
+prefix: /home/nuc/miniconda3/envs/crawler

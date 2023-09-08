@@ -4,10 +4,9 @@ from src.crawler.crawler.utils.misc_utils import get_video_urls, get_video_urls_
 
 
 # multiple users
-categories = None
 usernames_desired = None
 
-video_urls = get_video_urls(USERNAMES_JSON_PATH, categories=categories, usernames_desired=usernames_desired)
+video_urls = get_video_urls(USERNAMES_JSON_PATH, usernames_desired=usernames_desired)
 print(video_urls)
 
 print('\n' + '*' * 20 + '\n')

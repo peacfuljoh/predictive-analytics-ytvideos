@@ -1,3 +1,0 @@
-conda install -c conda-forge scrapy
-conda install pandas
-python -m pip install mysql-connector-python
