@@ -1,7 +1,7 @@
 
 import os
 
-from src.crawler.crawler.config import DATA_ROOT, CRAWLER_ROOT
+from .config import DATA_ROOT, CRAWLER_ROOT
 
 
 # directories

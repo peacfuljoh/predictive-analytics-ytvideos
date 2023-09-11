@@ -1,41 +1,32 @@
-import re
 import time
-from typing import Optional, Union, List, Dict
+from typing import Union, List, Dict
 import json
+import datetime
 
 import pandas as pd
 import scrapy
 
-from ..paths import USERNAMES_JSON_PATH
-from ..utils.misc_utils import get_video_urls, get_video_stats_json_fname, save_json, convert_num_str_to_int
+from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now
+from ..utils.db_mysql_utils import (get_video_info_from_db, insert_records_from_dict, update_records_from_dict)
+from ..config import DB_INFO
 
 
-def apply_regex(s: str,
-                regex: str,
-                dtype: Optional[str] = None) \
-        -> Union[List[str], str, int]:
-    """
-    Apply regex to string to extract a string. Can handle further parsing if string is a number.
-    Assumes regex is specified as string with embedded (.*?) to find substring.
-    Handles commas separating sequences of digits (e.g. 12,473).
-    """
-    substring_flag = '(.*?)'
-    assert substring_flag in regex
-    res = re.findall(regex, s)
-    print(res)
-    if len(re.findall(substring_flag, regex)) > 1:
-        return res
-    substring = res[0] # find matching pattern, return portion at (.*?)
-    if dtype == 'int':
-        return convert_num_str_to_int(substring)
-    return substring
+DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
+DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
 
 
 
 def extract_video_info_from_body(s: str,
                                  fmt: str = 'nosql') \
         -> Dict[str, Union[int, str, List[str]]]:
-    """Get miscellaneous video info"""
+    """
+    Get miscellaneous video info from video page body (decoded as string).
+
+    'fmt' arg determines format for values of output dict. Default is 'nosql' which is JSON format. Can also specify
+    'sql' which is SQL database compatible (all strings and ints).
+    """
+    assert fmt in ['nosql', 'sql']
+
     d = {}
 
     # like count
@@ -58,23 +49,20 @@ def extract_video_info_from_body(s: str,
     regex = '"uploadDate":"(.*?)"'
     d['upload_date'] = apply_regex(s, regex)
 
+    # subscriber count
+    # regex = '"subscriberCountText":{"accessibility":{"accessibilityData":{"label":"(.*?) subscribers"}},"simpleText":"(.*?) subscribers"}'
+    regex = 'subscribers"}},"simpleText":"(.*?) subscribers"}'
+    d['subscriber_count'] = apply_regex(s, regex, dtype='int')
+
     # miscellaneous
     regex = '"videoDetails":{"videoId":"(.*?)","title":"(.*?)","lengthSeconds":"(.*?)","keywords":(.*?),' \
             '"channelId":"(.*?)","isOwnerViewing":(.*?),"shortDescription":"(.*?)","isCrawlable":(.*?),' \
             '"thumbnail":{"thumbnails":(.*?)},"allowRatings":(.*?),"viewCount":"(.*?)","author":"(.*?)"'
 
-    video_id_, \
-    title_, \
-    lengthSeconds_, \
-    keywords_, \
-    channelId_, \
-    isOwnerViewing_, \
-    shortDescription_, \
-    isCrawlable_, \
-    thumbnail_, \
-    allowRatings_, \
-    viewCount_, \
-    author_ = apply_regex(s, regex)[0]
+    _, title_, lengthSeconds_, keywords_, _, _, shortDescription_, _, thumbnail_, _, viewCount_, _ = \
+        apply_regex(s, regex)[0]
+
+    d['title']: str = title_
 
     d['duration']: int = convert_num_str_to_int(lengthSeconds_)
 
@@ -104,31 +92,23 @@ class YouTubeVideoStats(scrapy.Spider):
     Extract stats for specified videos.
     """
     name = "yt-video-stats"
-    df_urls: pd.DataFrame = get_video_urls(USERNAMES_JSON_PATH)
-    start_urls = list(df_urls.loc[:1, 'video_url'])
+    df_videos: pd.DataFrame = get_video_info_from_db()
+    start_urls = list(df_videos.loc[:1, 'video_url'])
 
     def parse(self, response):
+        ### Get info ###
         # get response body as a string
         s = response.body.decode()
 
         # get duration, keywords, description, tags, thumbnail url, views
         vid_info = extract_video_info_from_body(s, fmt='sql')
 
-        # pack into dict
-        df_row = self.df_urls.loc[self.df_urls['video_url'] == response.url]
-        username = df_row['username'].iloc[0]
-        video_id = df_row['video_id'].iloc[0]
-        meta_keys = ['title', 'upload_date', 'duration', 'keywords', 'description', 'thumbnail_url', 'tags']
-        stats_keys = ['like_count', 'view_count', 'comment_count', 'comment']
-        d_meta = {
-            **dict(video_id=video_id, username=username),
-            **{k:v for k, v in vid_info.items() if k in meta_keys}
-        }
-        d_stats = {
-            **dict(video_id=video_id, date_accessed=int(time.time())),
-            **{k:v for k, v in vid_info.items() if k in stats_keys}
-        }
+        # add other info
+        df_row = self.df_videos.loc[self.df_videos['video_url'] == response.url]
+        vid_info['video_id'] = df_row['video_id'].iloc[0]
+        vid_info['username'] = df_row['username'].iloc[0]
+        vid_info['date_accessed'] = get_ts_now(as_string=True)
 
-        # save to JSON
-        filename = get_video_stats_json_fname(username)
-        save_json(filename, d, mode='a')
+        ### Insert to database ###
+        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info)
+        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info)

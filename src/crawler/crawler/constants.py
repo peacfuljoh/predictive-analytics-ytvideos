@@ -1,0 +1,2 @@
+MOST_RECENT_VID_LIMIT = '11'
+DB_KEY_UPLOAD_DATE = 'upload_date'
