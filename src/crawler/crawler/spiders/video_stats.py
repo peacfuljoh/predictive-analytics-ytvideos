@@ -21,11 +21,9 @@ def extract_misc_from_body(d: dict,
                            s: str,
                            fmt: str,
                            response):
-    """Extract miscellaneous information from response body, trying multiple types of formatting."""
-
+    """Extract miscellaneous information from response body."""
     success = False
 
-    # attempt 1
     if not success:
         regex = '"videoDetails":{"videoId":(.*?),"author":"(.*?)",'  # pull entire str-formatted dict
         res = apply_regex(s, regex)
@@ -53,42 +51,6 @@ def extract_misc_from_body(d: dict,
             d['view_count']: int = convert_num_str_to_int(res['viewCount'])  # int
 
             success = True
-
-    # attempt 2
-    # if not success:
-    #     regexes = [
-    #         ('"videoDetails":{"videoId":"(.*?)","title":"(.*?)","lengthSeconds":"(.*?)","keywords":(.*?),'
-    #          '"channelId":"(.*?)","isOwnerViewing":(.*?),"shortDescription":"(.*?)","isCrawlable":(.*?),'
-    #          '"thumbnail":{"thumbnails":(.*?)},"allowRatings":(.*?),"viewCount":"(.*?)","author":"(.*?)"'),
-    #         ('"videoDetails":{"videoId":"(.*?)","title":"(.*?)","lengthSeconds":"(.*?)",'
-    #          '"channelId":"(.*?)","isOwnerViewing":(.*?),"shortDescription":"(.*?)","isCrawlable":(.*?),'
-    #          '"thumbnail":{"thumbnails":(.*?)},"allowRatings":(.*?),"viewCount":"(.*?)","author":"(.*?)"'),
-    #     ]
-    #     for regex in regexes:
-    #         res = apply_regex(s, regex)
-    #         if len(res) > 0:
-    #             break
-    #
-    #     if len(res) > 0:
-    #         _, title_, lengthSeconds_, keywords_, _, _, shortDescription_, _, thumbnail_, _, viewCount_, _ = res[0]
-    #
-    #         d['title']: str = title_
-    #
-    #         d['duration']: int = convert_num_str_to_int(lengthSeconds_)
-    #
-    #         d['keywords']: List[str] = [kw[:MAX_LEN_KEYWORD] for kw in json.loads(keywords_)[:MAX_NUM_KEYWORDS]]
-    #
-    #         shortDescription_: List[str] = shortDescription_.split('#') # (description, hashtags)
-    #         d['description']: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
-    #         d['description'] = d['description'][:MAX_LEN_DESCRIPTION]
-    #         d['tags']: List[str] = [t[:MAX_LEN_TAG] for t in shortDescription_[1:MAX_NUM_TAGS + 1]]
-    #
-    #         thumbnail_largest: Dict[str, Union[str, int]] = json.loads(thumbnail_)[-1]  # list of dicts (get largest image)
-    #         d['thumbnail_url']: str = thumbnail_largest['url']
-    #
-    #         d['view_count']: int = convert_num_str_to_int(viewCount_)  # int
-    #
-    #         success = True
 
     # no luck, write response body to file and set placeholder data
     if not success:
@@ -130,10 +92,6 @@ def extract_video_info_from_body(response,
     regex = '"defaultText":{"accessibility":{"accessibilityData":{"label":"(.*?) likes"}}'
     d['like_count'] = apply_regex(s, regex, dtype='int')
 
-    # view count
-    # regex = '"viewCount":{"videoViewCountRenderer":{"viewCount":{"simpleText":"(.*?) views"}'
-    # d['view_count'] = apply_regex(s, regex, dtype='int')
-
     # comment count
     regex = '"commentCount":{"simpleText":"(.*?)"},"contentRenderer"'
     d['comment_count'] = apply_regex(s, regex, dtype='int')
@@ -147,7 +105,6 @@ def extract_video_info_from_body(response,
     d['upload_date'] = apply_regex(s, regex)
 
     # subscriber count
-    # regex = '"subscriberCountText":{"accessibility":{"accessibilityData":{"label":"(.*?) subscribers"}},"simpleText":"(.*?) subscribers"}'
     regex = 'subscribers"}},"simpleText":"(.*?) subscribers"}'
     d['subscriber_count'] = apply_regex(s, regex, dtype='int')
 
@@ -173,13 +130,13 @@ class YouTubeVideoStats(scrapy.Spider):
     debug_info = True
 
     def parse(self, response):
-        ### Get info ###
         self.url_count += 1
         if self.debug_info:
             print('=' * 50)
             print(f'Processing URL {self.url_count}/{len(self.start_urls)}')
             print(response.url)
 
+        ### Get info ###
         # get vid info from response body
         vid_info = extract_video_info_from_body(response, fmt='sql')
         df_row = self.df_videos.loc[self.df_videos[VIDEO_URL_COL_NAME] == response.url]
@@ -191,7 +148,9 @@ class YouTubeVideoStats(scrapy.Spider):
         if self.debug_info:
             pprint(vid_info)
             print('=' * 50)
+
         update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info)
         insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info)
+
         if self.debug_info:
             print('Database injection was successful.')

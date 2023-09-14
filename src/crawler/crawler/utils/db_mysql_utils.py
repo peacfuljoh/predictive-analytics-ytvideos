@@ -202,7 +202,6 @@ def get_usernames_from_db(usernames_desired: Optional[List[str]] = None) -> List
     return usernames
 
 def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = None,
-                                    num_limit: Optional[int] = None,
                                     columns: Optional[List[str]] = None) \
         -> Optional[pd.DataFrame]:
     """
@@ -231,9 +230,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
 
         # get DataFrame for non-null records
         query = (f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NOT NULL '
-                 f'ORDER BY {DB_KEY_UPLOAD_DATE} DESC')
-        if num_limit is not None:
-            query += f" LIMIT {MOST_RECENT_VID_LIMIT}"
+                 f'ORDER BY {DB_KEY_UPLOAD_DATE} DESC LIMIT {MOST_RECENT_VID_LIMIT}')
 
         if columns is None:
             df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
@@ -241,9 +238,8 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
             df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', cols=columns)
 
         # get DataFrame for null records
-        query = f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NULL'
-        if num_limit is not None:
-            query += f" LIMIT {MOST_RECENT_VID_LIMIT}"
+        query = (f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NULL '
+                 f'LIMIT {MOST_RECENT_VID_LIMIT}')
 
         if columns is None:
             df2 = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
@@ -272,7 +268,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
 
     if len(dfs) == 0:
         print('get_video_info_from_db_with_options() -> Could not find any records matching specified options.')
-        print([usernames, num_limit, columns])
+        print([usernames, columns])
         print(query)
         return None
 

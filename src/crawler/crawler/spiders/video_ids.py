@@ -1,6 +1,7 @@
 
 from typing import List
 import re
+from pprint import pprint
 
 import scrapy
 
@@ -26,7 +27,16 @@ class YouTubeLatestVideoIds(scrapy.Spider):
     name = "yt-latest-video-ids"
     start_urls = get_user_video_page_urls_from_db()
 
+    debug_info = True
+    url_count = 0
+
     def parse(self, response):
+        self.url_count += 1
+        if self.debug_info:
+            print('=' * 50)
+            print(f'Processing URL {self.url_count}/{len(self.start_urls)}')
+            print(response.url)
+
         ### Get info ###
         # get body as string and find video urls
         s: str = response.body.decode()
@@ -36,8 +46,13 @@ class YouTubeLatestVideoIds(scrapy.Spider):
         ### Update database ###
         tablename = DB_VIDEOS_TABLENAMES['meta']
         username: str = response.url.split("/")[-2][1:]  # username portion starts with "@"
-        d = dict(
-            video_id=video_ids,
-            username=[username] * len(video_ids)
-        )
+        d = dict(video_id=video_ids, username=[username] * len(video_ids))
+
+        if self.debug_info:
+            print(d)
+            print('=' * 50)
+
         insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, d, keys=list(d.keys()))
+
+        if self.debug_info:
+            print('Database injection was successful.')
