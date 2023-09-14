@@ -27,7 +27,7 @@ if 0:
 if 1:
     tablename = DB_VIDEOS_TABLENAMES['stats']
     queries += [
-        f'ALTER TABLE {tablename} MODIFY COLUMN comment_count INT UNSIGNED'
+        f'ALTER TABLE {tablename} MODIFY COLUMN comment_count MEDIUMINT UNSIGNED'
     ]
 
 

@@ -26,6 +26,7 @@ class YouTubeLatestVideoIds(scrapy.Spider):
     """
     name = "yt-latest-video-ids"
     start_urls = get_user_video_page_urls_from_db()
+    # start_urls = start_urls[:1]
 
     debug_info = True
     url_count = 0
