@@ -51,6 +51,15 @@ class MySQLEngine():
             print(e)
 
 
+    ### pure SQL ###
+    def execute_pure_sql(self,
+                         database: str,
+                         query: str):
+        def func(connection, cursor):
+            cursor.execute(query)
+        self._sql_query_wrapper(func, database=database)
+
+
     ### get database and table info ###
     def get_db_names(self) -> List[str]:
         """Get all names of existing databases"""
@@ -250,7 +259,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
             df = df2
         if df is not None and df2 is not None:
             df = pd.concat((df, df2), axis=0)
-        df = df.reset_index()
+        df = df.reset_index(drop=True)
 
         # add urls
         if not (df is None or df.empty):
@@ -267,7 +276,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
         print(query)
         return None
 
-    return pd.concat(dfs, axis=0)
+    return pd.concat(dfs, axis=0, ignore_index=True)
 
 def get_user_video_page_urls_from_db(usernames_desired: Optional[List[str]] = None) -> List[str]:
     """Get user video page URLs for all users listed in the database or a specified subset"""

@@ -8,12 +8,106 @@ import scrapy
 from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str
 from ..utils.db_mysql_utils import get_video_info_for_stats_spider, insert_records_from_dict, update_records_from_dict
 from ..config import DB_INFO
-from ..constants import VIDEO_URL_COL_NAME
+from ..constants import (VIDEO_URL_COL_NAME, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
+                         MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD)
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
 
+
+
+def extract_misc_from_body(d: dict,
+                           s: str,
+                           fmt: str,
+                           response):
+    """Extract miscellaneous information from response body, trying multiple types of formatting."""
+
+    success = False
+
+    # attempt 1
+    if not success:
+        regex = '"videoDetails":{"videoId":(.*?),"author":"(.*?)",'  # pull entire str-formatted dict
+        res = apply_regex(s, regex)
+
+        if len(res) > 0:
+            res = json.loads('{"videoId":' + res[0][0] + '}')
+
+            d['title']: str = res['title']
+
+            d['duration']: int = convert_num_str_to_int(res['lengthSeconds'])
+
+            if 'keywords' in res:
+                d['keywords']: List[str] = [kw[:MAX_LEN_KEYWORD] for kw in res['keywords'][:MAX_NUM_KEYWORDS]]
+            else:
+                d['keywords']: List[str] = []
+
+            shortDescription_: List[str] = res['shortDescription'].split('#')  # (description, hashtags)
+            d['description']: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
+            d['description'] = d['description'][:MAX_LEN_DESCRIPTION]
+            d['tags']: List[str] = [t[:MAX_LEN_TAG] for t in shortDescription_[1:MAX_NUM_TAGS + 1]]
+
+            thumbnail_largest: Dict[str, Union[str, int]] = res['thumbnail']['thumbnails'][-1] # list of dicts (get largest image)
+            d['thumbnail_url']: str = thumbnail_largest['url']
+
+            d['view_count']: int = convert_num_str_to_int(res['viewCount'])  # int
+
+            success = True
+
+    # attempt 2
+    # if not success:
+    #     regexes = [
+    #         ('"videoDetails":{"videoId":"(.*?)","title":"(.*?)","lengthSeconds":"(.*?)","keywords":(.*?),'
+    #          '"channelId":"(.*?)","isOwnerViewing":(.*?),"shortDescription":"(.*?)","isCrawlable":(.*?),'
+    #          '"thumbnail":{"thumbnails":(.*?)},"allowRatings":(.*?),"viewCount":"(.*?)","author":"(.*?)"'),
+    #         ('"videoDetails":{"videoId":"(.*?)","title":"(.*?)","lengthSeconds":"(.*?)",'
+    #          '"channelId":"(.*?)","isOwnerViewing":(.*?),"shortDescription":"(.*?)","isCrawlable":(.*?),'
+    #          '"thumbnail":{"thumbnails":(.*?)},"allowRatings":(.*?),"viewCount":"(.*?)","author":"(.*?)"'),
+    #     ]
+    #     for regex in regexes:
+    #         res = apply_regex(s, regex)
+    #         if len(res) > 0:
+    #             break
+    #
+    #     if len(res) > 0:
+    #         _, title_, lengthSeconds_, keywords_, _, _, shortDescription_, _, thumbnail_, _, viewCount_, _ = res[0]
+    #
+    #         d['title']: str = title_
+    #
+    #         d['duration']: int = convert_num_str_to_int(lengthSeconds_)
+    #
+    #         d['keywords']: List[str] = [kw[:MAX_LEN_KEYWORD] for kw in json.loads(keywords_)[:MAX_NUM_KEYWORDS]]
+    #
+    #         shortDescription_: List[str] = shortDescription_.split('#') # (description, hashtags)
+    #         d['description']: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
+    #         d['description'] = d['description'][:MAX_LEN_DESCRIPTION]
+    #         d['tags']: List[str] = [t[:MAX_LEN_TAG] for t in shortDescription_[1:MAX_NUM_TAGS + 1]]
+    #
+    #         thumbnail_largest: Dict[str, Union[str, int]] = json.loads(thumbnail_)[-1]  # list of dicts (get largest image)
+    #         d['thumbnail_url']: str = thumbnail_largest['url']
+    #
+    #         d['view_count']: int = convert_num_str_to_int(viewCount_)  # int
+    #
+    #         success = True
+
+    # no luck, write response body to file and set placeholder data
+    if not success:
+        video_id_ = response.url.split("=")[-1]
+        with open(f'/home/nuc/crawler_data/{video_id_}.txt', 'w', encoding='utf-8') as fp:
+            fp.write(s)
+
+        d['title']: str = ''
+        d['duration']: int = 0
+        d['keywords']: List[str] = []
+        d['description']: str = ''
+        d['tags']: List[str] = []
+        d['thumbnail_url']: str = ''
+        d['view_count']: int = 0
+
+    # transform for output if necessary
+    if fmt == 'sql':
+        d['keywords'] = json.dumps(d['keywords'])
+        d['tags'] = json.dumps(d['tags'])
 
 
 def extract_video_info_from_body(response,
@@ -58,32 +152,7 @@ def extract_video_info_from_body(response,
     d['subscriber_count'] = apply_regex(s, regex, dtype='int')
 
     # miscellaneous
-    regex = '"videoDetails":{"videoId":"(.*?)","title":"(.*?)","lengthSeconds":"(.*?)","keywords":(.*?),' \
-            '"channelId":"(.*?)","isOwnerViewing":(.*?),"shortDescription":"(.*?)","isCrawlable":(.*?),' \
-            '"thumbnail":{"thumbnails":(.*?)},"allowRatings":(.*?),"viewCount":"(.*?)","author":"(.*?)"'
-
-    _, title_, lengthSeconds_, keywords_, _, _, shortDescription_, _, thumbnail_, _, viewCount_, _ = \
-        apply_regex(s, regex)[0]
-
-    d['title']: str = title_
-
-    d['duration']: int = convert_num_str_to_int(lengthSeconds_)
-
-    d['keywords']: List[str] = json.loads(keywords_)
-
-    shortDescription_: List[str] = shortDescription_.split('#') # (description, hashtags)
-    d['description']: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
-    d['tags']: List[str] = shortDescription_[1:]
-
-    thumbnail_largest: Dict[str, Union[str, int]] = json.loads(thumbnail_)[-1]  # list of dicts (get largest image)
-    d['thumbnail_url']: str = thumbnail_largest['url']
-
-    d['view_count']: int = convert_num_str_to_int(viewCount_)  # int
-
-    # transform for output if necessary
-    if fmt == 'sql':
-        d['keywords'] = json.dumps(d['keywords'])
-        d['tags'] = json.dumps(d['tags'])
+    extract_misc_from_body(d, s, fmt, response)
 
     return d
 
@@ -99,7 +168,7 @@ class YouTubeVideoStats(scrapy.Spider):
     start_urls = list(df_videos[VIDEO_URL_COL_NAME]) if df_videos is not None else []
     url_count = 0
     # start_urls = start_urls[:1] # for testing
-    # start_urls = ["https://www.youtube.com/watch?v=8zM1L7wLTCw"]
+    # start_urls = ["https://www.youtube.com/watch?v=TJ2ifmkGGus"]
 
     debug_info = True
 
@@ -124,3 +193,5 @@ class YouTubeVideoStats(scrapy.Spider):
             print('=' * 50)
         update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info)
         insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info)
+        if self.debug_info:
+            print('Database injection was successful.')

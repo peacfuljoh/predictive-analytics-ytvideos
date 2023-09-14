@@ -93,8 +93,8 @@ def inspect_videos_db(inject_data: bool = False):
         print_df_full(df)
 
 
-    # try a few SQL queries
-    if 1:
+    # try a join SQL query
+    if 0:
         # join on meta and stats tables
         cols = ['s.video_id', 's.timestamp_accessed', 's.comment', 'm.title', 'm.description']
         df = engine.select_records_with_join(
