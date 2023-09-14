@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS video_meta (
     video_id VARCHAR(20) PRIMARY KEY,
     username VARCHAR(50),
     title VARCHAR(100),
-    upload_date TIMESTAMP,
+    upload_date DATE,
     duration SMALLINT UNSIGNED,
     keywords VARCHAR(500),
     description VARCHAR(500),
@@ -16,12 +16,12 @@ CREATE TABLE IF NOT EXISTS video_meta (
 );
 CREATE TABLE IF NOT EXISTS video_stats (
     video_id VARCHAR(20),
-    date_accessed TIMESTAMP,
+    timestamp_accessed TIMESTAMP(3),
     like_count INT UNSIGNED,
     view_count INT UNSIGNED,
     subscriber_count INT UNSIGNED,
     comment_count SMALLINT UNSIGNED,
     comment VARCHAR(1000),
     FOREIGN KEY(video_id) REFERENCES video_meta(video_id),
-    PRIMARY KEY(video_id, date_accessed)
+    PRIMARY KEY(video_id, timestamp_accessed)
 );

@@ -4,8 +4,8 @@ import re
 
 import scrapy
 
-from ..utils.db_mysql_utils import MySQLEngine, get_user_video_page_urls_from_db
-from ..config import DB_CONFIG, DB_INFO, SCRAPY_CONFIG
+from ..utils.db_mysql_utils import get_user_video_page_urls_from_db, insert_records_from_dict
+from ..config import DB_INFO
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -26,8 +26,6 @@ class YouTubeLatestVideoIds(scrapy.Spider):
     name = "yt-latest-video-ids"
     start_urls = get_user_video_page_urls_from_db()
 
-    DOWNLOAD_DELAY = SCRAPY_CONFIG['DOWNLOAD_DELAY']
-
     def parse(self, response):
         ### Get info ###
         # get body as string and find video urls
@@ -38,10 +36,8 @@ class YouTubeLatestVideoIds(scrapy.Spider):
         ### Update database ###
         tablename = DB_VIDEOS_TABLENAMES['meta']
         username: str = response.url.split("/")[-2][1:]  # username portion starts with "@"
-
-        query = f"INSERT INTO {tablename} (video_id, username) VALUES"
-        query += ', '.join([f" ('{video_id}', '{username}')" for video_id in video_ids])
-        query += " ON DUPLICATE KEY UPDATE username=username"
-
-        engine = MySQLEngine(DB_CONFIG)
-        engine.insert_records_to_table(DB_VIDEOS_DATABASE, query)
+        d = dict(
+            video_id=video_ids,
+            username=[username] * len(video_ids)
+        )
+        insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, d, keys=list(d.keys()))

@@ -8,7 +8,7 @@ import mysql.connector
 
 from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames
 from ..config import DB_CONFIG, DB_INFO
-from ..constants import MOST_RECENT_VID_LIMIT, DB_KEY_UPLOAD_DATE
+from ..constants import MOST_RECENT_VID_LIMIT, DB_KEY_UPLOAD_DATE, VIDEO_URL_COL_NAME
 
 
 
@@ -131,22 +131,46 @@ class MySQLEngine():
                        database: str,
                        query: str,
                        mode: str = 'list',
-                       tablename: Optional[str] = None) \
+                       tablename: Optional[str] = None,
+                       cols: Optional[List[str]] = None) \
             -> Union[pd.DataFrame, List[tuple]]:
-        """Retrieve records from a table"""
+        """
+        Retrieve records from a table.
+
+        If mode == 'pandas', you must specify either the tablename (to infer all of that table's column names) or
+        cols, which is the list of columns that the query will return. Either way, these column names will be used
+        as the column names in the returned pandas dataframe.
+        """
         assert mode in ['list', 'pandas']
         if mode == 'pandas':
-            assert tablename is not None
+            assert (tablename is None and cols is not None) or (tablename is not None and cols is None)
+            if cols is None:
+                cols = [e[0] for e in self.describe_table(database, tablename)]
         if mode == 'list':
             assert tablename is None
+
         def func(connection, cursor):
             cursor.execute(query)
-            records = cursor.fetchall()
+            records = cursor.fetchall() # if table empty, "1241 (21000): Operand should contain 1 column(s)"
             if mode == 'pandas':
-                cols = [e[0] for e in self.describe_table(database, tablename)]
                 return pd.DataFrame(records, columns=cols)
             return records
+
         return self._sql_query_wrapper(func, database=database)
+
+    def select_records_with_join(self,
+                                 database: str,
+                                 tablename_primary: str,
+                                 tablename_secondary: str,
+                                 cols: List[str],
+                                 table_pseudoname_primary: str,
+                                 table_pseudoname_secondary: str,
+                                 join_condition: str) \
+            -> pd.DataFrame:
+        """Select query on one table joined on second table"""
+        query = (f"SELECT {', '.join(cols)} FROM {tablename_primary} as {table_pseudoname_primary} "
+                 f"JOIN {tablename_secondary} as {table_pseudoname_secondary} ON {join_condition}")
+        return self.select_records(database, query, mode='pandas', cols=cols)
 
 
 
@@ -168,47 +192,82 @@ def get_usernames_from_db(usernames_desired: Optional[List[str]] = None) -> List
 
     return usernames
 
-def get_video_info_from_db_with_options(usernames: List[str],
-                                        num_limit: Optional[int] = None,
-                                        columns: Optional[List[str]] = None,
-                                        append_video_urls: bool = False) \
-        -> pd.DataFrame:
-    """Get video info for specified users"""
+def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = None,
+                                    num_limit: Optional[int] = None,
+                                    columns: Optional[List[str]] = None) \
+        -> Optional[pd.DataFrame]:
+    """
+    Get video info from meta table for specified users.
+
+    Options:
+    - specify max number of records returned per user
+    - make video urls and append to result
+    """
+    usernames: List[str] = get_usernames_from_db(usernames_desired=usernames_desired)
+
+    assert len(usernames) > 0
+    assert columns is None or (isinstance(columns, list) and len(columns) > 0)
+
     engine = MySQLEngine(DB_CONFIG)
 
     tablename: str = DB_INFO["DB_VIDEOS_TABLENAMES"]["meta"]
 
     dfs: List[pd.DataFrame] = []
     for username in usernames:
-        # get DataFrame with usernames and video_ids
+        # columns spec in query
         if columns is None:
             cols_str = '*'
         else:
-            cols_str = f"({','.join(columns)})"
-        query = f"SELECT {cols_str} FROM {tablename} WHERE username = '{username}' ORDER BY '{DB_KEY_UPLOAD_DATE}' DESC"
-        if num_limit is not None:
-            query += f" LIMIT {num_limit}"
-        df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
+            cols_str = f'{",".join(columns)}'
 
-        # add video_urls
-        if append_video_urls:
+        # get DataFrame for non-null records
+        query = (f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NOT NULL '
+                 f'ORDER BY {DB_KEY_UPLOAD_DATE} DESC')
+        if num_limit is not None:
+            query += f" LIMIT {MOST_RECENT_VID_LIMIT}"
+
+        if columns is None:
+            df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
+        else:
+            df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', cols=columns)
+
+        # get DataFrame for null records
+        query = f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NULL'
+        if num_limit is not None:
+            query += f" LIMIT {MOST_RECENT_VID_LIMIT}"
+
+        if columns is None:
+            df2 = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
+        else:
+            df2 = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', cols=columns)
+
+        # merge resulting DataFrames
+        if df is None and df2 is None:
+            continue
+        if df is not None and df2 is None:
+            pass
+        if df is None and df2 is not None:
+            df = df2
+        if df is not None and df2 is not None:
+            df = pd.concat((df, df2), axis=0)
+        df = df.reset_index()
+
+        # add urls
+        if not (df is None or df.empty):
             video_urls: List[str] = make_video_urls(list(df['video_id']))
-            df = df.concat((df, pd.Series(video_urls)), axis=1)
+            s_video_urls = pd.Series(video_urls, name=VIDEO_URL_COL_NAME)
+            df = pd.concat((df, s_video_urls), axis=1)
 
         # save it
         dfs.append(df)
 
-    return pd.concat(dfs, axis=0)
+    if len(dfs) == 0:
+        print('get_video_info_from_db_with_options() -> Could not find any records matching specified options.')
+        print([usernames, num_limit, columns])
+        print(query)
+        return None
 
-def get_video_info_from_db(usernames_desired: Optional[List[str]] = None) -> pd.DataFrame:
-    """For users being tracked, get recently-posted video urls"""
-    usernames: List[str] = get_usernames_from_db(usernames_desired=usernames_desired)
-    return get_video_info_from_db_with_options(
-        usernames,
-        num_limit=MOST_RECENT_VID_LIMIT,
-        columns=['video_id', 'username'],
-        append_video_urls=True
-    )
+    return pd.concat(dfs, axis=0)
 
 def get_user_video_page_urls_from_db(usernames_desired: Optional[List[str]] = None) -> List[str]:
     """Get user video page URLs for all users listed in the database or a specified subset"""
@@ -234,12 +293,35 @@ def get_table_primary_keys(database: str,
     colnames = [tup[0] for tup in table_info if tup[3] == 'PRI']
     return colnames
 
+def prep_keys_for_insert_or_update(database: str,
+                                   tablename: str,
+                                   data: dict,
+                                   keys: Optional[List[str]] = None) \
+        -> List[str]:
+    """Validation and prep of keys for insert and update ops"""
+    # if keys not specified, get all column names for this table
+    if keys is None:
+        keys = get_table_colnames(database, tablename)
+
+    # key list is non-empty
+    assert len(keys) > 0
+
+    # keys is a subset of dict keys
+    assert len(set(keys) - set(data.keys())) == 0
+
+    # if multiple records, must have same number of records for all keys
+    if isinstance(data[keys[0]], list):
+        lens = [len(e) for e in data.values()]
+        assert all([len_ == lens[0] for len_ in lens])
+
+    return keys
+
 def insert_records_from_dict(database: str,
                              tablename: str,
                              data: dict,
                              keys: Optional[List[str]] = None):
     """
-    Insert all or a subset of the info from a dict to a database table.
+    Insert all or a subset of the info from a dict to a database table. Subset is specified through 'keys' arg.
 
     Data dict could have individual entries or a list for each key. In the latter case, the number of entries must
     match for all keys.
@@ -250,10 +332,7 @@ def insert_records_from_dict(database: str,
     VALUES (value1, value2, value3, ...)
     ON DUPLICATE KEY UPDATE column1=value1, ...;
     """
-    if keys is None:
-        keys = get_table_colnames(database, tablename)
-    assert len(keys) > 0
-    assert len(set(keys) - set(data.keys())) == 0
+    keys = prep_keys_for_insert_or_update(database, tablename, data, keys=keys)
 
     query = f"INSERT INTO {tablename} ({','.join(keys)}) VALUES (" + ','.join(['%s'] * len(keys)) + ")"
     query += f" ON DUPLICATE KEY UPDATE {keys[0]}={keys[0]}"
@@ -278,10 +357,7 @@ def update_records_from_dict(database: str,
     SET column1 = value1, column2 = value2, ...
     WHERE condition;
     """
-    if keys is None:
-        keys = get_table_colnames(database, tablename)
-    assert len(keys) > 0
-    assert len(set(keys) - set(data.keys())) == 0
+    keys = prep_keys_for_insert_or_update(database, tablename, data, keys=keys)
 
     if condition_keys is None:
         condition_keys = get_table_primary_keys(database, tablename)
@@ -303,3 +379,4 @@ def update_records_from_dict(database: str,
 
     engine = MySQLEngine(DB_CONFIG)
     engine.insert_records_to_table(database, query, records)
+

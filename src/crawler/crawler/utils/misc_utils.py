@@ -8,8 +8,6 @@ import time
 
 import pandas as pd
 
-from ..paths import VIDEO_IDS_DIR, VIDEO_STATS_DIR
-
 
 def save_json(path: str,
               obj: Union[List[dict], dict],
@@ -32,44 +30,6 @@ def make_videos_page_urls_from_usernames(names: List[str]) -> List[str]:
 def make_video_urls(video_ids: List[str]) -> List[str]:
     return [f"https://www.youtube.com/watch?v={video_id}" for video_id in video_ids]
 
-# def get_user_video_page_urls(usernames_json_path: str) -> List[str]:
-#     """Get user video page URLs from usernames JSON file"""
-#     usernames = load_json(usernames_json_path)['usernames']
-#     urls = make_videos_page_urls_from_usernames(usernames)
-#     return urls
-
-# def get_video_ids_json_fname(username: str) -> str:
-#     return os.path.join(VIDEO_IDS_DIR, f"{username}.json")
-
-# def get_video_stats_json_fname(username: str) -> str:
-#     return os.path.join(VIDEO_STATS_DIR, f"{username}.json")
-
-# def get_video_urls(usernames_json_path: str,
-#                    usernames_desired: Optional[List[str]] = None) -> pd.DataFrame:
-#     """For users being tracked, get recently-posted video urls"""
-#     # get usernames
-#     usernames: List[str] = load_json(usernames_json_path)['usernames']
-#     if usernames_desired is not None:
-#         usernames = list(set(usernames).intersection(set(usernames_desired)))
-#
-#     # get info
-#     d: Dict[str, List[str]] = dict(username=[], video_id=[], video_url=[])
-#     for username in usernames:
-#         video_ids, video_urls = get_video_urls_for_user(username)
-#         num_ids = len(video_ids)
-#         d['username'] += [username] * num_ids
-#         d['video_id'] += video_ids
-#         d['video_url'] += video_urls
-#     df = pd.DataFrame(d)
-#     return df
-
-# def get_video_urls_for_user(username: str) -> Tuple[List[str], List[str]]:
-#     """Get full video urls for a specified username"""
-#     video_ids_json_fname = get_video_ids_json_fname(username)
-#     video_ids: List[str] = load_json(video_ids_json_fname)
-#     urls = make_video_urls(video_ids)
-#     return video_ids, urls
-
 def convert_num_str_to_int(s: str) -> int:
     """
     Convert number strings to integers. Assumes resulting number is an integer. Handles strings of the form:
@@ -79,6 +39,8 @@ def convert_num_str_to_int(s: str) -> int:
     - 3.8M
     - 40M
     """
+    if s == '':
+        return 0
     s = s.replace(',', '')
     if 'K' in s:
         s = int(float(s[:-1]) * 1e3)
@@ -100,19 +62,41 @@ def apply_regex(s: str,
     substring_flag = '(.*?)'
     assert substring_flag in regex
     res = re.findall(regex, s)
-    print(res)
-    if len(re.findall(substring_flag, regex)) > 1:
+    # print(res)
+    num_substrings = sum([regex[i:i + len(substring_flag)] == substring_flag for i in range(len(regex) - len(substring_flag))])
+    if num_substrings > 1:
         return res
-    substring = res[0] # find matching pattern, return portion at (.*?)
+    if len(res) == 0:
+        substring = ''
+    else:
+        substring = res[0]
+    # print(substring)
     if dtype == 'int':
         return convert_num_str_to_int(substring)
     return substring
 
-def get_ts_now(as_string: bool = False) -> Union[float, str]:
-    if as_string:
-        return datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+def get_ts_now_str(mode: str) -> str:
+    """Get current timestamp"""
+    def get_ts_now_formatted(fmt: str) -> str:
+        return datetime.datetime.fromtimestamp(time.time()).strftime(fmt)
+
+    assert mode in ['date', 's', 'ms', 'us']
+
+    if mode == 'date':
+        fmt = '%Y-%m-%d'
+    elif mode == 's':
+        fmt = '%Y-%m-%d %H:%M:%S'
+    elif mode in ['ms', 'us']:
+        fmt = '%Y-%m-%d %H:%M:%S.%f'
     else:
-        return time.time()
+        raise NotImplementedError
+
+    ts: str = get_ts_now_formatted(fmt)
+
+    if mode == 'ms':
+        ts = ts[:-3] # trim last 3 fractional digits
+
+    return ts
 
 def print_df_full(df: pd.DataFrame,
                   row_lims: Optional[List[int]] = None):
@@ -124,3 +108,11 @@ def print_df_full(df: pd.DataFrame,
             print(df)
         else:
             print(df[row_lims[0]:row_lims[1]])
+
+
+if __name__ == '__main__':
+    if 1:
+        print(get_ts_now_str(mode='date'))
+        print(get_ts_now_str(mode='s'))
+        print(get_ts_now_str(mode='ms'))
+        print(get_ts_now_str(mode='us'))

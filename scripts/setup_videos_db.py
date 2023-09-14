@@ -2,7 +2,7 @@
 
 from typing import List
 
-from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine
+from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine, insert_records_from_dict
 from src.crawler.crawler.utils.misc_utils import load_json
 from src.crawler.crawler.paths import DB_VIDEO_SQL_FNAME, USERNAMES_JSON_PATH
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
@@ -28,12 +28,11 @@ if 1:
 engine.create_db_from_sql_file(DB_VIDEO_SQL_FNAME)
 
 # insert usernames
-if 0:
+if 1:
     tablename = DB_VIDEOS_TABLENAMES['users']
-    query = f"INSERT INTO {tablename} (username) VALUES (%s)"
     usernames: List[str] = load_json(USERNAMES_JSON_PATH)["usernames"]
-    records: List[tuple] = [(username,) for username in usernames]
-    engine.insert_records_to_table(DB_VIDEOS_DATABASE, query, records)
+    data = dict(username=usernames)
+    insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, data)
 
 # inspect result
 inspect_videos_db()

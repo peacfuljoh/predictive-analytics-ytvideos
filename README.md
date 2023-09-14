@@ -48,3 +48,6 @@ plus other non-sensitive info needed by the crawler.
 Managing Conda environments: https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#activating-an-environment
 
 MySQL setup and Python API tutorial: https://realpython.com/python-mysql/
+
+Randomized delays between scrapy crawls: https://scrapeops.io/python-scrapy-playbook/scrapy-delay-between-requests/
+
