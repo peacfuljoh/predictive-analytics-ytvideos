@@ -7,6 +7,9 @@ import datetime
 import time
 from datetime import timedelta
 import copy
+from PIL import Image
+import requests
+import io
 
 import pandas as pd
 
@@ -156,6 +159,17 @@ class TimeLock():
         self._advance_target()
         self._wait_until_target()
 
+def fetch_data_at_url(url: str,
+                      delay: float = 0) \
+        -> bytes:
+    """Fetch data at specified URL"""
+    if delay > 0:
+        time.sleep(delay)
+    return requests.get(url).content
+
+def convert_bytes_to_image(image_data: bytes) -> Image:
+    """Convert byte string to Image"""
+    return Image.open(io.BytesIO(image_data))
 
 
 

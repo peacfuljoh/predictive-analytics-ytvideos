@@ -12,6 +12,7 @@ with open(GLOBAL_CONFIG_PATH, 'r') as f:
     config = json.load(f)
 
 DB_CONFIG: Dict[str, str] = config['DB_CONFIG']
+DB_MONGO_CONFIG: Dict[str, str] = config['DB_MONGO_CONFIG']
 DATA_ROOT: str = config['DATA_ROOT']
 REPO_ROOT: str = config['REPO_ROOT']
 CRAWLER_ROOT: str = os.path.join(REPO_ROOT, 'src', 'crawler', 'crawler')

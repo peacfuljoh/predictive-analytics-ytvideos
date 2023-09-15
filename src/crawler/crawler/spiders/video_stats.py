@@ -7,8 +7,9 @@ from pprint import pprint
 import pandas as pd
 import scrapy
 
-from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str
+from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str, fetch_data_at_url
 from ..utils.db_mysql_utils import get_video_info_for_stats_spider, insert_records_from_dict, update_records_from_dict
+from ..utils.db_mongo_utils import save_image_to_db
 from ..config import DB_INFO
 from ..constants import (VIDEO_URL_COL_NAME, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
                          MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD)
@@ -16,6 +17,8 @@ from ..constants import (VIDEO_URL_COL_NAME, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
+DB_NOSQL_DATABASE = DB_INFO['DB_NOSQL_DATABASE']
+DB_NOSQL_COLLECTION_NAMES = DB_INFO['DB_NOSQL_COLLECTION_NAMES']
 
 
 
@@ -141,7 +144,7 @@ class YouTubeVideoStats(scrapy.Spider):
             print(f'Processing URL {self.url_count}/{len(self.start_urls)}')
             print(response.url)
 
-        ### Get info ###
+        ### Get stats info ###
         # get vid info from response body
         vid_info = extract_video_stats_from_response_body(response, fmt='sql')
         df_row = self.df_videos.loc[self.df_videos[VIDEO_URL_COL_NAME] == response.url]
@@ -149,13 +152,19 @@ class YouTubeVideoStats(scrapy.Spider):
         vid_info['username'] = df_row['username'].iloc[0]
         vid_info['timestamp_accessed'] = get_ts_now_str(mode='ms')
 
-        ### Insert to database ###
+        ### Insert stats info to MySQL database ###
         if self.debug_info:
             pprint(vid_info)
             print('=' * 50)
 
         update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info)
         insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info)
+
+        ### Fetch and save thumbnail to MongoDB database ###
+        if len(url := vid_info['thumbnail_url']) > 0:
+            image_data: bytes = fetch_data_at_url(url)
+            save_image_to_db(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'], vid_info['video_id'],
+                             image_data, verbose=True)
 
         if self.debug_info:
             print('Database injection was successful.')
