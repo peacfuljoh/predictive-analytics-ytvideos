@@ -9,7 +9,7 @@ import scrapy
 
 from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str, fetch_data_at_url
 from ..utils.db_mysql_utils import get_video_info_for_stats_spider, insert_records_from_dict, update_records_from_dict
-from ..utils.db_mongo_utils import save_image_to_db
+from ..utils.db_mongo_utils import fetch_url_and_save_image
 from ..config import DB_INFO
 from ..constants import (VIDEO_URL_COL_NAME, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
                          MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD)
@@ -162,9 +162,8 @@ class YouTubeVideoStats(scrapy.Spider):
 
         ### Fetch and save thumbnail to MongoDB database ###
         if len(url := vid_info['thumbnail_url']) > 0:
-            image_data: bytes = fetch_data_at_url(url)
-            save_image_to_db(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'], vid_info['video_id'],
-                             image_data, verbose=True)
+            fetch_url_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'], vid_info['video_id'],
+                                     url, verbose=True)
 
         if self.debug_info:
             print('Database injection was successful.')

@@ -6,7 +6,7 @@ from src.crawler.crawler.utils.misc_utils import get_ts_now_str, print_df_full
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
 
 from src.crawler.crawler.utils.misc_utils import fetch_data_at_url, convert_bytes_to_image
-from src.crawler.crawler.utils.db_mongo_utils import fetch_and_save_image, get_mongodb_records
+from src.crawler.crawler.utils.db_mongo_utils import fetch_url_and_save_image, get_mongodb_records
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -29,8 +29,8 @@ print_df_full(df)
 
 if 1:
     for i, row in df.iterrows():
-        fetch_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'], row['video_id'],
-                             row['thumbnail_url'], verbose=True, delay=5)
+        fetch_url_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'], row['video_id'],
+                                 row['thumbnail_url'], verbose=True, delay=5)
 
 if 1:
     records = get_mongodb_records(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'])

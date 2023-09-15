@@ -34,6 +34,7 @@ class MongoDBEngine():
     def set_db_info(self,
                     database: Optional[str] = None,
                     collection: Optional[str] = None):
+        """Set database and collection to be used in db op calls"""
         if database is not None:
             self._database = database
         if collection is not None:
@@ -75,8 +76,6 @@ class MongoDBEngine():
         def func():
             cn = self._get_collection()
             return cn.find_one({"_id": id})
-            # raise Exception(f'MongoDBEngine: A record with id {id} could not be found in collection '
-            #                 f'{self._collection} of database {self._database}.')
         return self._query_wrapper(func)
 
     def find_many(self,
@@ -85,12 +84,9 @@ class MongoDBEngine():
             -> List[dict]:
         def func():
             cn = self._get_collection()
-            if ids is None:
-                cursor = cn.find({}, limit=limit)
-            else:
-                cursor = cn.find({"_id": {"$in": [ObjectId(id_) for id_ in ids]}}, limit=limit)
-            res = [d for d in cursor]
-            return res
+            args = {} if ids is None else {"_id": {"$in": [ObjectId(id_) for id_ in ids]}}
+            cursor = cn.find(args, limit=limit)
+            return [d for d in cursor]
         return self._query_wrapper(func)
 
 
@@ -106,10 +102,10 @@ def get_mongodb_records(database: str,
     assert ids is None or isinstance(ids, (str, list))
 
     engine = MongoDBEngine(DB_MONGO_CONFIG, database=database, collection=collection)
-    if isinstance(ids, str):
-        return engine.find_one(ids)
     if ids is None:
         return engine.find_many(limit=limit)
+    if isinstance(ids, str):
+        return engine.find_one(ids)
     if isinstance(ids, list):
         return engine.find_many(ids=ids, limit=limit)
 
@@ -123,12 +119,12 @@ def save_image_to_db(database: str,
     record = {'_id': video_id, 'img': image_data}
     engine.insert_one(record)
 
-def fetch_and_save_image(database: str,
-                         collection: str,
-                         video_id: str,
-                         url: str,
-                         delay: int = 0,
-                         verbose: bool = False):
+def fetch_url_and_save_image(database: str,
+                             collection: str,
+                             video_id: str,
+                             url: str,
+                             delay: int = 0,
+                             verbose: bool = False):
     """Fetch image and insert into MongoDB collection, but only if it isn't already there."""
     engine = MongoDBEngine(DB_MONGO_CONFIG, database=database, collection=collection, verbose=verbose)
     if engine.find_one(id=video_id) is None:
