@@ -1,3 +1,5 @@
+"""Spider for crawling video stats off of individual video pages"""
+
 from typing import Union, List, Dict
 import json
 from pprint import pprint
@@ -17,77 +19,9 @@ DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
 
 
 
-def extract_misc_from_body(d: dict,
-                           s: str,
-                           fmt: str,
-                           response):
-    """Extract miscellaneous information from response body."""
-    success = False
-
-    if not success:
-        regex = '"videoDetails":{"videoId":(.*?),"author":"(.*?)",'  # pull entire str-formatted dict
-        res = apply_regex(s, regex)
-
-        if len(res) > 0:
-            res = json.loads('{"videoId":' + res[0][0] + '}')
-
-            d['title']: str = res['title']
-
-            d['duration']: int = convert_num_str_to_int(res['lengthSeconds'])
-
-            if 'keywords' in res:
-                d['keywords']: List[str] = [kw[:MAX_LEN_KEYWORD] for kw in res['keywords'][:MAX_NUM_KEYWORDS]]
-            else:
-                d['keywords']: List[str] = []
-
-            shortDescription_: List[str] = res['shortDescription'].split('#')  # (description, hashtags)
-            d['description']: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
-            d['description'] = d['description'][:MAX_LEN_DESCRIPTION]
-            d['tags']: List[str] = [t[:MAX_LEN_TAG] for t in shortDescription_[1:MAX_NUM_TAGS + 1]]
-
-            thumbnail_largest: Dict[str, Union[str, int]] = res['thumbnail']['thumbnails'][-1] # list of dicts (get largest image)
-            d['thumbnail_url']: str = thumbnail_largest['url']
-
-            d['view_count']: int = convert_num_str_to_int(res['viewCount'])  # int
-
-            success = True
-
-    # no luck, write response body to file and set placeholder data
-    if not success:
-        video_id_ = response.url.split("=")[-1]
-        with open(f'/home/nuc/crawler_data/{video_id_}.txt', 'w', encoding='utf-8') as fp:
-            fp.write(s)
-
-        d['title']: str = ''
-        d['duration']: int = 0
-        d['keywords']: List[str] = []
-        d['description']: str = ''
-        d['tags']: List[str] = []
-        d['thumbnail_url']: str = ''
-        d['view_count']: int = 0
-
-    # transform for output if necessary
-    if fmt == 'sql':
-        d['keywords'] = json.dumps(d['keywords'])
-        d['tags'] = json.dumps(d['tags'])
-
-
-def extract_video_info_from_body(response,
-                                 fmt: str = 'nosql') \
-        -> Dict[str, Union[int, str, List[str]]]:
-    """
-    Get miscellaneous video info from video page body (decoded as string).
-
-    'fmt' arg determines format for values of output dict. Default is 'nosql' which is JSON format. Can also specify
-    'sql' which is SQL database compatible (all strings and ints).
-    """
-    assert fmt in ['nosql', 'sql']
-
-    # get response body as a string
-    s = response.body.decode()
-
-    d = {}
-
+def extract_individual_stats(d: dict,
+                             s: str):
+    """Extract individual stats with their own regexes."""
     # like count
     regex = '"defaultText":{"accessibility":{"accessibilityData":{"label":"(.*?) likes"}}'
     d['like_count'] = apply_regex(s, regex, dtype='int')
@@ -108,8 +42,79 @@ def extract_video_info_from_body(response,
     regex = 'subscribers"}},"simpleText":"(.*?) subscribers"}'
     d['subscriber_count'] = apply_regex(s, regex, dtype='int')
 
-    # miscellaneous
-    extract_misc_from_body(d, s, fmt, response)
+def parse_video_details(d: dict,
+                        res: dict):
+    """Parse VideoDetails dict extracted from response body and fill relevant fields in video info dict."""
+    d['title']: str = res['title']
+
+    d['duration']: int = convert_num_str_to_int(res['lengthSeconds'])
+
+    if 'keywords' in res:
+        d['keywords']: List[str] = [kw[:MAX_LEN_KEYWORD] for kw in res['keywords'][:MAX_NUM_KEYWORDS]]
+    else:
+        d['keywords']: List[str] = []
+
+    shortDescription_: List[str] = res['shortDescription'].split('#')  # (description, hashtags)
+    d['description']: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
+    d['description'] = d['description'][:MAX_LEN_DESCRIPTION]
+    d['tags']: List[str] = [t[:MAX_LEN_TAG] for t in shortDescription_[1:MAX_NUM_TAGS + 1]]
+
+    thumbnail_largest: Dict[str, Union[str, int]] = res['thumbnail']['thumbnails'][-1]  # list of dicts (get largest image)
+    d['thumbnail_url']: str = thumbnail_largest['url']
+
+    d['view_count']: int = convert_num_str_to_int(res['viewCount'])  # int
+
+def extract_stats_from_video_details(d: dict,
+                                     s: str,
+                                     fmt: str,
+                                     response):
+    """Extract miscellaneous information from response body."""
+    success = False
+
+    regex = '"videoDetails":{"videoId":(.*?),"author":"(.*?)",'  # pull entire str-formatted dict
+    res = apply_regex(s, regex)
+
+    try:
+        res = json.loads('{"videoId":' + res[0][0] + '}')
+        parse_video_details(d, res)
+        success = True
+    except:
+        print(f'\nCould not parse VideoDetails for {response.url}.\n')
+
+    # no luck, write response body to file and set placeholder data
+    if not success:
+        video_id_ = response.url.split("=")[-1]
+        with open(f'/home/nuc/crawler_data/{video_id_}.txt', 'w', encoding='utf-8') as fp:
+            fp.write(s)
+
+        d['title']: str = ''
+        d['duration']: int = 0
+        d['keywords']: List[str] = []
+        d['description']: str = ''
+        d['tags']: List[str] = []
+        d['thumbnail_url']: str = ''
+        d['view_count']: int = 0
+
+    # transform for output if necessary
+    if fmt == 'sql':
+        d['keywords'] = json.dumps(d['keywords'])
+        d['tags'] = json.dumps(d['tags'])
+
+def extract_video_stats_from_response_body(response,
+                                           fmt: str = 'nosql') \
+        -> Dict[str, Union[int, str, List[str]]]:
+    """
+    Get all relevant video stats from video page body (decoded as string).
+
+    'fmt' arg determines format for values of output dict. Default is 'nosql' which is JSON format. Can also specify
+    'sql' which is SQL database compatible (all strings and ints).
+    """
+    assert fmt in ['nosql', 'sql']
+
+    s = response.body.decode() # get response body as a string
+    d = {}
+    extract_individual_stats(d, s)
+    extract_stats_from_video_details(d, s, fmt, response)
 
     return d
 
@@ -138,7 +143,7 @@ class YouTubeVideoStats(scrapy.Spider):
 
         ### Get info ###
         # get vid info from response body
-        vid_info = extract_video_info_from_body(response, fmt='sql')
+        vid_info = extract_video_stats_from_response_body(response, fmt='sql')
         df_row = self.df_videos.loc[self.df_videos[VIDEO_URL_COL_NAME] == response.url]
         vid_info['video_id'] = df_row['video_id'].iloc[0]
         vid_info['username'] = df_row['username'].iloc[0]

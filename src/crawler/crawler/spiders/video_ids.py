@@ -1,7 +1,7 @@
+"""Spider for crawling video_id info off of users' "videos" pages"""
 
 from typing import List
 import re
-from pprint import pprint
 
 import scrapy
 

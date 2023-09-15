@@ -6,6 +6,10 @@ dependencies:
   - scrapy=2.10.1
   - pandas=2.0.3
   - pip=23.2.1
+  - fastapi=0.103.1
+  - pymongo=4.5.0
+  - python-dotenv=0.21.0
+  - uvicorn=0.23.2
   - pip:
     - mysql-connector-python==8.1.0
 prefix: /home/nuc/miniconda3/envs/crawler

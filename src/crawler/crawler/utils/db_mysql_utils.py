@@ -1,4 +1,7 @@
-"""Database utils for MySQL"""
+"""
+Database utils for MySQL including basic CRUD operations and more
+complex functionality specific for the crawlers.
+"""
 
 from typing import Callable, Optional, List, Union, Dict, Tuple
 
@@ -13,6 +16,7 @@ from ..constants import MOST_RECENT_VID_LIMIT, DB_KEY_UPLOAD_DATE, VIDEO_URL_COL
 
 
 class MySQLEngine():
+    """MySQL convenience class for CRUD and other operations on database records."""
     def __init__(self, db_config: Dict[str, str]):
         # members
         self._db_config = None

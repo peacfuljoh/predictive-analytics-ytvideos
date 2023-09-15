@@ -5,6 +5,8 @@ import re
 from typing import Union, List, Dict, Optional, Tuple
 import datetime
 import time
+from datetime import timedelta
+import copy
 
 import pandas as pd
 
@@ -108,6 +110,54 @@ def print_df_full(df: pd.DataFrame,
             print(df)
         else:
             print(df[row_lims[0]:row_lims[1]])
+
+def get_dt_now() -> datetime.datetime:
+    """Get current datetime"""
+    return datetime.datetime.fromtimestamp(time.time())
+
+class TimeLock():
+    """
+    Utility for managing timed events. TimeLock forces a waiting period until the next point in time an integer factor
+    of intervals from an initial starting time. This allows for triggering events at strict intervals, where if one
+    of those intervals is missed, it is skipped.
+    """
+    def __init__(self,
+                 dt_start: datetime.datetime,
+                 interval: int,
+                 verbose: bool = False):
+        assert (dt_start - get_dt_now()).total_seconds() > 0
+
+        self._dt_target = dt_start
+        self._interval = interval
+        self._verbose = verbose
+
+    def _wait_until_target(self):
+        """Wait until current time catches up to target time"""
+        t_wait = (self._dt_target - get_dt_now()).total_seconds()
+        if t_wait > 0:
+            if self._verbose:
+                print(f'TimeLock: Waiting {t_wait} seconds until {self._dt_target}.')
+            time.sleep(t_wait)
+
+    def _advance_target(self):
+        """Advance target time beyond the current time"""
+        dt_now = get_dt_now()
+        dt_target_orig = copy.copy(self._dt_target)
+        t_elapsed = (dt_now - self._dt_target).total_seconds()
+        if t_elapsed <= 0:
+            return
+        num_intervals_advance = int(t_elapsed / self._interval) + 1
+        self._dt_target += timedelta(seconds=num_intervals_advance * self._interval)
+        if self._verbose:
+            print(f'TimeLock: Advancing time lock target from {dt_target_orig} to {self._dt_target}.')
+
+    def acquire(self):
+        """Acquire lock (i.e. advance target time in preparation for next release)"""
+        self._advance_target()
+        self._wait_until_target()
+
+
+
 
 
 if __name__ == '__main__':
