@@ -2,7 +2,8 @@
 
 from pprint import pprint
 
-from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine, insert_records_from_dict, update_records_from_dict
+from src.crawler.crawler.utils.db_mysql_utils import (MySQLEngine, insert_records_from_dict, update_records_from_dict,
+                                                      get_video_info_for_stats_spider)
 from src.crawler.crawler.utils.misc_utils import get_ts_now_str, print_df_full
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
 
@@ -92,9 +93,23 @@ def inspect_videos_db(inject_data: bool = False):
         print('')
         print_df_full(df, row_lims=[0, 100])
 
+    if 1:
+        tablename = DB_VIDEOS_TABLENAMES['meta']
+        df = engine.select_records(DB_VIDEOS_DATABASE, f"SELECT * FROM {tablename}",
+                                   mode='pandas', tablename=tablename)
+        print('')
+        # print_df_full(df['upload_date'].drop_duplicates())
+        # print_df_full(df[['video_id', 'title', 'username', 'upload_date']].drop_duplicates())
+        print_df_full(df[df['username'] == 'CNN'])
+        # print_df_full(df)
+
+    if 0:
+        df = get_video_info_for_stats_spider()
+        print_df_full(df)
+
 
     # try a join SQL query
-    if 1:
+    if 0:
         # join on meta and stats tables
         table_pseudoname_primary = 'stats'
         table_pseudoname_secondary = 'meta'

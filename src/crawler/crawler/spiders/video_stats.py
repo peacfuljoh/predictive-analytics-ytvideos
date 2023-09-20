@@ -7,7 +7,7 @@ from pprint import pprint
 import pandas as pd
 import scrapy
 
-from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str, fetch_data_at_url
+from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str, print_df_full
 from ..utils.db_mysql_utils import get_video_info_for_stats_spider, insert_records_from_dict, update_records_from_dict
 from ..utils.db_mongo_utils import fetch_url_and_save_image
 from ..config import DB_INFO
@@ -21,6 +21,11 @@ DB_NOSQL_DATABASE = DB_INFO['DB_NOSQL_DATABASE']
 DB_NOSQL_COLLECTION_NAMES = DB_INFO['DB_NOSQL_COLLECTION_NAMES']
 
 
+def handle_extraction_failure(s: str, response):
+    video_id_ = response.url.split("=")[-1]
+    with open(f'/home/nuc/crawler_data/{video_id_}.txt', 'w', encoding='utf-8') as fp:
+        fp.write(s)
+    raise Exception(f'\n\n!!!!! Could not parse response body for {response.url}. !!!!!\n\n')
 
 def extract_individual_stats(d: dict,
                              s: str):
@@ -72,31 +77,10 @@ def extract_stats_from_video_details(d: dict,
                                      fmt: str,
                                      response):
     """Extract miscellaneous information from response body."""
-    success = False
-
     regex = '"videoDetails":{"videoId":(.*?),"author":"(.*?)",'  # pull entire str-formatted dict
     res = apply_regex(s, regex)
-
-    try:
-        res = json.loads('{"videoId":' + res[0][0] + '}')
-        parse_video_details(d, res)
-        success = True
-    except:
-        print(f'\nCould not parse VideoDetails for {response.url}.\n')
-
-    # no luck, write response body to file and set placeholder data
-    if not success:
-        video_id_ = response.url.split("=")[-1]
-        with open(f'/home/nuc/crawler_data/{video_id_}.txt', 'w', encoding='utf-8') as fp:
-            fp.write(s)
-
-        d['title']: str = ''
-        d['duration']: int = 0
-        d['keywords']: List[str] = []
-        d['description']: str = ''
-        d['tags']: List[str] = []
-        d['thumbnail_url']: str = ''
-        d['view_count']: int = 0
+    res = json.loads('{"videoId":' + res[0][0] + '}')
+    parse_video_details(d, res)
 
     # transform for output if necessary
     if fmt == 'sql':
@@ -111,13 +95,19 @@ def extract_video_stats_from_response_body(response,
 
     'fmt' arg determines format for values of output dict. Default is 'nosql' which is JSON format. Can also specify
     'sql' which is SQL database compatible (all strings and ints).
+
+    To save from scrapy shell to file:
+        s = response.body.decode(); f = open('/home/nuc/Desktop/temp/webpage.txt', 'w', encoding='utf-8'); f.write(s)
     """
     assert fmt in ['nosql', 'sql']
 
     s = response.body.decode() # get response body as a string
     d = {}
-    extract_individual_stats(d, s)
-    extract_stats_from_video_details(d, s, fmt, response)
+    try:
+        extract_individual_stats(d, s)
+        extract_stats_from_video_details(d, s, fmt, response)
+    except Exception:
+        handle_extraction_failure(s, response)
 
     return d
 
@@ -129,7 +119,9 @@ class YouTubeVideoStats(scrapy.Spider):
     Extract stats for specified videos.
     """
     name = "yt-video-stats"
-    df_videos: pd.DataFrame = get_video_info_for_stats_spider(columns=['username', 'video_id']) # 'video_url' appended
+    df_videos: pd.DataFrame = get_video_info_for_stats_spider(columns=['username', 'video_id', 'title']) # 'video_url' appended
+    print_df_full(df_videos)
+    # df_videos = df_videos[df_videos['title'].isnull()]
     start_urls = list(df_videos[VIDEO_URL_COL_NAME]) if df_videos is not None else []
     url_count = 0
     # start_urls = start_urls[:1] # for testing

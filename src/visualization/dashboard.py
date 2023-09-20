@@ -39,11 +39,13 @@ class Dashboard():
                 inline=True
             ),
             html.Br(),
-            dcc.Graph(id="graph")
+            dcc.Graph(id="graph_stats"),
+            html.Br(),
+            dcc.Graph(id="graph_upload")
         ])
 
         @self._app.callback(
-            Output("graph", "figure"),
+            Output("graph_stats", "figure"),
             Input("usernames_checklist", "value"),
             State("stats_dropdown", "value")
         )
@@ -78,6 +80,45 @@ class Dashboard():
                                           '<br><b>Time accessed</b>: %{x}'
                                           f'<br><b>{stat_option_label}</b>:' + ' %{y}'
                     ))
+
+            return fig
+
+        @self._app.callback(
+            Output("graph_upload", "figure"),
+            Input("usernames_checklist", "value")
+        )
+        def update_line_chart(usernames_: List[str]) -> go.Figure:
+            """Update line chart"""
+            username_ids = {}
+            for i, username in enumerate(usernames_):
+                username_ids[username] = i
+
+            fig = go.Figure(
+                layout=go.Layout(
+                    title=go.layout.Title(text="Upload Dates"),
+                    xaxis={'title': 'Day'},
+                    yaxis={
+                        'title': 'Username',
+                        'tickvals': [username_ids[username] for username in usernames_],
+                        'ticktext': usernames_
+                    },
+                )
+            )
+
+            cols_ = ['video_id', 'username', 'title', 'upload_date']
+            for username in usernames_:
+                df_user = self._df.loc[self._df['username'] == username, cols_].drop_duplicates()
+                fig.add_trace(go.Scatter(
+                    x=df_user['upload_date'],
+                    y=[username_ids[username]] * len(df_user),
+                    mode='lines+markers',
+                    name=username,
+                    # hovertemplate=f'<br><b>Title</b>: {title}'
+                    #               f'<b>Video ID</b>: {video_id}'
+                    #               f'<br><b>Date uploaded</b>: {df_vid.iloc[0, :]["upload_date"]}'
+                    #               '<br><b>Time accessed</b>: %{x}'
+                    #               f'<br><b>{stat_option_label}</b>:' + ' %{y}'
+                ))
 
             return fig
 
