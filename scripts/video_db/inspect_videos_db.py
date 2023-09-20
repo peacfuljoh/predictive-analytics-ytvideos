@@ -90,24 +90,32 @@ def inspect_videos_db(inject_data: bool = False):
 
         df = engine.select_records(DB_VIDEOS_DATABASE, f'SELECT * FROM {tablename}', mode='pandas', tablename=tablename)
         print('')
-        print_df_full(df)
+        print_df_full(df, row_lims=[0, 100])
 
 
     # try a join SQL query
-    if 0:
+    if 1:
         # join on meta and stats tables
-        cols = ['s.video_id', 's.timestamp_accessed', 's.comment', 'm.title', 'm.description']
+        table_pseudoname_primary = 'stats'
+        table_pseudoname_secondary = 'meta'
+        cols = [
+            f'{table_pseudoname_primary}.video_id',
+            f'{table_pseudoname_primary}.timestamp_accessed',
+            f'{table_pseudoname_primary}.comment',
+            f'{table_pseudoname_secondary}.title',
+            f'{table_pseudoname_secondary}.description'
+        ]
         df = engine.select_records_with_join(
             DB_VIDEOS_DATABASE,
             DB_VIDEOS_TABLENAMES['stats'],
             DB_VIDEOS_TABLENAMES['meta'],
+            f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id',
             cols,
-            's',
-            'm',
-            's.video_id = m.video_id'
+            table_pseudoname_primary=table_pseudoname_primary,
+            table_pseudoname_secondary=table_pseudoname_secondary
         )
         print('')
-        print_df_full(df)
+        print_df_full(df, row_lims=[0, 100])
 
 
 

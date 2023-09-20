@@ -162,8 +162,11 @@ class YouTubeVideoStats(scrapy.Spider):
 
         ### Fetch and save thumbnail to MongoDB database ###
         if len(url := vid_info['thumbnail_url']) > 0:
-            fetch_url_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'], vid_info['video_id'],
-                                     url, verbose=True)
+            try:
+                fetch_url_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'],
+                                         vid_info['video_id'], url, verbose=True)
+            except:
+                pass
 
         if self.debug_info:
             print('Database injection was successful.')

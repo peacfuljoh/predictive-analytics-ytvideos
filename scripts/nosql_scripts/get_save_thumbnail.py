@@ -27,7 +27,7 @@ df = engine.select_records(DB_VIDEOS_DATABASE, query, mode='pandas', cols=cols)
 
 print_df_full(df)
 
-if 1:
+if 0:
     for i, row in df.iterrows():
         fetch_url_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'], row['video_id'],
                                  row['thumbnail_url'], verbose=True, delay=5)
@@ -35,7 +35,7 @@ if 1:
 if 1:
     records = get_mongodb_records(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'])
     for i in range(len(records)):
-        records[i]['img'] = records[i]['img'][::100000] # abbreviate it so it's not too long
+        records[i]['img'] = records[i]['img'][::10000] # abbreviate it so it's not too long
     pprint(records)
     print(f'num_records = {len(records)}')
 

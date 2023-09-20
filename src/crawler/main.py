@@ -1,4 +1,4 @@
-"""Run the cyclical crawl sequence"""
+"""Run a cyclical crawl sequence to pull video metadata and statistics"""
 
 from datetime import timedelta
 
