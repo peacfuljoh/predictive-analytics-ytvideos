@@ -84,7 +84,8 @@ class MongoDBEngine():
             -> List[dict]:
         def func():
             cn = self._get_collection()
-            args = {} if ids is None else {"_id": {"$in": [ObjectId(id_) for id_ in ids]}}
+            # args = {} if ids is None else {"_id": {"$in": [ObjectId(id_) for id_ in ids]}}
+            args = {} if ids is None else {"_id": {"$in": ids}}
             cursor = cn.find(args, limit=limit)
             return [d for d in cursor]
         return self._query_wrapper(func)

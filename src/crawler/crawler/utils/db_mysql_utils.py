@@ -176,24 +176,27 @@ class MySQLEngine():
                                  tablename_primary: str,
                                  tablename_secondary: str,
                                  join_condition: str,
-                                 cols: List[str],
+                                 cols_for_query: List[str],
                                  table_pseudoname_primary: Optional[str] = None,
                                  table_pseudoname_secondary: Optional[str] = None,
                                  where_clause: Optional[str] = None,
-                                 limit: Optional[int] = None) \
+                                 limit: Optional[int] = None,
+                                 cols_for_df: Optional[List[str]] = None) \
             -> pd.DataFrame:
         """Select query on one table joined on second table"""
         if table_pseudoname_primary is None:
             table_pseudoname_primary = tablename_primary
         if table_pseudoname_secondary is None:
             table_pseudoname_secondary = tablename_secondary
-        query = (f"SELECT {', '.join(cols)} FROM {tablename_primary} as {table_pseudoname_primary} "
+        if cols_for_df is None:
+            cols_for_df = cols_for_query
+        query = (f"SELECT {', '.join(cols_for_query)} FROM {tablename_primary} as {table_pseudoname_primary} "
                  f"JOIN {tablename_secondary} as {table_pseudoname_secondary} ON {join_condition}")
         if where_clause is not None:
             query += f" WHERE {where_clause}"
         if limit is not None:
             query += f" LIMIT {limit}"
-        return self.select_records(database, query, mode='pandas', cols=cols)
+        return self.select_records(database, query, mode='pandas', cols=cols_for_df)
 
 
 

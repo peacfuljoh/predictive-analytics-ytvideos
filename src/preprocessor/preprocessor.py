@@ -9,11 +9,17 @@ Preprocessor functionality:
     - load: send features to feature store
 """
 
-from typing import Any
+from typing import Any, List, Dict, Union, Tuple
 import datetime
+from PIL import Image
+
+import pandas as pd
+import numpy as np
+
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine
-from src.crawler.crawler.utils.db_mongo_utils import MongoDBEngine
+from src.crawler.crawler.utils.db_mongo_utils import MongoDBEngine, get_mongodb_records
+from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -92,16 +98,18 @@ class ETLRequest():
             config_extract['limit'] = None
 
 
+
+
 def etl_main(req: ETLRequest):
     """Entry point for ETL preprocessor"""
     data = etl_extract(req)
-    return data
     etl_transform(data, req)
+    return data
     etl_load(data, req)
 
-def etl_extract(req: ETLRequest) -> dict:
-    """Extract step of ETL pipeline"""
-    # define tabular data request
+def etl_extract_tabular(req: ETLRequest) -> Tuple[pd.DataFrame, dict]:
+    """Extract tabular data according to request"""
+    # construct query components
     database = DB_VIDEOS_DATABASE
     tablename_primary = DB_VIDEOS_TABLENAMES['stats']
     tablename_secondary = DB_VIDEOS_TABLENAMES['meta']
@@ -111,14 +119,16 @@ def etl_extract(req: ETLRequest) -> dict:
 
     cols_all = {
         table_pseudoname_primary: ['video_id', 'timestamp_accessed', 'like_count', 'view_count', 'subscriber_count',
-                                  'comment_count', 'comment'],
+                                   'comment_count', 'comment'],
         table_pseudoname_secondary: ['username', 'title', 'upload_date', 'duration', 'keywords', 'description', 'tags']
     }
-    cols = ([f'{table_pseudoname_primary}.{colname}' for colname in cols_all[table_pseudoname_primary]] +
-            [f'{table_pseudoname_secondary}.{colname}' for colname in cols_all[table_pseudoname_secondary]])
+    cols_for_query = ([f'{table_pseudoname_primary}.{colname}' for colname in cols_all[table_pseudoname_primary]] +
+                      [f'{table_pseudoname_secondary}.{colname}' for colname in cols_all[table_pseudoname_secondary]])
+    cols_for_df = cols_all[table_pseudoname_primary] + cols_all[table_pseudoname_secondary]
 
     # where clause
     where_clause = None
+
     if len(req.extract['filters']) > 0:
         where_clauses = []
         for key, val in req.extract['filters'].items():
@@ -128,32 +138,61 @@ def etl_extract(req: ETLRequest) -> dict:
             tablename_ = tablename_[0]
 
             # add where clause
-            if isinstance(val, str): # equality condition
+            if isinstance(val, str):  # equality condition
                 where_clauses.append(f" {tablename_}.{key} = '{val}'")
-            elif isinstance(val, list): # range condition
+            elif isinstance(val, list):  # range condition
                 where_clauses.append(f" {tablename_}.{key} BETWEEN '{val[0]}' AND '{val[1]}'")
+
+        # join sub-clauses
         where_clause = ' AND '.join(where_clauses)
 
     # limit
     limit = req.extract['limit']
 
-    # apply request
+    # issue request
     engine = MySQLEngine(DB_CONFIG)
     df = engine.select_records_with_join(
         database,
         tablename_primary,
         tablename_secondary,
         join_condition,
-        cols,
+        cols_for_query,
         table_pseudoname_primary=table_pseudoname_primary,
         table_pseudoname_secondary=table_pseudoname_secondary,
         where_clause=where_clause,
-        limit=limit
+        limit=limit,
+        cols_for_df=cols_for_df
     )
 
-    return df
+    # collect info from extraction
+    extract_info = dict(
+        table_pseudoname_primary=table_pseudoname_primary,
+        table_pseudoname_secondary=table_pseudoname_secondary
+    )
 
-    # load non-tabular data
+    return df, extract_info
+
+def etl_extract_nontabular(df: pd.DataFrame,
+                           info_tabular_extract: dict) \
+        -> Dict[str, Image]:
+    """Non-tabular data"""
+    video_ids: List[str] = list(df['video_id'].unique())  # get unique video IDs
+    records_lst: List[Dict[str, Union[str, bytes]]] = get_mongodb_records(
+        DB_NOSQL_DATABASE,
+        DB_NOSQL_COLLECTION_NAMES['thumbnails'],
+        ids=video_ids
+    )
+    records: Dict[str, Image] = {e['_id']: convert_bytes_to_image(e['img']) for e in records_lst}
+    return records
+
+def etl_extract(req: ETLRequest) -> Dict[str, Union[pd.DataFrame, Dict[str, Image]]]:
+    """Extract step of ETL pipeline"""
+    df, info_tabular_extract = etl_extract_tabular(req)
+    records = etl_extract_nontabular(df, info_tabular_extract)
+    return dict(
+        stats=df,
+        images=records
+    )
 
 
 def etl_transform(data: dict,
@@ -165,11 +204,17 @@ def etl_transform(data: dict,
 def etl_clean_raw_data(data: dict,
                        req: ETLRequest):
     """
-    Clean the raw data:
-    - filter text fields
-    - handle missing values
+    Clean the raw data
     """
-    # apply filters
+    # fill missing numerical values (zeroes)
+    df = data['stats']
+    username_video_id_pairs = df[['username', 'video_id']].drop_duplicates()
+    for _, (username, video_id) in username_video_id_pairs.iterrows():
+        mask = (df['username'] == username) * (df['video_id'] == video_id)
+        df[mask] = df[mask].replace(0, np.nan).interpolate(method='linear', axis=0)
+
+    # filter text fields
+    a = 5
 
     # handle missing values
 
