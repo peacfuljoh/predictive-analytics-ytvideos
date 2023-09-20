@@ -75,7 +75,7 @@ class Dashboard():
                             mode='lines+markers',
                             name=video_id,
                             hovertemplate=f'<br><b>Title</b>: {title}'
-                                          f'<b>Video ID</b>: {video_id}'
+                                          f'<br><b>Video ID</b>: {video_id}'
                                           f'<br><b>Date uploaded</b>: {df_vid.iloc[0, :]["upload_date"]}'
                                           '<br><b>Time accessed</b>: %{x}'
                                           f'<br><b>{stat_option_label}</b>:' + ' %{y}'
@@ -124,4 +124,4 @@ class Dashboard():
 
     def run(self):
         """Start the Dash app"""
-        self._app.run_server(debug=True)
+        self._app.run_server(debug=True, host='localhost', port=14982)
