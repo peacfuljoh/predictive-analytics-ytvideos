@@ -1,6 +1,7 @@
 """Script for experimenting with ETL pipeline"""
 
-from src.preprocessor.preprocessor import ETLRequest, etl_main
+from src.preprocessor.featurization_etl import etl_main
+from src.preprocessor.featurization_etl_utils import ETLRequest
 from src.visualization.dashboard import Dashboard
 
 
@@ -19,6 +20,6 @@ req = ETLRequest(etl_config)
 data = etl_main(req)
 
 
-if 1:
+if 0:
     dashboard = Dashboard(data['stats'])
     dashboard.run()

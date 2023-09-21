@@ -2,7 +2,7 @@
 import os
 import json
 import re
-from typing import Union, List, Dict, Optional, Tuple
+from typing import Union, List, Dict, Optional, Tuple, Any
 import datetime
 import time
 from datetime import timedelta
@@ -180,3 +180,14 @@ if __name__ == '__main__':
         print(get_ts_now_str(mode='s'))
         print(get_ts_now_str(mode='ms'))
         print(get_ts_now_str(mode='us'))
+
+
+def is_datetime_formatted_str(s: Any, fmt: str) -> bool:
+    """Check that string is date-formatted"""
+    if not isinstance(s, str):
+        return False
+    try:
+        datetime.datetime.strptime(s, fmt)
+        return True
+    except Exception as e:
+        return False
