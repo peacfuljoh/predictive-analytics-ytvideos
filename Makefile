@@ -26,3 +26,8 @@ run:
 	$(CONDA_ACTIVATE) $(REPO_NAME_) && \
 	cd $(MAIN_ROOT_) && \
 	python main.py
+
+dashboard:
+	$(CONDA_ACTIVATE) $(REPO_NAME_) && \
+	cd $(REPO_ROOT_) && \
+	python scripts/etl/try_etl.py

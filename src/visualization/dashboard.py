@@ -64,7 +64,7 @@ class Dashboard():
             )
 
             for username in usernames_:
-                cols_ = ['timestamp_accessed', stat_option_value, 'video_id', 'title', 'upload_date']
+                cols_ = ['timestamp_accessed', stat_option_value, 'video_id', 'title', 'upload_date', 'timestamp_first_seen']
                 df_user = self._df.loc[self._df['username'] == username, cols_]
                 # print(df_user)
                 for _, (video_id, title) in df_user[['video_id', 'title']].drop_duplicates().iterrows():
@@ -78,6 +78,7 @@ class Dashboard():
                                           f'<br><b>Video ID</b>: {video_id}'
                                           f'<br><b>Date uploaded</b>: {df_vid.iloc[0, :]["upload_date"]}'
                                           '<br><b>Time accessed</b>: %{x}'
+                                          f'<br><b>Time first seen</b>: {df_vid.iloc[0, :]["timestamp_first_seen"]}'
                                           f'<br><b>{stat_option_label}</b>:' + ' %{y}'
                     ))
 

@@ -93,7 +93,7 @@ def inspect_videos_db(inject_data: bool = False):
         print('')
         print_df_full(df, row_lims=[0, 100])
 
-    if 1:
+    if 0:
         tablename = DB_VIDEOS_TABLENAMES['meta']
         df = engine.select_records(DB_VIDEOS_DATABASE, f"SELECT * FROM {tablename}",
                                    mode='pandas', tablename=tablename)

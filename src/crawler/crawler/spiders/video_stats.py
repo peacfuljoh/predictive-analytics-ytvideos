@@ -119,15 +119,20 @@ class YouTubeVideoStats(scrapy.Spider):
     Extract stats for specified videos.
     """
     name = "yt-video-stats"
-    df_videos: pd.DataFrame = get_video_info_for_stats_spider(columns=['username', 'video_id', 'title']) # 'video_url' appended
-    print_df_full(df_videos)
-    # df_videos = df_videos[df_videos['title'].isnull()]
-    start_urls = list(df_videos[VIDEO_URL_COL_NAME]) if df_videos is not None else []
-    url_count = 0
-    # start_urls = start_urls[:1] # for testing
-    # start_urls = ["https://www.youtube.com/watch?v=TJ2ifmkGGus"]
 
     debug_info = True
+
+    def __init__(self, *args, **kwargs):
+        super(YouTubeVideoStats, self).__init__(*args, **kwargs)
+        self.reset_start_urls()
+
+    def reset_start_urls(self):
+        self.df_videos: pd.DataFrame = get_video_info_for_stats_spider(columns=['username', 'video_id', 'title'])  # 'video_url' appended
+        print_df_full(self.df_videos)
+        # self.df_videos = df_videos[df_videos['title'].isnull()]
+        self.start_urls = list(self.df_videos[VIDEO_URL_COL_NAME]) if self.df_videos is not None else []
+        self.url_count = 0
+        # self.start_urls = start_urls[:1] # for testing
 
     def parse(self, response):
         self.url_count += 1
@@ -142,23 +147,27 @@ class YouTubeVideoStats(scrapy.Spider):
         df_row = self.df_videos.loc[self.df_videos[VIDEO_URL_COL_NAME] == response.url]
         vid_info['video_id'] = df_row['video_id'].iloc[0]
         vid_info['username'] = df_row['username'].iloc[0]
-        vid_info['timestamp_accessed'] = get_ts_now_str(mode='ms')
+        ts_now_str = get_ts_now_str(mode='ms')
+        vid_info['timestamp_accessed'] = ts_now_str
+        vid_info['timestamp_first_seen'] = ts_now_str
 
         ### Insert stats info to MySQL database ###
         if self.debug_info:
             pprint(vid_info)
             print('=' * 50)
 
-        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info)
+        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info,
+                                 another_condition='upload_date IS NULL')
         insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info)
 
         ### Fetch and save thumbnail to MongoDB database ###
-        if len(url := vid_info['thumbnail_url']) > 0:
+        key_ = 'thumbnail_url'
+        if len(url := vid_info[key_]) > 0:
             try:
                 fetch_url_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'],
                                          vid_info['video_id'], url, verbose=True)
             except:
-                pass
+                print(f'Exception during MongoDB database injection for {key_}.')
 
         if self.debug_info:
             print('Database injection was successful.')

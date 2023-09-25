@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS video_meta (
     username VARCHAR(50),
     title VARCHAR(200),
     upload_date DATE,
+    timestamp_first_seen TIMESTAMP(3),
     duration SMALLINT UNSIGNED,
     keywords VARCHAR(1000),
     description VARCHAR(500),

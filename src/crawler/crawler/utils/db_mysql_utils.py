@@ -11,7 +11,7 @@ import mysql.connector
 
 from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames
 from ..config import DB_CONFIG, DB_INFO
-from ..constants import MOST_RECENT_VID_LIMIT, DB_KEY_UPLOAD_DATE, VIDEO_URL_COL_NAME
+from ..constants import MOST_RECENT_VID_LIMIT, DB_KEY_UPLOAD_DATE, VIDEO_URL_COL_NAME, DB_KEY_TIMESTAMP_FIRST_SEEN
 
 
 
@@ -61,6 +61,7 @@ class MySQLEngine():
                          query: str):
         def func(connection, cursor):
             cursor.execute(query)
+            connection.commit()
         self._sql_query_wrapper(func, database=database)
 
 
@@ -88,6 +89,7 @@ class MySQLEngine():
         """Create a database"""
         def func(connection, cursor):
             cursor.execute(f"CREATE DATABASE {db_name}")
+            connection.commit()
         return self._sql_query_wrapper(func)
 
     def create_db_from_sql_file(self, filename: str):
@@ -109,6 +111,7 @@ class MySQLEngine():
         """Delete a database"""
         def func(connection, cursor):
             cursor.execute(f"DROP DATABASE {db_name}")
+            connection.commit()
         return self._sql_query_wrapper(func)
 
 
@@ -247,7 +250,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
 
         # get DataFrame for non-null records
         query = (f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NOT NULL '
-                 f'ORDER BY {DB_KEY_UPLOAD_DATE} DESC LIMIT {MOST_RECENT_VID_LIMIT}')
+                 f'ORDER BY {DB_KEY_TIMESTAMP_FIRST_SEEN} DESC LIMIT {MOST_RECENT_VID_LIMIT}')
 
         if columns is None:
             df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
@@ -371,13 +374,17 @@ def update_records_from_dict(database: str,
                              tablename: str,
                              data: dict,
                              condition_keys: Optional[List[str]] = None,
-                             keys: Optional[List[str]] = None):
+                             keys: Optional[List[str]] = None,
+                             another_condition: Optional[str] = None):
     """
     Same as insert_records_from_dict() but applying an update operation.
 
     UPDATE table_name
     SET column1 = value1, column2 = value2, ...
     WHERE condition;
+
+    'condition_keys' are the columns that are used in the WHERE clause (which records to update)
+    'keys' are the columns to be updated
     """
     keys = prep_keys_for_insert_or_update(database, tablename, data, keys=keys)
 
@@ -387,7 +394,9 @@ def update_records_from_dict(database: str,
     assert len(set(condition_keys) - set(data.keys())) == 0
 
     query = f"UPDATE {tablename} SET " + ', '.join([key + ' = %s' for key in keys])
-    query += ' WHERE ' + ', '.join([key + ' = %s' for key in condition_keys])
+    query += ' WHERE ' + ' AND '.join([key + ' = %s' for key in condition_keys])
+    if another_condition is not None:
+        query += ' AND ' + another_condition
 
     if isinstance(data[keys[0]], list):
         records: List[tuple] = [

@@ -34,9 +34,9 @@ if 0:
 
 if 1:
     records = get_mongodb_records(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'])
-    for i in range(len(records)):
-        records[i]['img'] = records[i]['img'][::10000] # abbreviate it so it's not too long
-    pprint(records)
+    # for i in range(len(records)):
+    #     records[i]['img'] = records[i]['img'][::10000] # abbreviate it so it's not too long
+    # pprint(records)
     print(f'num_records = {len(records)}')
 
 if 0:

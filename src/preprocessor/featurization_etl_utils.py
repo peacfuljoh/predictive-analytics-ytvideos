@@ -1,8 +1,12 @@
+"""Featurization ETL util methods"""
+
 import json
 import re
 from collections import OrderedDict
 from typing import Tuple, Dict, List, Union, Optional
+from pprint import pprint
 
+import numpy as np
 import pandas as pd
 from PIL import Image
 
@@ -10,6 +14,8 @@ from src.crawler.crawler.config import DB_INFO, DB_CONFIG
 from src.crawler.crawler.utils.db_mongo_utils import get_mongodb_records
 from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine
 from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image, is_datetime_formatted_str
+from src.crawler.crawler.constants import STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS
+
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
@@ -17,8 +23,12 @@ DB_NOSQL_DATABASE = DB_INFO['DB_NOSQL_DATABASE']
 DB_NOSQL_COLLECTION_NAMES = DB_INFO['DB_NOSQL_COLLECTION_NAMES']
 
 CHARSETS = {
-    'LNP': 'abcdefghijklmnopqrstuvwxyz1234567890.?!$\ '
+    'LNP': 'abcdefghijklmnopqrstuvwxyz1234567890.?!$\ ',
+    'LN': 'abcdefghijklmnopqrstuvwxyz1234567890',
 }
+
+MIN_DESCRIPTION_LEN_0 = 20
+MIN_DESCRIPTION_LEN_1 = 20
 
 
 """ ETL Request class """
@@ -93,9 +103,8 @@ def etl_extract_tabular(req: ETLRequest) -> Tuple[pd.DataFrame, dict]:
     join_condition = f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id'
 
     cols_all = {
-        table_pseudoname_primary: ['video_id', 'timestamp_accessed', 'like_count', 'view_count', 'subscriber_count',
-                                   'comment_count', 'comment'],
-        table_pseudoname_secondary: ['username', 'title', 'upload_date', 'duration', 'keywords', 'description', 'tags']
+        table_pseudoname_primary: STATS_ALL_COLS,
+        table_pseudoname_secondary: [col for col in META_ALL_COLS_NO_URL if col != 'video_id']
     }
     cols_for_query = ([f'{table_pseudoname_primary}.{colname}' for colname in cols_all[table_pseudoname_primary]] +
                       [f'{table_pseudoname_secondary}.{colname}' for colname in cols_all[table_pseudoname_secondary]])
@@ -181,15 +190,23 @@ def get_duplicate_idxs(df: pd.DataFrame,
             .set_index('first')['tuple'])
     return idxs
 
-def replace_chars_in_str(df: pd.DataFrame,
-                         colname: str,
-                         chars: Optional[Union[OrderedDict[str, str], Dict[str, str]]] = None,
-                         charset: Optional[str] = None):
-    """
-    Replace specified substrings in strings of specified column.
+def remove_trailing_chars(s: str) -> str:
+    """Remove trailing chars from a string (e.g. newlines, empty spaces)."""
+    if len(s) == 0:
+        return s
+    trail_chars = ['\n', ' ']
+    i = len(s) - 1
+    while (i > 0) and (s[i] in trail_chars):
+        i -= 1
+    return s[:i]
 
+def etl_process_title_and_comment(df: pd.DataFrame,
+                                  colname: str,
+                                  chars: Optional[Union[OrderedDict[str, str], Dict[str, str]]] = None,
+                                  charset: Optional[str] = None):
+    """
     To print one comment per line:
-        for val in df['comment'].drop_duplicates().values:
+        for val in df['comment'].unique():
             print(val)
     """
     assert isinstance(df, pd.DataFrame)
@@ -201,8 +218,13 @@ def replace_chars_in_str(df: pd.DataFrame,
         chars[r'\"'] = ''
         chars['...'] = ' '
         chars['..'] = ' '
+        chars['.'] = ''
         chars['-'] = ' '
         chars["’s"] = ''
+        chars['?'] = ' ?'
+        chars['!'] = ' !'
+        chars['$'] = ' $'
+        chars['\n'] = ' '
 
     for i, idxs_ in idxs.items():
         s: str = df.loc[i, colname]
@@ -210,6 +232,8 @@ def replace_chars_in_str(df: pd.DataFrame,
             s = s.replace(k, v)
         if charset is not None:
             s = ''.join([c for c in s if c.lower() in CHARSETS[charset]])
+        s = remove_trailing_chars(s)
+        s = s.lower()
         df.loc[idxs_, colname] = s
 
 def etl_process_keywords(df: pd.DataFrame):
@@ -220,6 +244,8 @@ def etl_process_keywords(df: pd.DataFrame):
 
     str_repl = OrderedDict()
     str_repl['#'] = ''
+    str_repl['...'] = ' '
+    str_repl['-'] = ' '
 
     idxs = get_duplicate_idxs(df, colname)
 
@@ -284,3 +310,110 @@ def etl_process_tags(df: pd.DataFrame):
         s: List[str] = list(set(s_new))
         df.loc[idxs_, colname] = json.dumps(s)
 
+def etl_process_description(df: pd.DataFrame):
+    """Process raw description"""
+    assert isinstance(df, pd.DataFrame)
+
+    colname = 'description'
+
+    str_repl = OrderedDict()
+    str_repl['...'] = ' '
+    str_repl['..'] = ' '
+    str_repl['.'] = ''
+    str_repl['-'] = ' '
+    str_repl['?'] = ' ?'
+    str_repl['!'] = ' !'
+    str_repl['$'] = ' $'
+
+    idxs = get_duplicate_idxs(df, colname)
+
+    for i, idxs_ in idxs.items():
+        # get entry and loads to string
+        s: str = df.loc[i, colname]
+
+        # accumulate valid entries
+        s_new: List[str] = []
+        for line in s.split("\n"):
+            # skip if invalid
+            if (('http' in line) or ('@' in line) or (len(line) <= MIN_DESCRIPTION_LEN_0)):
+                continue
+
+            # remove special characters
+            line = ''.join([c for c in line if c.lower() in CHARSETS['LNP']])
+            if len(line) <= MIN_DESCRIPTION_LEN_1:
+                continue
+            # print('----'); print(line); print(len(line))
+
+            # cast to lower, replace substrings
+            line = line.lower()
+            for key, val in str_repl.items():
+                line = line.replace(key, val)
+
+            # remove trailing spaces
+            line = remove_trailing_chars(line)
+
+            # add to list
+            s_new.append(line)
+
+        # filter out duplicates, dump back to string
+        s = None if len(s_new) == 0 else ' '.join(s_new)
+        # print(s_new); print(len(s_new)); print(s)
+        df.loc[idxs_, colname] = s
+
+def etl_clean_raw_data(data: dict,
+                       req: ETLRequest):
+    """Clean the raw data"""
+    # fill missing numerical values (zeroes)
+    df = data['stats']
+    username_video_id_pairs = df[['username', 'video_id']].drop_duplicates()
+    for _, (username, video_id) in username_video_id_pairs.iterrows():
+        mask = (df['username'] == username) * (df['video_id'] == video_id)
+        df[mask] = df[mask].replace(0, np.nan).interpolate(method='linear', axis=0, limit_direction='both')
+
+    # filter text fields: 'comment', 'title', 'keywords', 'description', 'tags'
+    etl_process_title_and_comment(df, 'comment', charset='LNP')
+    etl_process_title_and_comment(df, 'title', charset='LNP')
+    etl_process_keywords(df)
+    etl_process_tags(df)
+    etl_process_description(df)
+
+    # handle missing values
+    literals_err = [np.NaN, 0, None]
+    df_err = df[STATS_NUMERICAL_COLS].isin(literals_err)
+    err_mask_sum: pd.Series = df_err.sum(axis=0)
+    if err_mask_sum.sum() > 0:
+        err_msg = f'\netl_clean_raw_data() -> Some numerical data entries are invalid. Total count is {len(df)}; ' + \
+                   ', '.join([f'{key}: {val}' for key, val in err_mask_sum.items()])
+        print(err_msg)
+        # print_df_full(df.loc[df_err.any(axis=1), keys_num + ['video_id', 'username']])
+        print(f'Dropping {df_err.any(axis=1).sum()} record(s).')
+
+
+def get_word_counts(df: pd.DataFrame) -> pd.DataFrame:
+    """Count how many unique words exist in the video stats info"""
+    words = {}
+    counts = {}
+    for k in ['video_id', 'username']:
+        words[k] = list(df[k].unique())
+        counts[k] = len(words[k])
+    for k in ['title', 'description']:
+        words[k] = list(np.unique([w for e in df[k] if e is not None for w in e.split(' ')]))
+        counts[k] = len(words[k])
+    for k in ['keywords', 'tags']:
+        words[k] = list(np.unique([w for e in df[k] if e is not None for w in json.loads(e)]))
+        counts[k] = len(words[k])
+
+def etl_featurize(data: dict,
+                  req: ETLRequest):
+    """Map cleaned raw data to features"""
+    pprint(get_word_counts(data['stats']))
+    a = 5
+
+    # featurize text via embedding into Vector Space Model (VSM)
+    # - Gensim (Python library for NLP)
+
+
+    # featurize thumbnail images
+
+
+    a = 5 # add features to data dict
