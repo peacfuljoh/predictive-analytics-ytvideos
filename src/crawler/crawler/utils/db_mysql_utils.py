@@ -3,7 +3,7 @@ Database utils for MySQL including basic CRUD operations and more
 complex functionality specific for the crawlers.
 """
 
-from typing import Callable, Optional, List, Union, Dict, Tuple
+from typing import Callable, Optional, List, Union, Dict, Tuple, Generator
 
 import pandas as pd
 
@@ -148,8 +148,9 @@ class MySQLEngine():
                        query: str,
                        mode: str = 'list',
                        tablename: Optional[str] = None,
-                       cols: Optional[List[str]] = None) \
-            -> Union[pd.DataFrame, List[tuple]]:
+                       cols: Optional[List[str]] = None,
+                       as_generator: bool = False) \
+            -> Union[Generator[pd.DataFrame, None, None], Generator[List[tuple], None, None], pd.DataFrame, List[tuple]]:
         """
         Retrieve records from a table.
 
@@ -165,14 +166,47 @@ class MySQLEngine():
         if mode == 'list':
             assert tablename is None
 
-        def func(connection, cursor):
-            cursor.execute(query)
-            records = cursor.fetchall() # if table empty, "1241 (21000): Operand should contain 1 column(s)"
-            if mode == 'pandas':
-                return pd.DataFrame(records, columns=cols)
-            return records
+        if not as_generator:
+            def func(connection, cursor):
+                cursor.execute(query)
+                records = cursor.fetchall() # if table empty, "1241 (21000): Operand should contain 1 column(s)"
+                if mode == 'pandas':
+                    return pd.DataFrame(records, columns=cols)
+                return records
 
-        return self._sql_query_wrapper(func, database=database)
+            return self._sql_query_wrapper(func, database=database)
+        else:
+            return self._select_records_gen(database, query, mode, cols=cols)
+
+    def _select_records_gen(self,
+                            database: str,
+                            query: str,
+                            mode: str = 'list',
+                            cols: Optional[List[str]] = None):
+        # sql_query_wrapper() doesn't work with yield...
+        # Throws `mysql.connector.errors.ProgrammingError: 2055: Cursor is not connected`
+        try:
+            with self._get_connection(database=database) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(query)
+                    while (records := cursor.fetchmany(1000)) is not None:
+                        if mode == 'pandas':
+                            yield pd.DataFrame(records, columns=cols)
+                        else:
+                            yield records
+        except mysql.connector.Error as e:
+            print(e)
+
+        # def func(connection, cursor):
+        #     cursor.execute(query)
+        #     while (records := cursor.fetchmany(100)) is not None:
+        #         if mode == 'pandas':
+        #             yield pd.DataFrame(records, columns=cols)
+        #         else:
+        #             yield records
+        # return self._sql_query_wrapper(func, database=database)
+
+
 
     def select_records_with_join(self,
                                  database: str,
@@ -184,8 +218,9 @@ class MySQLEngine():
                                  table_pseudoname_secondary: Optional[str] = None,
                                  where_clause: Optional[str] = None,
                                  limit: Optional[int] = None,
-                                 cols_for_df: Optional[List[str]] = None) \
-            -> pd.DataFrame:
+                                 cols_for_df: Optional[List[str]] = None,
+                                 as_generator: bool = False) \
+            -> Union[Generator[pd.DataFrame, None, None], pd.DataFrame]:
         """Select query on one table joined on second table"""
         if table_pseudoname_primary is None:
             table_pseudoname_primary = tablename_primary
@@ -199,7 +234,8 @@ class MySQLEngine():
             query += f" WHERE {where_clause}"
         if limit is not None:
             query += f" LIMIT {limit}"
-        return self.select_records(database, query, mode='pandas', cols=cols_for_df)
+
+        return self.select_records(database, query, mode='pandas', cols=cols_for_df, as_generator=as_generator)
 
 
 

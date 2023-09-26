@@ -13,6 +13,7 @@ dependencies:
   - pillow=10.0.0
   - plotly=5.9.0
   - dash=2.7.0
+  - gensim=4.3.2
   - pip:
     - mysql-connector-python==8.1.0
 prefix: /home/nuc/miniconda3/envs/crawler

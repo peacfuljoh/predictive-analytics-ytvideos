@@ -8,8 +8,8 @@ from src.visualization.dashboard import Dashboard
 etl_config = {
     'extract': {
         'filters': {
-            # 'timestamp_accessed': ['2023-09-10 00:00:00.000', '2024-01-01 00:00:00.000'],
-            # 'username': 'CNN'
+            # 'timestamp_accessed': [['2023-09-10 00:00:00.000', '2024-01-01 00:00:00.000']],
+            'username': ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
         },
         # 'limit': 1000
     }

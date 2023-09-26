@@ -3,7 +3,7 @@
 import json
 import re
 from collections import OrderedDict
-from typing import Tuple, Dict, List, Union, Optional
+from typing import Tuple, Dict, List, Union, Optional, Generator
 from pprint import pprint
 
 import numpy as np
@@ -72,7 +72,7 @@ class ETLRequest():
             if key == 'video_id':
                 assert isinstance(val, str) or (isinstance(val, list) and all([isinstance(s, str) for s in val]))
             elif key == 'username':
-                assert isinstance(val, str)
+                assert isinstance(val, str) or (isinstance(val, list) and all([isinstance(s, str) for s in val]))
             elif key == 'upload_date':
                 fmt = '%Y-%m-%d'
                 assert (is_datetime_formatted_str(val, fmt) or
@@ -92,7 +92,7 @@ class ETLRequest():
 
 
 """ ETL Extract """
-def etl_extract_tabular(req: ETLRequest) -> Tuple[pd.DataFrame, dict]:
+def etl_extract_tabular(req: ETLRequest) -> Tuple[Generator[pd.DataFrame, None, None], dict]:
     """Extract tabular data according to request"""
     # construct query components
     database = DB_VIDEOS_DATABASE
@@ -122,10 +122,14 @@ def etl_extract_tabular(req: ETLRequest) -> Tuple[pd.DataFrame, dict]:
             tablename_ = tablename_[0]
 
             # add where clause
-            if isinstance(val, str):  # equality condition
+            if isinstance(val, str):  # equality
                 where_clauses.append(f" {tablename_}.{key} = '{val}'")
-            elif isinstance(val, list):  # range condition
-                where_clauses.append(f" {tablename_}.{key} BETWEEN '{val[0]}' AND '{val[1]}'")
+            elif isinstance(val, list): # range or subset
+                if isinstance(val[0], list): # range
+                    where_clauses.append(f" {tablename_}.{key} BETWEEN '{val[0][0]}' AND '{val[0][1]}'")
+                else: # subset
+                    val_strs = [f"'{s}'" for s in val] # add apostrophes for SQL query with strings
+                    where_clauses.append(f" {tablename_}.{key} IN ({','.join(val_strs)})")
 
         # join sub-clauses
         where_clause = ' AND '.join(where_clauses)
@@ -145,7 +149,8 @@ def etl_extract_tabular(req: ETLRequest) -> Tuple[pd.DataFrame, dict]:
         table_pseudoname_secondary=table_pseudoname_secondary,
         where_clause=where_clause,
         limit=limit,
-        cols_for_df=cols_for_df
+        cols_for_df=cols_for_df,
+        as_generator=True
     )
 
     # collect info from extraction
@@ -196,9 +201,9 @@ def remove_trailing_chars(s: str) -> str:
         return s
     trail_chars = ['\n', ' ']
     i = len(s) - 1
-    while (i > 0) and (s[i] in trail_chars):
+    while (i >= 0) and (s[i] in trail_chars):
         i -= 1
-    return s[:i]
+    return s[:i + 1]
 
 def etl_process_title_and_comment(df: pd.DataFrame,
                                   colname: str,
@@ -274,7 +279,7 @@ def etl_process_keywords(df: pd.DataFrame):
                 else:
                     s_new.append(keyword)
         s: List[str] = list(set(s_new))
-        df.loc[idxs_, colname] = json.dumps(s)
+        df.loc[idxs_, colname] = ' '.join(s)
 
 
 def etl_process_tags(df: pd.DataFrame):
@@ -320,7 +325,7 @@ def etl_process_tags(df: pd.DataFrame):
 
         # filter out duplicates, dump back to string
         s: List[str] = list(set(s_new))
-        df.loc[idxs_, colname] = json.dumps(s)
+        df.loc[idxs_, colname] = ' '.join(s)
 
 def etl_process_description(df: pd.DataFrame):
     """Process raw description"""
@@ -372,15 +377,14 @@ def etl_process_description(df: pd.DataFrame):
         # print(s_new); print(len(s_new)); print(s)
         df.loc[idxs_, colname] = s
 
-def etl_clean_raw_data(data: dict,
-                       req: ETLRequest):
-    """Clean the raw data"""
-    # fill missing numerical values (zeroes)
-    df = data['stats']
-    username_video_id_pairs = df[['username', 'video_id']].drop_duplicates()
-    for _, (username, video_id) in username_video_id_pairs.iterrows():
-        mask = (df['username'] == username) * (df['video_id'] == video_id)
-        df[mask] = df[mask].replace(0, np.nan).interpolate(method='linear', axis=0, limit_direction='both')
+def etl_clean_raw_data_one_df(df: pd.DataFrame):
+    """Clean one raw dataframe"""
+    # interpolate and extrapolate missing values (zeroes and NaNs)
+    if 0:
+        username_video_id_pairs = df[['username', 'video_id']].drop_duplicates()
+        for _, (username, video_id) in username_video_id_pairs.iterrows():
+            mask = (df['username'] == username) * (df['video_id'] == video_id)
+            df[mask] = df[mask].replace(0, np.nan).interpolate(method='linear', axis=0, limit_direction='both')
 
     # filter text fields: 'comment', 'title', 'keywords', 'description', 'tags'
     etl_process_title_and_comment(df, 'comment', charset='LNP')
@@ -390,16 +394,24 @@ def etl_clean_raw_data(data: dict,
     etl_process_description(df)
 
     # handle missing values
-    literals_err = [np.NaN, 0, None]
-    df_err = df[STATS_NUMERICAL_COLS].isin(literals_err)
-    err_mask_sum: pd.Series = df_err.sum(axis=0)
-    if err_mask_sum.sum() > 0:
-        err_msg = f'\netl_clean_raw_data() -> Some numerical data entries are invalid. Total count is {len(df)}; ' + \
-                   ', '.join([f'{key}: {val}' for key, val in err_mask_sum.items()])
-        print(err_msg)
-        # print_df_full(df.loc[df_err.any(axis=1), keys_num + ['video_id', 'username']])
-        print(f'Dropping {df_err.any(axis=1).sum()} record(s).')
+    if 0:
+        literals_err = [np.NaN, None]
+        df_err = df[STATS_NUMERICAL_COLS].isin(literals_err)
+        err_mask_sum: pd.Series = df_err.sum(axis=0)
+        if err_mask_sum.sum() > 0:
+            err_msg = f'\netl_clean_raw_data_one_df() -> Some numerical data entries are invalid. Total count is {len(df)}; ' + \
+                      ', '.join([f'{key}: {val}' for key, val in err_mask_sum.items()])
+            print(err_msg)
+            # print_df_full(df.loc[df_err.any(axis=1), keys_num + ['video_id', 'username']])
+            print(f'Dropping {df_err.any(axis=1).sum()} record(s).')
 
+    return df
+
+def etl_clean_raw_data(data: dict,
+                       req: ETLRequest):
+    """Clean the raw data"""
+    for df in data['stats']:
+        yield etl_clean_raw_data_one_df(df)
 
 def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[str, int]]:
     """
@@ -421,17 +433,53 @@ def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[s
 
     return words, counts
 
-def etl_featurize(data: dict,
+def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None]):
+    """
+    Parse out raw model inputs and outputs from generated DataFrames into raw feature records.
+    Text is space-separated word lists.
+    """
+    keys_text = ['title', 'keywords', 'tags']
+    keys_num = ['subscriber_count', 'comment_count', 'like_count', 'view_count']
+    keys_meta = ['username', 'video_id', 'timestamp_accessed']
+    key_tokens = "tokens"
+
+    # dfs: List[pd.DataFrame] = []
+    while not (df := next(df_gen)).empty:
+        df[key_tokens] = df[keys_text].agg(' '.join, axis=1)
+        yield df[[key_tokens] + keys_num + keys_meta]
+    # df_out = pd.concat(dfs, axis=0, ignore_index=True)
+
+    # return df_out
+
+def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
                   req: ETLRequest):
     """Map cleaned raw data to features"""
-    pprint(get_words_and_counts(data['stats'])[1])
+    # inspect words lists and counts
+    if 0:
+        dfs = []
+        while not (df_ := next(data['stats'])).empty:
+            dfs.append(df_)
+        df = pd.concat(dfs, axis=0, ignore_index=True)
+        wc = get_words_and_counts(df)
+        words_all = [word for key, val in wc[0].items() for word in val]
+        print(len(words_all))
+        words_all_unique = np.unique(words_all)
+        print(len(words_all_unique))
+
+        pprint(wc[1])
+
+        colname = 'title'
+        idxs = get_duplicate_idxs(df, colname)
+        for i, idxs_ in idxs.items():
+            row: pd.Series = df.loc[i]
+            print(', '.join([row[key] for key in ['title', 'keywords', 'tags']]))
+
     a = 5
 
     # featurize text via embedding into Vector Space Model (VSM)
-    # - Gensim (Python library for NLP)
-
+    raw_features = etl_featurize_make_raw_features(data['stats'])
 
     # featurize thumbnail images
+    # TODO: implement this
 
-
-    a = 5 # add features to data dict
+    return raw_features

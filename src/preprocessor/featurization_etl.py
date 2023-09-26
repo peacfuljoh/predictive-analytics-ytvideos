@@ -9,7 +9,7 @@ Preprocessor functionality:
     - load: send features to feature store
 """
 
-from typing import Dict, Union
+from typing import Dict, Union, Generator
 from PIL import Image
 
 import pandas as pd
@@ -21,25 +21,26 @@ from src.preprocessor.featurization_etl_utils import ETLRequest, etl_extract_tab
 def etl_main(req: ETLRequest):
     """Entry point for ETL preprocessor"""
     data = etl_extract(req)
-    etl_transform(data, req)
-    return data
+    gen_raw_feats = etl_transform(data, req)
+    return gen_raw_feats
     etl_load(data, req)
 
 
 """ Extract """
-def etl_extract(req: ETLRequest) -> Dict[str, Union[pd.DataFrame, Dict[str, Image]]]:
+def etl_extract(req: ETLRequest) -> Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]]:
     """Extract step of ETL pipeline"""
     df, info_tabular_extract = etl_extract_tabular(req)
-    records = etl_extract_nontabular(df, info_tabular_extract)
-    return dict(stats=df, images=records)
+    # records = etl_extract_nontabular(df, info_tabular_extract)
+    return dict(stats=df)#, images=records)
 
 
 """ Transform """
-def etl_transform(data: dict,
+def etl_transform(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
                   req: ETLRequest):
     """Transform step of ETL pipeline"""
-    etl_clean_raw_data(data, req)
-    etl_featurize(data, req)
+    gen_stats = etl_clean_raw_data(data, req)
+    gen_raw_feats = etl_featurize({'stats': gen_stats}, req)
+    return gen_raw_feats
 
 
 """ Load """
