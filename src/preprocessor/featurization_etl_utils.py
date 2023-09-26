@@ -245,7 +245,16 @@ def etl_process_keywords(df: pd.DataFrame):
     str_repl = OrderedDict()
     str_repl['#'] = ''
     str_repl['...'] = ' '
+    str_repl['..'] = ' '
+    str_repl['.'] = ''
     str_repl['-'] = ' '
+    str_repl["’s"] = ''
+    str_repl["'s"] = ''
+    str_repl['?'] = ''
+    str_repl['!'] = ''
+    str_repl['$'] = ''
+    str_repl['('] = ''
+    str_repl[')'] = ''
 
     idxs = get_duplicate_idxs(df, colname)
 
@@ -255,12 +264,15 @@ def etl_process_keywords(df: pd.DataFrame):
         s_new: List[str] = []
         for keyphrase in s: # str in List[str]
             for keyword in keyphrase.split(' '): # str in List[str]
-                if '__' in keyword or len(keyword) < 2:
+                if '__' in keyword or ':' in keyword or len(keyword) < 2:
                     continue
                 keyword = keyword.lower()
                 for key, val in str_repl.items():
                     keyword = keyword.replace(key, val)
-                s_new.append(keyword)
+                if ' ' in keyword: # spaces were inserted
+                    s_new += keyword.split(' ')
+                else:
+                    s_new.append(keyword)
         s: List[str] = list(set(s_new))
         df.loc[idxs_, colname] = json.dumps(s)
 
@@ -389,8 +401,12 @@ def etl_clean_raw_data(data: dict,
         print(f'Dropping {df_err.any(axis=1).sum()} record(s).')
 
 
-def get_word_counts(df: pd.DataFrame) -> pd.DataFrame:
-    """Count how many unique words exist in the video stats info"""
+def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[str, int]]:
+    """
+    Count how many unique words exist in the video stats info.
+
+    2023-09-26: {'video_id': 855, 'username': 11, 'title': 3031, 'description': 5007, 'keywords': 2316}
+    """
     words = {}
     counts = {}
     for k in ['video_id', 'username']:
@@ -403,10 +419,12 @@ def get_word_counts(df: pd.DataFrame) -> pd.DataFrame:
         words[k] = list(np.unique([w for e in df[k] if e is not None for w in json.loads(e)]))
         counts[k] = len(words[k])
 
+    return words, counts
+
 def etl_featurize(data: dict,
                   req: ETLRequest):
     """Map cleaned raw data to features"""
-    pprint(get_word_counts(data['stats']))
+    pprint(get_words_and_counts(data['stats'])[1])
     a = 5
 
     # featurize text via embedding into Vector Space Model (VSM)
