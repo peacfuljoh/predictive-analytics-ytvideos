@@ -1,9 +1,11 @@
 """Script for inspecting MySQL database and testing injection functionalities"""
 
 from pprint import pprint
+import datetime
+from typing import Dict, List
 
-from src.crawler.crawler.utils.db_mysql_utils import (MySQLEngine, insert_records_from_dict, update_records_from_dict,
-                                                      get_video_info_for_stats_spider)
+from src.crawler.crawler.utils.mysql_utils_ytvideos import (get_video_info_for_stats_spider)
+from src.crawler.crawler.utils.mysql_engine import MySQLEngine, insert_records_from_dict, update_records_from_dict
 from src.crawler.crawler.utils.misc_utils import get_ts_now_str, print_df_full
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
 
@@ -11,77 +13,83 @@ DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
 
 
-def inspect_videos_db(inject_data: bool = False):
-    # initialize MySQL engine
-    engine = MySQLEngine(DB_CONFIG)
 
+def inject_toy_data():
+    database = DB_VIDEOS_DATABASE
+
+    # users table
+    tablename = DB_VIDEOS_TABLENAMES['users']
+    d = dict(username='user1')
+    insert_records_from_dict(database, tablename, d, DB_CONFIG)
+    d = dict(username=['user2', 'user3'])
+    insert_records_from_dict(database, tablename, d, DB_CONFIG)
+
+    # video_meta table
+    tablename = DB_VIDEOS_TABLENAMES['meta']
+    d1 = dict(
+        video_id='SD544S3MO5',
+        username='user3',
+        title='blah',
+        upload_date=get_ts_now_str(mode='date'),
+        duration=48,
+        keywords="['blah', 'meh']",
+        description="This is a description.",
+        thumbnail_url='url5.html',
+        tags="['blahasdfasdfsdfa', 'sdasdfdsfsa']"
+    )
+    d2 = dict(
+        video_id=['SD4J43MO5', '46HF4D8M'],
+        username=['user1', 'user2'],
+        title=['blah', 'hmmasdfsadf a a ammm'],
+        upload_date=[get_ts_now_str(mode='date') for _ in range(2)],
+        duration=[4833, 122],
+        keywords=["['blah', 'meh']", "['ccccc', 'asdfg']"],
+        description=["This is another description.", "And another description"],
+        thumbnail_url=['url.html', 'url2.jpeg'],
+        tags=["['blahasdfa', 'mehadsfsa']", "['cddddcc', 'asfdfdff']"]
+    )
+    keys_pre = ['video_id', 'username']
+    d1_pre = {key: val for key, val in d1.items() if key in keys_pre}  # new record init
+    d2_pre = {key: val for key, val in d2.items() if key in keys_pre}
+
+    if 1:
+        insert_records_from_dict(database, tablename, d1_pre, DB_CONFIG, keys=keys_pre)  # insert with just two keys
+        insert_records_from_dict(database, tablename, d2_pre, DB_CONFIG, keys=keys_pre)
+        update_records_from_dict(database, tablename, d1, DB_CONFIG)  # update with rest of info
+        update_records_from_dict(database, tablename, d2, DB_CONFIG)
+
+    # video_stats table
+    tablename = DB_VIDEOS_TABLENAMES['stats']
+    d1 = dict(
+        video_id='SD544S3MO5',
+        timestamp_accessed=get_ts_now_str(mode='ms'),
+        like_count=234234,
+        view_count=48,
+        subscriber_count=345345,
+        comment_count=22,
+        comment="This is a comment."
+    )
+    d2 = dict(
+        video_id=['SD4J43MO5', '46HF4D8M'],
+        timestamp_accessed=[get_ts_now_str(mode='ms') for _ in range(2)],
+        like_count=[234, 65433],
+        view_count=[48, 33],
+        subscriber_count=[345345, 7676],
+        comment_count=[22, 224],
+        comment=["Blah blah comment.", "Another comment."]
+    )
+    if 1:
+        insert_records_from_dict(database, tablename, d1, DB_CONFIG)
+        insert_records_from_dict(database, tablename, d2, DB_CONFIG)
+
+
+def inspect_videos_db(inject_data: bool = False):
     # insert rows to all tables using mysql utils
     if inject_data:
-        database = DB_VIDEOS_DATABASE
+        inject_toy_data()
 
-        # users table
-        tablename = DB_VIDEOS_TABLENAMES['users']
-        d = dict(username='user1')
-        insert_records_from_dict(database, tablename, d)
-        d = dict(username=['user2', 'user3'])
-        insert_records_from_dict(database, tablename, d)
-
-        # video_meta table
-        tablename = DB_VIDEOS_TABLENAMES['meta']
-        d1 = dict(
-            video_id='SD544S3MO5',
-            username='user3',
-            title='blah',
-            upload_date=get_ts_now_str(mode='date'),
-            duration=48,
-            keywords="['blah', 'meh']",
-            description="This is a description.",
-            thumbnail_url='url5.html',
-            tags="['blahasdfasdfsdfa', 'sdasdfdsfsa']"
-        )
-        d2 = dict(
-            video_id=['SD4J43MO5', '46HF4D8M'],
-            username=['user1', 'user2'],
-            title=['blah', 'hmmasdfsadf a a ammm'],
-            upload_date=[get_ts_now_str(mode='date') for _ in range(2)],
-            duration=[4833, 122],
-            keywords=["['blah', 'meh']", "['ccccc', 'asdfg']"],
-            description=["This is another description.", "And another description"],
-            thumbnail_url=['url.html', 'url2.jpeg'],
-            tags=["['blahasdfa', 'mehadsfsa']", "['cddddcc', 'asfdfdff']"]
-        )
-        keys_pre = ['video_id', 'username']
-        d1_pre = {key: val for key, val in d1.items() if key in keys_pre} # new record init
-        d2_pre = {key: val for key, val in d2.items() if key in keys_pre}
-        insert_records_from_dict(database, tablename, d1_pre, keys=keys_pre) # insert with just two keys
-        insert_records_from_dict(database, tablename, d2_pre, keys=keys_pre)
-        update_records_from_dict(database, tablename, d1) # update with rest of info
-        update_records_from_dict(database, tablename, d2)
-
-        # video_stats table
-        tablename = DB_VIDEOS_TABLENAMES['stats']
-        d1 = dict(
-            video_id='SD544S3MO5',
-            timestamp_accessed=get_ts_now_str(mode='ms'),
-            like_count=234234,
-            view_count=48,
-            subscriber_count=345345,
-            comment_count=22,
-            comment="This is a comment."
-        )
-        d2 = dict(
-            video_id=['SD4J43MO5', '46HF4D8M'],
-            timestamp_accessed=[get_ts_now_str(mode='ms') for _ in range(2)],
-            like_count=[234, 65433],
-            view_count=[48, 33],
-            subscriber_count=[345345, 7676],
-            comment_count=[22, 224],
-            comment=["Blah blah comment.", "Another comment."]
-        )
-        if 1:
-            insert_records_from_dict(database, tablename, d1)
-            insert_records_from_dict(database, tablename, d2)
-
+    # initialize MySQL engine
+    engine = MySQLEngine(DB_CONFIG)
 
     # see table schemas and contents
     for _, tablename in DB_VIDEOS_TABLENAMES.items():
@@ -94,6 +102,7 @@ def inspect_videos_db(inject_data: bool = False):
         print(len(df))
         print_df_full(df, row_lims=[0, 100])
 
+    # inspect meta table
     if 0:
         tablename = DB_VIDEOS_TABLENAMES['meta']
         df = engine.select_records(DB_VIDEOS_DATABASE, f"SELECT * FROM {tablename}",
@@ -104,10 +113,10 @@ def inspect_videos_db(inject_data: bool = False):
         print_df_full(df[df['username'] == 'CNN'])
         # print_df_full(df)
 
-    if 0:
+    # see video info for stats spider
+    if 1:
         df = get_video_info_for_stats_spider()
         print_df_full(df)
-
 
     # try a join SQL query
     if 0:
@@ -133,7 +142,37 @@ def inspect_videos_db(inject_data: bool = False):
         print('')
         print_df_full(df, row_lims=[0, 100])
 
+    # look at histogram of time coverage for videos
+    if 1:
+        tablename = DB_VIDEOS_TABLENAMES['stats']
+        df_gen = engine.select_records(DB_VIDEOS_DATABASE, f'SELECT * FROM {tablename}',
+                                       mode='pandas', tablename=tablename, as_generator=True)
 
+        dts: Dict[str, List[datetime]] = {} # video_id: min and max timestamp_accessed
+        while not (df := next(df_gen)).empty:
+            gb = df[['video_id', 'timestamp_accessed']].groupby(['video_id'])
+            gb_min = gb.min()
+            gb_max = gb.max()
+            for key in gb_min.index:
+                min_ = gb_min.loc[key, 'timestamp_accessed']
+                max_ = gb_max.loc[key, 'timestamp_accessed']
+                if key not in dts:
+                    dts[key] = [min_, max_]
+                else:
+                    dts[key] = [min(dts[key][0], min_), max(dts[key][1], max_)]
+
+        dt_diffs: Dict[str, float] = {key: (e[1] - e[0]).total_seconds() / 3600 for key, e in dts.items()}
+        dt_diffs = {key: val / 24 for key, val in dt_diffs.items()} # days
+        # dt_diffs = {key: val / 24 for key, val in dt_diffs.items() if 0 < val < 24 * 5} # days
+
+        print('')
+        print(len(dt_diffs))
+        pprint(dt_diffs)
+
+        import matplotlib.pyplot as plt
+
+        plt.hist(list(dt_diffs.values()), 50, (0, 5))
+        plt.show()
 
 
 

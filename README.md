@@ -72,3 +72,12 @@ MongoDB on Ubuntu: https://www.mongodb.com/docs/manual/tutorial/install-mongodb-
 
 Randomized delays between scrapy crawls: https://scrapeops.io/python-scrapy-playbook/scrapy-delay-between-requests/
 
+
+## Make CLI commands
+
+There are several `make` commands that are utilities for running processes from the command line.
+- `make crawl`
+- `make dashboard`
+- `make test`
+
+These activate the conda env, cd into a directory, and then run a script. See the `Makefile` for more info.

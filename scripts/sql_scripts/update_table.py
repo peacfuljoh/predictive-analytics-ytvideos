@@ -2,9 +2,7 @@
 import pandas as pd
 
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG
-from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine, update_records_from_dict
-
-
+from src.crawler.crawler.utils.mysql_engine import MySQLEngine, update_records_from_dict
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']

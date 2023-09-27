@@ -1,4 +1,4 @@
-"""Featurization ETL util methods"""
+"""Prefeaturization ETL utils"""
 
 import json
 import re
@@ -11,9 +11,9 @@ import pandas as pd
 from PIL import Image
 
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG
-from src.crawler.crawler.utils.db_mongo_utils import get_mongodb_records
-from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine
-from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image, is_datetime_formatted_str
+from src.crawler.crawler.utils.mongo_utils import get_mongodb_records
+from src.crawler.crawler.utils.mysql_engine import MySQLEngine
+from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image, is_datetime_formatted_str, df_generator_wrapper
 from src.crawler.crawler.constants import STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS
 
 
@@ -50,25 +50,31 @@ class ETLRequest():
     def __init__(self, config: dict):
         # fields
         self.extract: dict = None
+        self.transform: dict = None
+        self.load: dict = None
 
         # set fields with validation
         config = self._validate_config(config)
         self.extract = config['extract']
+        self.transform = config['transform']
+        self.load = config['load']
 
     def _validate_config(self, config: dict) -> dict:
-        if 'extract' not in config:
-            config['extract'] = {}
+        for key in ['extract', 'transform', 'load']:
+            if key not in config:
+                config[key] = {}
         self._validate_config_extract(config['extract'])
+        self._validate_config_transform(config['transform'])
         return config
 
     @staticmethod
-    def _validate_config_extract(config_extract: dict):
+    def _validate_config_extract(config_: dict):
         # ensure specified options are a subset of valid options
         valid_keys = ['filters', 'limit']
-        assert len(set(list(config_extract.keys())) - set(valid_keys)) == 0
+        assert len(set(list(config_.keys())) - set(valid_keys)) == 0
 
         # validate extract filters
-        for key, val in config_extract['filters'].items():
+        for key, val in config_['filters'].items():
             if key == 'video_id':
                 assert isinstance(val, str) or (isinstance(val, list) and all([isinstance(s, str) for s in val]))
             elif key == 'username':
@@ -85,10 +91,17 @@ class ETLRequest():
                 raise NotImplementedError(f'Extract condition {key} is not available.')
 
         # validate other extract options
-        if 'limit' in config_extract:
-            assert isinstance(config_extract['limit'], int)
+        if 'limit' in config_:
+            assert isinstance(config_['limit'], int)
         else:
-            config_extract['limit'] = None
+            config_['limit'] = None
+
+    @staticmethod
+    def _validate_config_transform(config_: dict):
+        if 'include_additional_keys' in config_:
+            assert isinstance(config_['include_additional_keys'], list)
+            assert all([isinstance(val, str) for val in config_['include_additional_keys']])
+            # assert all([val in ALLOWED_COLS_LIST for val in config_['include_additional_keys']])
 
 
 """ ETL Extract """
@@ -407,11 +420,13 @@ def etl_clean_raw_data_one_df(df: pd.DataFrame):
 
     return df
 
+
+@df_generator_wrapper
 def etl_clean_raw_data(data: dict,
-                       req: ETLRequest):
+                       req: ETLRequest) \
+        -> Generator[pd.DataFrame, None, None]:
     """Clean the raw data"""
-    for df in data['stats']:
-        yield etl_clean_raw_data_one_df(df)
+    return next(data['stats'])
 
 def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[str, int]]:
     """
@@ -433,7 +448,10 @@ def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[s
 
     return words, counts
 
-def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None]):
+@df_generator_wrapper
+def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None],
+                                    req: ETLRequest) \
+        -> Generator[pd.DataFrame, None, None]:
     """
     Parse out raw model inputs and outputs from generated DataFrames into raw feature records.
     Text is space-separated word lists.
@@ -442,17 +460,27 @@ def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None])
     keys_num = ['subscriber_count', 'comment_count', 'like_count', 'view_count']
     keys_meta = ['username', 'video_id', 'timestamp_accessed']
     key_tokens = "tokens"
+    keys_other = req.transform['include_additional_keys'] if 'include_additional_keys' in req.transform else []
 
     # dfs: List[pd.DataFrame] = []
-    while not (df := next(df_gen)).empty:
-        df[key_tokens] = df[keys_text].agg(' '.join, axis=1)
-        yield df[[key_tokens] + keys_num + keys_meta]
+
+    # while not (df := next(df_gen)).empty:
+    #     df[key_tokens] = df[keys_text].agg(' '.join, axis=1)
+    #     yield df[[key_tokens] + keys_num + keys_meta]
+
     # df_out = pd.concat(dfs, axis=0, ignore_index=True)
+
+    df = next(df_gen)
+    if df.empty:
+        raise StopIteration
+    df[key_tokens] = df[keys_text].agg(' '.join, axis=1)
+    return df[list(set([key_tokens] + keys_num + keys_meta + keys_other))]
 
     # return df_out
 
 def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
-                  req: ETLRequest):
+                  req: ETLRequest) \
+        -> Generator[pd.DataFrame, None, None]:
     """Map cleaned raw data to features"""
     # inspect words lists and counts
     if 0:
@@ -474,10 +502,8 @@ def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
             row: pd.Series = df.loc[i]
             print(', '.join([row[key] for key in ['title', 'keywords', 'tags']]))
 
-    a = 5
-
     # featurize text via embedding into Vector Space Model (VSM)
-    raw_features = etl_featurize_make_raw_features(data['stats'])
+    raw_features = etl_featurize_make_raw_features(data['stats'], req)
 
     # featurize thumbnail images
     # TODO: implement this

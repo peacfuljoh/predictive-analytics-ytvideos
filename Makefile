@@ -22,7 +22,7 @@ test-gha:
 	cd $(CR_ROOT_GHA_) && \
 	pytest
 
-run:
+crawl:
 	$(CONDA_ACTIVATE) $(REPO_NAME_) && \
 	cd $(MAIN_ROOT_) && \
 	python main.py

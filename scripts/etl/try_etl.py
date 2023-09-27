@@ -1,7 +1,9 @@
 """Script for experimenting with ETL pipeline"""
 
-from src.preprocessor.featurization_etl import etl_main
-from src.preprocessor.featurization_etl_utils import ETLRequest
+import pandas as pd
+
+from src.preprocessor.prefeaturization_etl import etl_main
+from src.preprocessor.prefeaturization_etl_utils import ETLRequest
 from src.visualization.dashboard import Dashboard
 
 
@@ -12,6 +14,9 @@ etl_config = {
             'username': ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
         },
         # 'limit': 1000
+    },
+    'transform': {
+        'include_additional_keys': ['title', 'upload_date', 'timestamp_first_seen']
     }
 }
 
@@ -19,7 +24,11 @@ req = ETLRequest(etl_config)
 
 data = etl_main(req)
 
+dfs = []
+while not (df_ := next(data)).empty:
+    dfs.append(df_)
+df = pd.concat(dfs, axis=0, ignore_index=True)
 
-if 0:
-    dashboard = Dashboard(data['stats'])
+if 1:
+    dashboard = Dashboard(df)
     dashboard.run()

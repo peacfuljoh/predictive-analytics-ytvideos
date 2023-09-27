@@ -2,7 +2,7 @@
 
 from typing import List
 
-from src.crawler.crawler.utils.db_mysql_utils import MySQLEngine, insert_records_from_dict
+from src.crawler.crawler.utils.mysql_engine import MySQLEngine, insert_records_from_dict
 from src.crawler.crawler.utils.misc_utils import load_json
 from src.crawler.crawler.paths import DB_VIDEO_SQL_FNAME, USERNAMES_JSON_PATH
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
@@ -42,7 +42,7 @@ if 1:
     # insert
     usernames: List[str] = load_json(USERNAMES_JSON_PATH)["usernames"]
     data = dict(username=usernames)
-    insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, data)
+    insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, data, DB_CONFIG)
 
 # inspect result
 inspect_videos_db()

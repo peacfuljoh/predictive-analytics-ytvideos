@@ -1,17 +1,12 @@
 """
 Database utils for MySQL including basic CRUD operations and more
-complex functionality specific for the crawlers.
+complex functionality using the engine.
 """
 
-from typing import Callable, Optional, List, Union, Dict, Tuple, Generator
-
-import pandas as pd
+from typing import Dict, Optional, Callable, List, Union, Generator
 
 import mysql.connector
-
-from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames
-from ..config import DB_CONFIG, DB_INFO
-from ..constants import MOST_RECENT_VID_LIMIT, DB_KEY_UPLOAD_DATE, VIDEO_URL_COL_NAME, DB_KEY_TIMESTAMP_FIRST_SEEN
+import pandas as pd
 
 
 
@@ -238,131 +233,38 @@ class MySQLEngine():
         return self.select_records(database, query, mode='pandas', cols=cols_for_df, as_generator=as_generator)
 
 
-
-### Helper functions ###
-def get_usernames_from_db(usernames_desired: Optional[List[str]] = None) -> List[str]:
-    """Get usernames from the users table"""
-    engine = MySQLEngine(DB_CONFIG)
-
-    tablename = DB_INFO["DB_VIDEOS_TABLENAMES"]["users"]
-    query = f'SELECT * FROM {tablename}'
-    usernames: List[tuple] = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query)
-    usernames: List[str] = [e[0] for e in usernames]
-
-    if usernames_desired is not None:
-        set_usernames = set(usernames)
-        set_usernames_desired = set(usernames_desired)
-        assert len(set_usernames_desired - set_usernames) == 0 # ensure that desired usernames are all valid
-        usernames = list(set_usernames.intersection(set_usernames_desired))
-
-    return usernames
-
-def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = None,
-                                    columns: Optional[List[str]] = None) \
-        -> Optional[pd.DataFrame]:
-    """
-    Get video info from meta table for specified users.
-
-    Options:
-    - specify max number of records returned per user
-    - make video urls and append to result
-    """
-    usernames: List[str] = get_usernames_from_db(usernames_desired=usernames_desired)
-
-    assert len(usernames) > 0
-    assert columns is None or (isinstance(columns, list) and len(columns) > 0)
-
-    engine = MySQLEngine(DB_CONFIG)
-
-    tablename: str = DB_INFO["DB_VIDEOS_TABLENAMES"]["meta"]
-
-    dfs: List[pd.DataFrame] = []
-    for username in usernames:
-        # columns spec in query
-        if columns is None:
-            cols_str = '*'
-        else:
-            cols_str = f'{",".join(columns)}'
-
-        # get DataFrame for non-null records
-        query = (f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NOT NULL '
-                 f'ORDER BY {DB_KEY_TIMESTAMP_FIRST_SEEN} DESC LIMIT {MOST_RECENT_VID_LIMIT}')
-
-        if columns is None:
-            df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
-        else:
-            df = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', cols=columns)
-
-        # get DataFrame for null records
-        query = (f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NULL '
-                 f'LIMIT {MOST_RECENT_VID_LIMIT}')
-
-        if columns is None:
-            df2 = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', tablename=tablename)
-        else:
-            df2 = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query, mode='pandas', cols=columns)
-
-        # merge resulting DataFrames
-        if df is None and df2 is None:
-            continue
-        if df is not None and df2 is None:
-            pass
-        if df is None and df2 is not None:
-            df = df2
-        if df is not None and df2 is not None:
-            df = pd.concat((df, df2), axis=0)
-        df = df.reset_index(drop=True)
-
-        # add urls
-        if not (df is None or df.empty):
-            video_urls: List[str] = make_video_urls(list(df['video_id']))
-            s_video_urls = pd.Series(video_urls, name=VIDEO_URL_COL_NAME)
-            df = pd.concat((df, s_video_urls), axis=1)
-
-        # save it
-        dfs.append(df)
-
-    if len(dfs) == 0:
-        print('get_video_info_from_db_with_options() -> Could not find any records matching specified options.')
-        print([usernames, columns])
-        print(query)
-        return None
-
-    return pd.concat(dfs, axis=0, ignore_index=True)
-
-def get_user_video_page_urls_from_db(usernames_desired: Optional[List[str]] = None) -> List[str]:
-    """Get user video page URLs for all users listed in the database or a specified subset"""
-    usernames: List[str] = get_usernames_from_db(usernames_desired=usernames_desired)
-    urls: List[str] = make_videos_page_urls_from_usernames(usernames)
-    return urls
-
 def get_table_colnames(database: str,
-                       tablename: str) \
+                       tablename: str,
+                       db_config: dict) \
         -> List[str]:
     """Get list of column names for a table in a database"""
-    engine = MySQLEngine(DB_CONFIG)
+    engine = MySQLEngine(db_config)
     table_info = engine.describe_table(database, tablename)
     colnames = [tup[0] for tup in table_info]
     return colnames
 
+
 def get_table_primary_keys(database: str,
-                           tablename: str) \
+                           tablename: str,
+                           db_config: dict) \
         -> List[str]:
     """Get list of primary-key column names for a table in a database"""
-    engine = MySQLEngine(DB_CONFIG)
+    engine = MySQLEngine(db_config)
     table_info = engine.describe_table(database, tablename)
     colnames = [tup[0] for tup in table_info if tup[3] == 'PRI']
     return colnames
 
+
 def prep_keys_for_insert_or_update(database: str,
                                    tablename: str,
                                    data: dict,
+                                   db_config: dict,
                                    keys: Optional[List[str]] = None) \
         -> List[str]:
     """Validation and prep of keys for insert and update ops"""
     # if keys not specified, get all column names for this table
     if keys is None:
-        keys = get_table_colnames(database, tablename)
+        keys = get_table_colnames(database, tablename, db_config)
 
     # key list is non-empty
     assert len(keys) > 0
@@ -377,9 +279,11 @@ def prep_keys_for_insert_or_update(database: str,
 
     return keys
 
+
 def insert_records_from_dict(database: str,
                              tablename: str,
                              data: dict,
+                             db_config: dict,
                              keys: Optional[List[str]] = None):
     """
     Insert all or a subset of the info from a dict to a database table. Subset is specified through 'keys' arg.
@@ -393,7 +297,7 @@ def insert_records_from_dict(database: str,
     VALUES (value1, value2, value3, ...)
     ON DUPLICATE KEY UPDATE column1=value1, ...;
     """
-    keys = prep_keys_for_insert_or_update(database, tablename, data, keys=keys)
+    keys = prep_keys_for_insert_or_update(database, tablename, data, db_config, keys=keys)
 
     query = f"INSERT INTO {tablename} ({','.join(keys)}) VALUES (" + ','.join(['%s'] * len(keys)) + ")"
     query += f" ON DUPLICATE KEY UPDATE {keys[0]}={keys[0]}"
@@ -403,12 +307,14 @@ def insert_records_from_dict(database: str,
     else:
         records: List[tuple] = [tuple([data[key] for key in keys])]
 
-    engine = MySQLEngine(DB_CONFIG)
+    engine = MySQLEngine(db_config)
     engine.insert_records_to_table(database, query, records)
+
 
 def update_records_from_dict(database: str,
                              tablename: str,
                              data: dict,
+                             db_config: dict,
                              condition_keys: Optional[List[str]] = None,
                              keys: Optional[List[str]] = None,
                              another_condition: Optional[str] = None):
@@ -422,10 +328,10 @@ def update_records_from_dict(database: str,
     'condition_keys' are the columns that are used in the WHERE clause (which records to update)
     'keys' are the columns to be updated
     """
-    keys = prep_keys_for_insert_or_update(database, tablename, data, keys=keys)
+    keys = prep_keys_for_insert_or_update(database, tablename, data, db_config, keys=keys)
 
     if condition_keys is None:
-        condition_keys = get_table_primary_keys(database, tablename)
+        condition_keys = get_table_primary_keys(database, tablename, db_config)
     assert len(condition_keys) > 0
     assert len(set(condition_keys) - set(data.keys())) == 0
 
@@ -444,6 +350,7 @@ def update_records_from_dict(database: str,
     else:
         records: List[tuple] = [tuple([data[key] for key in keys] + [data[key] for key in condition_keys])]
 
-    engine = MySQLEngine(DB_CONFIG)
+    engine = MySQLEngine(db_config)
     engine.insert_records_to_table(database, query, records)
+
 

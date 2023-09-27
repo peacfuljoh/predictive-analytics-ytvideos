@@ -8,9 +8,10 @@ import pandas as pd
 import scrapy
 
 from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str, print_df_full
-from ..utils.db_mysql_utils import get_video_info_for_stats_spider, insert_records_from_dict, update_records_from_dict
-from ..utils.db_mongo_utils import fetch_url_and_save_image
-from ..config import DB_INFO
+from ..utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
+from ..utils.mysql_engine import insert_records_from_dict, update_records_from_dict
+from ..utils.mongo_utils import fetch_url_and_save_image
+from ..config import DB_INFO, DB_CONFIG
 from ..constants import (VIDEO_URL_COL_NAME, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
                          MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD)
 
@@ -156,9 +157,9 @@ class YouTubeVideoStats(scrapy.Spider):
             pprint(vid_info)
             print('=' * 50)
 
-        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info,
-                                 another_condition='upload_date IS NULL')
-        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info)
+        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info, DB_CONFIG,
+                                 another_condition='upload_date IS NULL') # to avoid overwriting timestamp_first_seen
+        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info, DB_CONFIG)
 
         ### Fetch and save thumbnail to MongoDB database ###
         key_ = 'thumbnail_url'

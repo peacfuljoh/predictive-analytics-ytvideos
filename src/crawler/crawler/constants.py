@@ -24,3 +24,6 @@ META_TEXT_COLS = ['video_id', 'username', 'title', 'keywords', 'description', 't
 META_ALL_COLS_NO_URL = META_NUMERICAL_COLS + META_DATETIME_COLS + META_TEXT_COLS
 META_URL_COLS = ['thumbnail_url']
 META_ALL_COLS = META_ALL_COLS_NO_URL + META_URL_COLS
+
+# other
+VIDEO_STATS_CAPTURE_WINDOW_DAYS = 3 # number of days into the past to consider current videos

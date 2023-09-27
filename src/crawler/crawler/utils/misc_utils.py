@@ -80,10 +80,16 @@ def apply_regex(s: str,
         return convert_num_str_to_int(substring)
     return substring
 
-def get_ts_now_str(mode: str) -> str:
+def get_ts_now_str(mode: str,
+                   offset: Optional[datetime.timedelta] = None) \
+        -> str:
     """Get current timestamp"""
     def get_ts_now_formatted(fmt: str) -> str:
-        return datetime.datetime.fromtimestamp(time.time()).strftime(fmt)
+        ts_now = datetime.datetime.fromtimestamp(time.time())
+        if offset is not None:
+            return (ts_now + offset).strftime(fmt)
+        else:
+            return ts_now.strftime(fmt)
 
     assert mode in ['date', 's', 'ms', 'us']
 
@@ -191,3 +197,14 @@ def is_datetime_formatted_str(s: Any, fmt: str) -> bool:
         return True
     except Exception as e:
         return False
+
+
+def df_generator_wrapper(func):
+    """Wrapper for handling StopIteration and other generator exceptions when yielding a DataFrame"""
+    def wrap(*args, **kwargs):
+        while 1:
+            try:
+                yield func(*args, **kwargs)
+            except StopIteration:
+                yield pd.DataFrame()
+    return wrap

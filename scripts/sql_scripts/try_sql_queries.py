@@ -1,5 +1,5 @@
 
-from src.crawler.crawler.utils.db_mysql_utils import get_video_info_for_stats_spider
+from src.crawler.crawler.utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
 from src.crawler.crawler.utils.misc_utils import print_df_full
 
 

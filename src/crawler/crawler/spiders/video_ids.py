@@ -5,8 +5,9 @@ import re
 
 import scrapy
 
-from ..utils.db_mysql_utils import get_user_video_page_urls_from_db, insert_records_from_dict
-from ..config import DB_INFO
+from ..utils.mysql_utils_ytvideos import get_user_video_page_urls_from_db
+from ..utils.mysql_engine import insert_records_from_dict
+from ..config import DB_INFO, DB_CONFIG
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -53,7 +54,7 @@ class YouTubeLatestVideoIds(scrapy.Spider):
             print(d)
             print('=' * 50)
 
-        insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, d, keys=list(d.keys()))
+        insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, d, DB_CONFIG, keys=list(d.keys()))
 
         if self.debug_info:
             print('Database injection was successful.')
