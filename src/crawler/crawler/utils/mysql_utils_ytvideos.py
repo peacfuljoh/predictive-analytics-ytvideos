@@ -21,7 +21,7 @@ def get_usernames_from_db(usernames_desired: Optional[List[str]] = None) -> List
     """Get usernames from the users table"""
     engine = MySQLEngine(DB_CONFIG)
 
-    tablename = DB_INFO["DB_VIDEOS_TABLENAMES"]["users"]
+    tablename = DB_INFO["DB_VIDEOS_TABLES"]["users"]
     query = f'SELECT * FROM {tablename}'
     usernames: List[tuple] = engine.select_records(DB_INFO["DB_VIDEOS_DATABASE"], query)
     usernames: List[str] = [e[0] for e in usernames]
@@ -51,7 +51,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
 
     engine = MySQLEngine(DB_CONFIG)
 
-    tablename: str = DB_INFO["DB_VIDEOS_TABLENAMES"]["meta"]
+    tablename: str = DB_INFO["DB_VIDEOS_TABLES"]["meta"]
 
     dfs: List[pd.DataFrame] = []
     for username in usernames:

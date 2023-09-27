@@ -5,22 +5,26 @@ import re
 from collections import OrderedDict
 from typing import Tuple, Dict, List, Union, Optional, Generator
 from pprint import pprint
+import copy
+import datetime
 
 import numpy as np
 import pandas as pd
 from PIL import Image
 
-from src.crawler.crawler.config import DB_INFO, DB_CONFIG
-from src.crawler.crawler.utils.mongo_utils import get_mongodb_records
+from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
+from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine, get_mongodb_records
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine
 from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image, is_datetime_formatted_str, df_generator_wrapper
 from src.crawler.crawler.constants import STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS
 
 
-DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
-DB_NOSQL_DATABASE = DB_INFO['DB_NOSQL_DATABASE']
-DB_NOSQL_COLLECTION_NAMES = DB_INFO['DB_NOSQL_COLLECTION_NAMES']
+DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
+DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
+DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE'] # NoSQL thumbnails
+DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
+DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
+DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
 
 CHARSETS = {
     'LNP': 'abcdefghijklmnopqrstuvwxyz1234567890.?!$\ ',
@@ -29,6 +33,11 @@ CHARSETS = {
 
 MIN_DESCRIPTION_LEN_0 = 20
 MIN_DESCRIPTION_LEN_1 = 20
+
+REPL_STRS_TS_TO_MKEY = {'-': 'd', ' ': 's', ':': 'c', '.': 'p'}
+REPL_STRS_MKEY_TO_TS = {'d': '-', 's': ' ', 'c': ':', 'p': '.'}
+
+TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 
 
 """ ETL Request class """
@@ -47,8 +56,11 @@ class ETLRequest():
         }
     }
     """
-    def __init__(self, config: dict):
+    def __init__(self,
+                 config: dict,
+                 name: str):
         # fields
+        self.name = name
         self.extract: dict = None
         self.transform: dict = None
         self.load: dict = None
@@ -65,6 +77,7 @@ class ETLRequest():
                 config[key] = {}
         self._validate_config_extract(config['extract'])
         self._validate_config_transform(config['transform'])
+        self._validate_config_load(config['load'])
         return config
 
     @staticmethod
@@ -103,14 +116,27 @@ class ETLRequest():
             assert all([isinstance(val, str) for val in config_['include_additional_keys']])
             # assert all([val in ALLOWED_COLS_LIST for val in config_['include_additional_keys']])
 
+    @staticmethod
+    def _validate_config_load(config_: dict):
+        pass
+
+    def config_as_dict(self) -> dict:
+        """Return full config as a dictionary"""
+        return copy.deepcopy({
+            self.name: dict(
+                extract=self.extract,
+                transform=self.transform,
+                load=self.load
+            )})
+
 
 """ ETL Extract """
 def etl_extract_tabular(req: ETLRequest) -> Tuple[Generator[pd.DataFrame, None, None], dict]:
     """Extract tabular data according to request"""
     # construct query components
     database = DB_VIDEOS_DATABASE
-    tablename_primary = DB_VIDEOS_TABLENAMES['stats']
-    tablename_secondary = DB_VIDEOS_TABLENAMES['meta']
+    tablename_primary = DB_VIDEOS_TABLES['stats']
+    tablename_secondary = DB_VIDEOS_TABLES['meta']
     table_pseudoname_primary = 'stats'
     table_pseudoname_secondary = 'meta'
     join_condition = f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id'
@@ -181,8 +207,9 @@ def etl_extract_nontabular(df: pd.DataFrame,
     """Non-tabular data"""
     video_ids: List[str] = list(df['video_id'].unique())  # get unique video IDs
     records_lst: List[Dict[str, Union[str, bytes]]] = get_mongodb_records(
-        DB_NOSQL_DATABASE,
-        DB_NOSQL_COLLECTION_NAMES['thumbnails'],
+        DB_VIDEOS_NOSQL_DATABASE,
+        DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'],
+        DB_MONGO_CONFIG,
         ids=video_ids
     )
     records: Dict[str, Image] = {e['_id']: convert_bytes_to_image(e['img']) for e in records_lst}
@@ -426,7 +453,8 @@ def etl_clean_raw_data(data: dict,
                        req: ETLRequest) \
         -> Generator[pd.DataFrame, None, None]:
     """Clean the raw data"""
-    return next(data['stats'])
+    df = etl_clean_raw_data_one_df(next(data['stats']))
+    return df
 
 def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[str, int]]:
     """
@@ -509,3 +537,73 @@ def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
     # TODO: implement this
 
     return raw_features
+
+
+
+""" ETL Load """
+def timestamp_to_mkey(ts: datetime.datetime.timestamp) -> str:
+    ts: str = ts.strftime(TIMESTAMP_FMT)
+    for key, val in REPL_STRS_TS_TO_MKEY.items():
+        ts = ts.replace(key, val)
+    return ts
+
+def mkey_to_timestamp(mkey: str) -> datetime.datetime.timestamp:
+    for key, val in REPL_STRS_MKEY_TO_TS.items():
+        mkey = mkey.replace(key, val)
+    mkey = datetime.datetime.strptime(mkey, TIMESTAMP_FMT)
+    return mkey
+
+def etl_load_prefeatures_df_to_dict(df: pd.DataFrame) \
+        -> List[dict]:
+    """
+    Convert DataFrame with prefeatures info into dict for MongoDB insertion.
+
+    Format:
+    {
+        <video_id>: {
+            'username': <username>,
+            'records': {
+                <timestamp_accessed>: <dict with prefeatures>
+            }
+        },
+        ...
+    }
+    """
+    cols_exclude = ['username', 'video_id']
+    cols_include = None
+
+    update: List[dict] = [] # update cmds
+    for video_id, df_ in df.groupby('video_id'):
+        # get info for DB update
+        if cols_include is None:
+            cols_include = [col for col in df_.columns if col not in cols_exclude]
+        username = df_.iloc[0]['username'] # should be only one username
+        records = df_.loc[:, cols_include].set_index('timestamp_accessed').to_dict('index')
+
+        # include update for username
+        update_ = {
+            '$set': {f'{video_id}.username': username}
+        }
+        update.append(update_)
+
+        # include update for prefeatures
+        for ts, rec in records.items():
+            ts_str = timestamp_to_mkey(ts)
+            update_ = {
+                '$set': {f'{video_id}.{ts_str}': rec}
+            }
+            update.append(update_)
+
+    return update
+
+def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
+                         req: ETLRequest):
+    """Load prefeatures to NoSQL database."""
+    engine = MongoDBEngine(DB_MONGO_CONFIG,
+                           database=DB_FEATURES_NOSQL_DATABASE,
+                           collection=DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'])
+
+    while not (df := next(data['stats'])).empty:
+        filter = {'_id': req.name}
+        update = etl_load_prefeatures_df_to_dict(df)
+        engine.update_records(filter, update, upsert=True)

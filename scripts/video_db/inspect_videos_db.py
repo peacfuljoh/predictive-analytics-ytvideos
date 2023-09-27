@@ -10,7 +10,7 @@ from src.crawler.crawler.utils.misc_utils import get_ts_now_str, print_df_full
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
+DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
 
 
 
@@ -18,14 +18,14 @@ def inject_toy_data():
     database = DB_VIDEOS_DATABASE
 
     # users table
-    tablename = DB_VIDEOS_TABLENAMES['users']
+    tablename = DB_VIDEOS_TABLES['users']
     d = dict(username='user1')
     insert_records_from_dict(database, tablename, d, DB_CONFIG)
     d = dict(username=['user2', 'user3'])
     insert_records_from_dict(database, tablename, d, DB_CONFIG)
 
     # video_meta table
-    tablename = DB_VIDEOS_TABLENAMES['meta']
+    tablename = DB_VIDEOS_TABLES['meta']
     d1 = dict(
         video_id='SD544S3MO5',
         username='user3',
@@ -59,7 +59,7 @@ def inject_toy_data():
         update_records_from_dict(database, tablename, d2, DB_CONFIG)
 
     # video_stats table
-    tablename = DB_VIDEOS_TABLENAMES['stats']
+    tablename = DB_VIDEOS_TABLES['stats']
     d1 = dict(
         video_id='SD544S3MO5',
         timestamp_accessed=get_ts_now_str(mode='ms'),
@@ -92,7 +92,7 @@ def inspect_videos_db(inject_data: bool = False):
     engine = MySQLEngine(DB_CONFIG)
 
     # see table schemas and contents
-    for _, tablename in DB_VIDEOS_TABLENAMES.items():
+    for _, tablename in DB_VIDEOS_TABLES.items():
         table = engine.describe_table(DB_VIDEOS_DATABASE, tablename)
         print('\n' + tablename)
         pprint(table)
@@ -104,7 +104,7 @@ def inspect_videos_db(inject_data: bool = False):
 
     # inspect meta table
     if 0:
-        tablename = DB_VIDEOS_TABLENAMES['meta']
+        tablename = DB_VIDEOS_TABLES['meta']
         df = engine.select_records(DB_VIDEOS_DATABASE, f"SELECT * FROM {tablename}",
                                    mode='pandas', tablename=tablename)
         print('')
@@ -132,8 +132,8 @@ def inspect_videos_db(inject_data: bool = False):
         ]
         df = engine.select_records_with_join(
             DB_VIDEOS_DATABASE,
-            DB_VIDEOS_TABLENAMES['stats'],
-            DB_VIDEOS_TABLENAMES['meta'],
+            DB_VIDEOS_TABLES['stats'],
+            DB_VIDEOS_TABLES['meta'],
             f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id',
             cols,
             table_pseudoname_primary=table_pseudoname_primary,
@@ -144,7 +144,7 @@ def inspect_videos_db(inject_data: bool = False):
 
     # look at histogram of time coverage for videos
     if 1:
-        tablename = DB_VIDEOS_TABLENAMES['stats']
+        tablename = DB_VIDEOS_TABLES['stats']
         df_gen = engine.select_records(DB_VIDEOS_DATABASE, f'SELECT * FROM {tablename}',
                                        mode='pandas', tablename=tablename, as_generator=True)
 

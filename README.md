@@ -47,7 +47,7 @@ plus other non-sensitive info needed by the crawler.
   "REPO_ROOT": "<REPO_DIR_PATH>",
   "DB_INFO": {
     "DB_VIDEOS_DATABASE": "ytvideos",
-    "DB_VIDEOS_TABLENAMES": {
+    "DB_VIDEOS_TABLES": {
       "users": "users",
       "meta": "video_meta",
       "stats": "video_stats"

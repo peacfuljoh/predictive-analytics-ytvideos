@@ -5,7 +5,7 @@ from src.crawler.crawler.config import DB_INFO, DB_CONFIG
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine, update_records_from_dict
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
+DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
 
 
 engine = MySQLEngine(DB_CONFIG)
@@ -15,7 +15,7 @@ engine = MySQLEngine(DB_CONFIG)
 queries = []
 
 if 0:
-    tablename = DB_VIDEOS_TABLENAMES["meta"]
+    tablename = DB_VIDEOS_TABLES["meta"]
     queries += [
         f'ALTER TABLE {tablename} MODIFY COLUMN title VARCHAR(200)',
         f'ALTER TABLE {tablename} MODIFY COLUMN keywords VARCHAR(1000)',
@@ -25,13 +25,13 @@ if 0:
     ]
 
 if 0:
-    tablename = DB_VIDEOS_TABLENAMES['stats']
+    tablename = DB_VIDEOS_TABLES['stats']
     queries += [
         f'ALTER TABLE {tablename} MODIFY COLUMN comment_count MEDIUMINT UNSIGNED'
     ]
 
 if 1:
-    tablename = DB_VIDEOS_TABLENAMES['meta']
+    tablename = DB_VIDEOS_TABLES['meta']
     query = f'SELECT video_id, upload_date FROM {tablename}'
     recs = engine.select_records(DB_VIDEOS_DATABASE, query, mode='pandas', cols=['video_id', 'upload_date'])
     ts_recs_dict = {

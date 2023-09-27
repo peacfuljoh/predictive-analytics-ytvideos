@@ -11,7 +11,7 @@ from ..config import DB_INFO, DB_CONFIG
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
+DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
 
 
 
@@ -46,7 +46,7 @@ class YouTubeLatestVideoIds(scrapy.Spider):
         video_ids: List[str] = list(set(re.findall(regex, s))) # returns portion in parentheses for substrings matching regex
 
         ### Update database ###
-        tablename = DB_VIDEOS_TABLENAMES['meta']
+        tablename = DB_VIDEOS_TABLES['meta']
         username: str = response.url.split("/")[-2][1:]  # username portion starts with "@"
         d = dict(video_id=video_ids, username=[username] * len(video_ids))
 

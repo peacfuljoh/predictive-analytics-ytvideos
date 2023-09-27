@@ -10,16 +10,16 @@ import scrapy
 from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str, print_df_full
 from ..utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
 from ..utils.mysql_engine import insert_records_from_dict, update_records_from_dict
-from ..utils.mongo_utils import fetch_url_and_save_image
-from ..config import DB_INFO, DB_CONFIG
+from ..utils.mongodb_utils_ytvideos import fetch_url_and_save_image
+from ..config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from ..constants import (VIDEO_URL_COL_NAME, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
                          MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD)
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
-DB_NOSQL_DATABASE = DB_INFO['DB_NOSQL_DATABASE']
-DB_NOSQL_COLLECTION_NAMES = DB_INFO['DB_NOSQL_COLLECTION_NAMES']
+DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
+DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE']
+DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
 
 
 def handle_extraction_failure(s: str, response):
@@ -157,15 +157,15 @@ class YouTubeVideoStats(scrapy.Spider):
             pprint(vid_info)
             print('=' * 50)
 
-        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['meta'], vid_info, DB_CONFIG,
+        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['meta'], vid_info, DB_CONFIG,
                                  another_condition='upload_date IS NULL') # to avoid overwriting timestamp_first_seen
-        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLENAMES['stats'], vid_info, DB_CONFIG)
+        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['stats'], vid_info, DB_CONFIG)
 
         ### Fetch and save thumbnail to MongoDB database ###
         key_ = 'thumbnail_url'
         if len(url := vid_info[key_]) > 0:
             try:
-                fetch_url_and_save_image(DB_NOSQL_DATABASE, DB_NOSQL_COLLECTION_NAMES['thumbnails'],
+                fetch_url_and_save_image(DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'], DB_MONGO_CONFIG,
                                          vid_info['video_id'], url, verbose=True)
             except:
                 print(f'Exception during MongoDB database injection for {key_}.')

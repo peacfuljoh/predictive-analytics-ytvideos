@@ -11,7 +11,7 @@ from inspect_videos_db import inspect_videos_db
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLENAMES = DB_INFO['DB_VIDEOS_TABLENAMES']
+DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
 
 
 
@@ -30,7 +30,7 @@ if 0:
 
 # clear current usernames and insert from JSON file
 if 1:
-    tablename = DB_VIDEOS_TABLENAMES['users']
+    tablename = DB_VIDEOS_TABLES['users']
 
     # clear
     if 1:
