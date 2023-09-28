@@ -29,10 +29,6 @@ def inspect_mongodb(inject_data: bool = False):
     print(len(ids))
     # print(ids)
 
-    # keys = engine.get_keys()
-    # print(len(keys))
-    # print(keys)
-
     data = engine.find_many()
     print(len(data))
     pprint(data[:10])

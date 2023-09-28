@@ -5,6 +5,7 @@ import math
 
 from pymongo import MongoClient
 from pymongo.collection import Collection, ObjectId
+from pymongo.errors import BulkWriteError
 
 
 class MongoDBEngine():
@@ -63,6 +64,10 @@ class MongoDBEngine():
             databases = self.get_all_databases()
         return {database: self._db_client[database].list_collection_names() for database in databases}
 
+    def get_ids(self) -> List[str]:
+        """Get all IDs for a collection"""
+        return [str(id) for id in self._get_collection().distinct('_id')]
+
 
     ## DB operations ##
     def _get_collection(self) -> Collection:
@@ -71,42 +76,64 @@ class MongoDBEngine():
         assert self._collection is not None
         return self._db_client[self._database][self._collection]
 
-    def get_ids(self) -> List[str]:
-        """Get all IDs for a collection"""
-        return [str(id) for id in self._get_collection().distinct('_id')]
-
-    def get_keys(self) -> List[str]:
-        """Get all keys within a collection"""
-        cursor = self._get_collection().find()
-        return [key for key in self._get_collection().find_one() if key != '_id']
-
-    def get_ids_and_keys(self) -> Dict[str, List[str]]:
-        """Get all docs and their keys within a collection"""
-        pass
-
     def insert_one(self, record: dict):
         """Insert one record"""
         def func():
             assert '_id' in record
+
             cn = self._get_collection()
             if cn.find_one({"_id": record['_id']}) is not None:
                 raise Exception(f'MongoDBEngine: A record with id {record["_id"]} already exists in collection '
                                 f'{self._collection} of database {self._database}.')
+
             res = cn.insert_one(record)
+
             if self._verbose:
                 print(f'MongoDBEngine: Inserted {1} record with id {res.inserted_id} in collection {self._collection} '
                       f'of database {self._database}.')
+
         return self._query_wrapper(func)
 
-    def insert_many(self,
-                    records: List[dict],
-                    ordered: bool = True):
+    def insert_many(self, records: List[dict]):
         """Insert many records"""
         def func():
+            # # infer records to insert (that don't already exist in the database)
+            # records_ids_all = [rec['_id'] for rec in records]
+            # records_ids: List[str] = list(set(records_ids_all))
+            # assert len(records_ids_all) == len(records_ids)  # ensure no duplicate keys
+            #
+            # # ids of records already in db (duplicate '_id')
+            # exist_ids = [rec['_id'] for rec in self.find_many(records_ids)]
+            # records_to_insert: List[dict] = [rec for rec in records if rec['_id'] not in exist_ids]
+            #
+            # # return if no new records to insert
+            # if len(records_to_insert) == 0:
+            #     return
+
+            records_to_insert = records
+
+            # # perform insertion
+            # cn = self._get_collection()
+            # if self._verbose:
+            #     print(f'Inserting {len(records_to_insert)} of {len(records)} requested records.')
+            # cn.insert_many(records_to_insert, ordered=ordered)
+            try:
+                cn = self._get_collection()
+                cn.insert_many(records_to_insert, ordered=False)
+            except BulkWriteError as e:
+                if self._verbose:
+                    for writeError in e.details['writeErrors']:
+                        print(f"Failed to write record for id {writeError['op']['_id']}")
+        return self._query_wrapper(func)
+
+    def update_one(self,
+                   filter: dict,
+                   update: dict,
+                   upsert: bool = False):
+        """Update a single record"""
+        def func():
             cn = self._get_collection()
-            if self._verbose:
-                print(f'Inserting {len(records)} records.')
-            cn.insert_many(records, ordered=ordered)
+            cn.update_one(filter, update, upsert=upsert)
         return self._query_wrapper(func)
 
     def update_many(self,
