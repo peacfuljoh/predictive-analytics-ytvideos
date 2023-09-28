@@ -4,7 +4,7 @@ from typing import Dict, Union, Optional, Callable, List, Tuple
 import math
 
 from pymongo import MongoClient
-from pymongo.collection import Collection
+from pymongo.collection import Collection, ObjectId
 
 
 class MongoDBEngine():
@@ -51,17 +51,41 @@ class MongoDBEngine():
 
 
     ## DB inspection ##
-    # TODO: implement get_databases()
-    # TODO: implement get_collections()
+    def get_all_databases(self) -> List[str]:
+        """Get all databases"""
+        return self._db_client.list_database_names()
+
+    def get_all_collections(self, database: Optional[str] = None) -> Dict[str, List[str]]:
+        """Get all collections by database or just those for a specified database"""
+        if database is not None:
+            databases = [database]
+        else:
+            databases = self.get_all_databases()
+        return {database: self._db_client[database].list_collection_names() for database in databases}
 
 
     ## DB operations ##
     def _get_collection(self) -> Collection:
+        """Get collection object for queries"""
         assert self._database is not None
         assert self._collection is not None
         return self._db_client[self._database][self._collection]
 
+    def get_ids(self) -> List[str]:
+        """Get all IDs for a collection"""
+        return [str(id) for id in self._get_collection().distinct('_id')]
+
+    def get_keys(self) -> List[str]:
+        """Get all keys within a collection"""
+        cursor = self._get_collection().find()
+        return [key for key in self._get_collection().find_one() if key != '_id']
+
+    def get_ids_and_keys(self) -> Dict[str, List[str]]:
+        """Get all docs and their keys within a collection"""
+        pass
+
     def insert_one(self, record: dict):
+        """Insert one record"""
         def func():
             assert '_id' in record
             cn = self._get_collection()
@@ -74,19 +98,35 @@ class MongoDBEngine():
                       f'of database {self._database}.')
         return self._query_wrapper(func)
 
-    def update_records(self,
-                       filter: dict,
-                       update: List[dict],
-                       upsert: bool = False):
-        MAX_PIPELINE_LEN = 1000
+    def insert_many(self,
+                    records: List[dict],
+                    ordered: bool = True):
+        """Insert many records"""
         def func():
             cn = self._get_collection()
-            num_pipelines = math.ceil(len(update) / MAX_PIPELINE_LEN)
+            if self._verbose:
+                print(f'Inserting {len(records)} records.')
+            cn.insert_many(records, ordered=ordered)
+        return self._query_wrapper(func)
+
+    def update_many(self,
+                    filter: dict,
+                    update: List[dict],
+                    upsert: bool = False,
+                    max_pipeline_len: Optional[int] = 1000):
+        """Update records"""
+        def func():
+            cn = self._get_collection()
+            num_pipelines = math.ceil(len(update) / max_pipeline_len)
             for i in range(num_pipelines):
-                cn.update_many(filter, update[i * MAX_PIPELINE_LEN: (i + 1) * MAX_PIPELINE_LEN], upsert=upsert)
+                update_i = update[i * max_pipeline_len: (i + 1) * max_pipeline_len]
+                if self._verbose:
+                    print(f'Updating {len(update_i)} records.')
+                cn.update_many(filter, update_i, upsert=upsert)
         return self._query_wrapper(func)
 
     def find_one(self, id: str) -> Optional[dict]:
+        """Find a single record"""
         def func():
             cn = self._get_collection()
             return cn.find_one({"_id": id})
@@ -96,12 +136,34 @@ class MongoDBEngine():
                   ids: Optional[List[str]] = None,
                   limit: int = 0) \
             -> List[dict]:
+        """Find many records"""
         def func():
             cn = self._get_collection()
             # args = {} if ids is None else {"_id": {"$in": [ObjectId(id_) for id_ in ids]}}
-            args = {} if ids is None else {"_id": {"$in": ids}}
-            cursor = cn.find(args, limit=limit)
+            filter = {} if ids is None else {"_id": {"$in": ids}}
+            cursor = cn.find(filter, limit=limit)
             return [d for d in cursor]
+        return self._query_wrapper(func)
+
+    def delete_many(self, ids: Optional[List[str]] = None):
+        """Delete records by id"""
+        assert isinstance(ids, list)
+        def func():
+            cn = self._get_collection()
+            if isinstance(ids, list):
+                filter = {"_id": {"$in": ids}}
+            else:
+                filter = {}
+            cn.delete_many(filter)
+        return self._query_wrapper(func)
+
+    def delete_all_records(self, confirm_delete: str):
+        """Delete all records in a collection"""
+        if confirm_delete != 'yes':
+            return
+        def func():
+            cn = self._get_collection()
+            cn.delete_many({})
         return self._query_wrapper(func)
 
 

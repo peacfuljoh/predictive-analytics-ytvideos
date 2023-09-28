@@ -100,7 +100,7 @@ def inspect_videos_db(inject_data: bool = False):
         df = engine.select_records(DB_VIDEOS_DATABASE, f'SELECT * FROM {tablename}', mode='pandas', tablename=tablename)
         print('')
         print(len(df))
-        print_df_full(df, row_lims=[0, 100])
+        print_df_full(df, row_lims=[0, 10])
 
     # inspect meta table
     if 0:
@@ -114,7 +114,7 @@ def inspect_videos_db(inject_data: bool = False):
         # print_df_full(df)
 
     # see video info for stats spider
-    if 1:
+    if 0:
         df = get_video_info_for_stats_spider()
         print_df_full(df)
 
@@ -165,9 +165,9 @@ def inspect_videos_db(inject_data: bool = False):
         dt_diffs = {key: val / 24 for key, val in dt_diffs.items()} # days
         # dt_diffs = {key: val / 24 for key, val in dt_diffs.items() if 0 < val < 24 * 5} # days
 
-        print('')
-        print(len(dt_diffs))
-        pprint(dt_diffs)
+        # print('')
+        # print(len(dt_diffs))
+        # pprint(dt_diffs)
 
         import matplotlib.pyplot as plt
 

@@ -553,20 +553,18 @@ def mkey_to_timestamp(mkey: str) -> datetime.datetime.timestamp:
     mkey = datetime.datetime.strptime(mkey, TIMESTAMP_FMT)
     return mkey
 
-def etl_load_prefeatures_df_to_dict(df: pd.DataFrame) \
+def etl_load_prefeatures_prepare_update(df: pd.DataFrame,
+                                        req: ETLRequest) \
         -> List[dict]:
     """
     Convert DataFrame with prefeatures info into dict for MongoDB insertion.
 
-    Format:
+    Format for each document:
     {
-        <video_id>: {
-            'username': <username>,
-            'records': {
-                <timestamp_accessed>: <dict with prefeatures>
-            }
-        },
-        ...
+        'username': ...,
+        'timestamp_accessed': ...,
+        'video_id': ...,
+        'etl_config': ...
     }
     """
     cols_exclude = ['username', 'video_id']
@@ -578,19 +576,23 @@ def etl_load_prefeatures_df_to_dict(df: pd.DataFrame) \
         if cols_include is None:
             cols_include = [col for col in df_.columns if col not in cols_exclude]
         username = df_.iloc[0]['username'] # should be only one username
-        records = df_.loc[:, cols_include].set_index('timestamp_accessed').to_dict('index')
+        records = df_.loc[:, cols_include].set_index('timestamp_accessed').to_dict('index') # re-index by timestamp
 
-        # include update for username
-        update_ = {
-            '$set': {f'{video_id}.username': username}
-        }
-        update.append(update_)
-
-        # include update for prefeatures
+        # set update info
         for ts, rec in records.items():
-            ts_str = timestamp_to_mkey(ts)
+            ts_str = ts.strftime(TIMESTAMP_FMT)
+            ts_str_id = ts_str
+            for key in REPL_STRS_TS_TO_MKEY.keys():
+                ts_str_id = ts_str_id.replace(key, '')
             update_ = {
-                '$set': {f'{video_id}.{ts_str}': rec}
+                # '$set': {
+                    '_id': f'{video_id}_{ts_str_id}_{req.name}',
+                    'username': username,
+                    'timestamp_accessed': ts_str,
+                    'video_id': video_id,
+                    'etl_config': req.name,
+                    'data': rec
+                # }
             }
             update.append(update_)
 
@@ -601,9 +603,9 @@ def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
     """Load prefeatures to NoSQL database."""
     engine = MongoDBEngine(DB_MONGO_CONFIG,
                            database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'])
+                           collection=DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
+                           verbose=True)
 
     while not (df := next(data['stats'])).empty:
-        filter = {'_id': req.name}
-        update = etl_load_prefeatures_df_to_dict(df)
-        engine.update_records(filter, update, upsert=True)
+        update = etl_load_prefeatures_prepare_update(df, req)
+        engine.insert_many(update, ordered=False)
