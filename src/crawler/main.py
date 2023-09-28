@@ -8,7 +8,7 @@ from crawler.config import AUTOCRAWL_CONFIG
 
 
 dt_start = get_dt_now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1) # start at next hour
-time_lock = TimeLock(dt_start, AUTOCRAWL_CONFIG["REPEAT_INTVL"], verbose=True)
+time_lock = TimeLock(dt_start, AUTOCRAWL_CONFIG["REPEAT_INTVL"], progress_dur=60 * 5, verbose=True)
 
 while 1:
     print('\n' * 10)

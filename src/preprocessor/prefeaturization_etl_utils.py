@@ -699,7 +699,8 @@ def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
     # insert records
     engine = MongoDBEngine(DB_MONGO_CONFIG,
                            database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'])
+                           collection=DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
+                           verbose=True)
     while not (df := next(data['stats'])).empty:
         records = etl_load_prefeatures_prepare_for_insert(df, req)
         engine.insert_many(records)

@@ -97,33 +97,15 @@ class MongoDBEngine():
     def insert_many(self, records: List[dict]):
         """Insert many records"""
         def func():
-            # # infer records to insert (that don't already exist in the database)
-            # records_ids_all = [rec['_id'] for rec in records]
-            # records_ids: List[str] = list(set(records_ids_all))
-            # assert len(records_ids_all) == len(records_ids)  # ensure no duplicate keys
-            #
-            # # ids of records already in db (duplicate '_id')
-            # exist_ids = [rec['_id'] for rec in self.find_many(records_ids)]
-            # records_to_insert: List[dict] = [rec for rec in records if rec['_id'] not in exist_ids]
-            #
-            # # return if no new records to insert
-            # if len(records_to_insert) == 0:
-            #     return
-
-            records_to_insert = records
-
-            # # perform insertion
-            # cn = self._get_collection()
-            # if self._verbose:
-            #     print(f'Inserting {len(records_to_insert)} of {len(records)} requested records.')
-            # cn.insert_many(records_to_insert, ordered=ordered)
             try:
                 cn = self._get_collection()
-                cn.insert_many(records_to_insert, ordered=False)
+                cn.insert_many(records, ordered=False)
             except BulkWriteError as e:
                 if self._verbose:
-                    for writeError in e.details['writeErrors']:
-                        print(f"Failed to write record for id {writeError['op']['_id']}")
+                    writeErrors = e.details['writeErrors']
+                    print(f"Failed to write {len(writeErrors)} out of {len(records)} records.")
+                    # for writeError in writeErrors:
+                    #     print(f"Failed to write record for id {writeError['op']['_id']}")
         return self._query_wrapper(func)
 
     def update_one(self,

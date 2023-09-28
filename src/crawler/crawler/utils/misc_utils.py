@@ -126,30 +126,33 @@ def get_dt_now() -> datetime.datetime:
 
 class TimeLock():
     """
-    Utility for managing timed events. TimeLock forces a waiting period until the next point in time an integer factor
-    of intervals from an initial starting time. This allows for triggering events at strict intervals, where if one
-    of those intervals is missed, it is skipped.
+    Utility for managing timed events. TimeLock forces a waiting period until the next point in time an integer multiple
+    of intervals ahead of an initial starting time. This allows for triggering events at strict intervals where missed
+    intervals are skipped.
     """
     def __init__(self,
                  dt_start: datetime.datetime,
-                 interval: int,
+                 interval: int, # interval between lock releases
+                 progress_dur: Optional[int] = None, # how often to print update on waiting period (seconds)
                  verbose: bool = False):
         assert (dt_start - get_dt_now()).total_seconds() > 0
 
         self._dt_target = dt_start
         self._interval = interval
+        self._progress_dur = progress_dur
         self._verbose = verbose
 
     def _wait_until_target(self):
-        """Wait until current time catches up to target time"""
-        t_wait = (self._dt_target - get_dt_now()).total_seconds()
-        if t_wait > 0:
+        """Wait until current time catches up to target time."""
+        while (t_wait := (self._dt_target - get_dt_now()).total_seconds()) > 0:
             if self._verbose:
                 print(f'TimeLock: Waiting {t_wait} seconds until {self._dt_target}.')
+            if self._progress_dur is not None:
+                t_wait = min(t_wait, self._progress_dur)
             time.sleep(t_wait)
 
     def _advance_target(self):
-        """Advance target time beyond the current time"""
+        """Advance target time beyond the current time by the minimum integer multiple of the interval."""
         dt_now = get_dt_now()
         dt_target_orig = copy.copy(self._dt_target)
         t_elapsed = (dt_now - self._dt_target).total_seconds()
