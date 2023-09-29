@@ -104,8 +104,6 @@ class MongoDBEngine():
                 if self._verbose:
                     writeErrors = e.details['writeErrors']
                     print(f"Failed to write {len(writeErrors)} out of {len(records)} records.")
-                    # for writeError in writeErrors:
-                    #     print(f"Failed to write record for id {writeError['op']['_id']}")
         return self._query_wrapper(func)
 
     def update_one(self,

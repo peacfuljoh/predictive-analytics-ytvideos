@@ -17,7 +17,7 @@ from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine, get_mongodb_
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine
 from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image, is_datetime_formatted_str, df_generator_wrapper
 from src.crawler.crawler.constants import STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS
-
+from src.etl_pipelines.etl_request import ETLRequest
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
@@ -51,35 +51,16 @@ REPL_STRS_MKEY_TO_TS = {'d': '-', 's': ' ', 'c': ':', 'p': '.'}
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 
 
-""" ETL Request class for prefeatures processing """
-class ETLRequestPrefeatures():
+
+""" ETL request class for prefeatures processing """
+class ETLRequestPrefeatures(ETLRequest):
     """
     Request object for Extract-Transform-Load operations.
     """
     def __init__(self,
                  config: dict,
                  name: str):
-        # fields
-        self.name = name
-        self._extract: dict = None
-        self._transform: dict = None
-        self._load: dict = None
-        self._valid = False
-
-        # set fields with validation
-        config = self._validate_config(config)
-        self._extract = config['extract']
-        self._transform = config['transform']
-        self._load = config['load']
-
-    def _validate_config(self, config: dict) -> dict:
-        for key in ['extract', 'transform', 'load']:
-            if key not in config:
-                config[key] = {}
-        self._validate_config_extract(config['extract'])
-        self._validate_config_transform(config['transform'])
-        self._validate_config_load(config['load'])
-        return config
+        super().__init__(config, name)
 
     def _validate_config_extract(self, config_: dict):
         # ensure specified options are a subset of valid options
@@ -137,10 +118,6 @@ class ETLRequestPrefeatures():
         assert mode in ['extract', 'transform', 'load']
         assert len(set(list(sub_config.keys())) - set(ETL_CONFIG_VALID_KEYS_PREFEATURES[mode])) == 0
 
-    def _check_if_valid(self):
-        if not self._valid:
-            raise Exception('ETL request has not been validated.')
-
     def get_config_as_dict(self,
                            mode: str = 'all',
                            validity_check: bool = True) \
@@ -169,20 +146,7 @@ class ETLRequestPrefeatures():
                           if key_ not in ETL_CONFIG_EXCLUDE_FOR_PREFEATURES[key]}
         return {self.name: d}
 
-    def get_extract(self) -> dict:
-        self._check_if_valid()
-        return self._extract
 
-    def get_transform(self) -> dict:
-        self._check_if_valid()
-        return self._transform
-
-    def get_load(self) -> dict:
-        self._check_if_valid()
-        return self._load
-
-    def set_valid(self, valid: bool):
-        self._valid = valid
 
 def req_to_etl_config_record(req: ETLRequestPrefeatures) -> dict:
     """Get ETL config dict for insertion into prefeatures config db"""
@@ -193,7 +157,7 @@ def req_to_etl_config_record(req: ETLRequestPrefeatures) -> dict:
     }
     return d_req
 
-def verify_valid_etl_config(req: ETLRequestPrefeatures):
+def verify_valid_prefeatures_etl_config(req: ETLRequestPrefeatures):
     """Check that specified ETL config doesn't conflict with any existing configs in the ETL config db"""
     d_req = req_to_etl_config_record(req) # specified config
     engine = MongoDBEngine(DB_MONGO_CONFIG,

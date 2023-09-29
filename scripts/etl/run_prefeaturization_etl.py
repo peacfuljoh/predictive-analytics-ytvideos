@@ -2,8 +2,8 @@
 
 import pandas as pd
 
-from src.preprocessor.prefeaturization_etl import etl_main
-from src.preprocessor.prefeaturization_etl_utils import ETLRequestPrefeatures, verify_valid_etl_config
+from src.etl_pipelines.prefeaturization_etl import etl_main
+from src.etl_pipelines.prefeaturization_etl_utils import ETLRequestPrefeatures, verify_valid_prefeatures_etl_config
 from src.visualization.dashboard import Dashboard
 
 
@@ -35,7 +35,7 @@ if etl_config_name == 'dashboard':
     }
 
 req = ETLRequestPrefeatures(etl_config, etl_config_name)
-verify_valid_etl_config(req)
+verify_valid_prefeatures_etl_config(req)
 
 data = etl_main(req, return_for_dashboard=etl_config_name=='dashboard')
 

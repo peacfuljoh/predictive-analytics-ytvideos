@@ -11,13 +11,13 @@ from PIL import Image
 
 import pandas as pd
 
-from src.preprocessor.prefeaturization_etl_utils import ETLRequestPrefeatures, etl_extract_tabular, etl_extract_nontabular, \
+from src.etl_pipelines.prefeaturization_etl_utils import ETLRequestPrefeatures, etl_extract_tabular, etl_extract_nontabular, \
     etl_clean_raw_data, etl_featurize, etl_load_prefeatures
 
 
 def etl_main(req: ETLRequestPrefeatures,
              return_for_dashboard: bool = False):
-    """Entry point for ETL preprocessor"""
+    """Entry point for ETL etl_pipelines"""
     data = etl_extract(req)
     gen_raw_feats = etl_transform(data, req)
     if return_for_dashboard:
