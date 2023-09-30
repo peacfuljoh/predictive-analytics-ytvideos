@@ -1,9 +1,22 @@
 """Script for experimenting with ETL pipeline"""
 
-import pandas as pd
+from src.crawler.crawler.config import DB_MONGO_CONFIG
+from src.etl_pipelines.featurization_etl import etl_features_main
+from src.etl_pipelines.featurization_etl_utils import (ETLRequestFeatures, DB_FEATURES_NOSQL_DATABASE,
+                                                       DB_FEATURES_NOSQL_COLLECTIONS)
+from src.etl_pipelines.etl_request import validate_etl_config
 
-from src.etl_pipelines.featurization_etl import etl_main
-from src.etl_pipelines.featurization_etl_utils import ETLRequestFeatures, verify_valid_features_etl_config
+
+ETL_CONFIG_VALID_KEYS_FEATURES = dict(
+    extract=['filters', 'limit'],
+    transform=[],
+    load=[]
+)
+ETL_CONFIG_EXCLUDE_KEYS_FEATURES = dict(
+    extract=['filters', 'limit'],
+    transform=[],
+    load=[]
+)
 
 
 etl_config_name = 'test'
@@ -19,7 +32,13 @@ if etl_config_name == 'test':
         }
     }
 
-req = ETLRequestFeatures(etl_config, etl_config_name)
-verify_valid_features_etl_config(req)
+req = ETLRequestFeatures(etl_config,
+                         etl_config_name,
+                         ETL_CONFIG_VALID_KEYS_FEATURES,
+                         ETL_CONFIG_EXCLUDE_KEYS_FEATURES)
+validate_etl_config(req,
+                    DB_MONGO_CONFIG,
+                    DB_FEATURES_NOSQL_DATABASE,
+                    DB_FEATURES_NOSQL_COLLECTIONS['etl_config_features'])
 
-data = etl_main(req)
+etl_features_main(req)

@@ -27,3 +27,4 @@ META_ALL_COLS = META_ALL_COLS_NO_URL + META_URL_COLS
 
 # other
 VIDEO_STATS_CAPTURE_WINDOW_DAYS = 3 # number of days into the past to consider current videos
+TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'

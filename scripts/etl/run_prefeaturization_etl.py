@@ -2,9 +2,27 @@
 
 import pandas as pd
 
-from src.etl_pipelines.prefeaturization_etl import etl_main
-from src.etl_pipelines.prefeaturization_etl_utils import ETLRequestPrefeatures, verify_valid_prefeatures_etl_config
+from src.crawler.crawler.config import DB_MONGO_CONFIG
+from src.etl_pipelines.prefeaturization_etl import etl_prefeatures_main
+from src.etl_pipelines.prefeaturization_etl_utils import (ETLRequestPrefeatures, DB_FEATURES_NOSQL_DATABASE,
+                                                          DB_FEATURES_NOSQL_COLLECTIONS)
+from src.etl_pipelines.etl_request import validate_etl_config
 from src.visualization.dashboard import Dashboard
+
+
+
+ETL_CONFIG_VALID_KEYS_PREFEATURES = dict(
+    extract=['filters', 'limit'],
+    transform=['include_additional_keys'],
+    load=[]
+)
+ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES = dict(
+    extract=['filters', 'limit'],
+    transform=[],
+    load=[]
+)
+
+
 
 
 etl_config_name = 'test'
@@ -34,10 +52,16 @@ if etl_config_name == 'dashboard':
         }
     }
 
-req = ETLRequestPrefeatures(etl_config, etl_config_name)
-verify_valid_prefeatures_etl_config(req)
+req = ETLRequestPrefeatures(etl_config,
+                            etl_config_name,
+                            ETL_CONFIG_VALID_KEYS_PREFEATURES,
+                            ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES)
+validate_etl_config(req,
+                    DB_MONGO_CONFIG,
+                    DB_FEATURES_NOSQL_DATABASE,
+                    DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
 
-data = etl_main(req, return_for_dashboard=etl_config_name=='dashboard')
+data = etl_prefeatures_main(req, return_for_dashboard=etl_config_name == 'dashboard')
 
 if etl_config_name == 'dashboard':
     dfs = []

@@ -1,6 +1,5 @@
 """
-Preprocessor functionality:
-- ETL (raw -> prefeatures)
+ETL (raw -> prefeatures)
     - extract: load from databases
     - transform: clean up raw data and extract text tokens
     - load: send prefeatures to prefeature store
@@ -15,18 +14,19 @@ from src.etl_pipelines.prefeaturization_etl_utils import ETLRequestPrefeatures, 
     etl_clean_raw_data, etl_featurize, etl_load_prefeatures
 
 
-def etl_main(req: ETLRequestPrefeatures,
-             return_for_dashboard: bool = False):
+def etl_prefeatures_main(req: ETLRequestPrefeatures,
+                         return_for_dashboard: bool = False):
     """Entry point for ETL etl_pipelines"""
-    data = etl_extract(req)
-    gen_raw_feats = etl_transform(data, req)
+    data = etl_prefeatures_extract(req)
+    gen_raw_feats = etl_prefeatures_transform(data, req)
     if return_for_dashboard:
         return gen_raw_feats['stats']
-    etl_load(gen_raw_feats, req)
+    etl_prefeatures_load(gen_raw_feats, req)
 
 
 """ Extract """
-def etl_extract(req: ETLRequestPrefeatures) -> Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]]:
+def etl_prefeatures_extract(req: ETLRequestPrefeatures) \
+        -> Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]]:
     """Extract step of ETL pipeline"""
     df, info_tabular_extract = etl_extract_tabular(req)
     # records = etl_extract_nontabular(df, info_tabular_extract)
@@ -35,8 +35,8 @@ def etl_extract(req: ETLRequestPrefeatures) -> Dict[str, Union[Generator[pd.Data
 
 
 """ Transform """
-def etl_transform(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
-                  req: ETLRequestPrefeatures) \
+def etl_prefeatures_transform(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
+                              req: ETLRequestPrefeatures) \
         -> Dict[str, Generator[pd.DataFrame, None, None]]:
     """Transform step of ETL pipeline"""
     gen_stats = etl_clean_raw_data(data, req)
@@ -46,7 +46,7 @@ def etl_transform(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
 
 
 """ Load """
-def etl_load(data: Dict[str, Generator[pd.DataFrame, None, None]],
-             req: ETLRequestPrefeatures):
+def etl_prefeatures_load(data: Dict[str, Generator[pd.DataFrame, None, None]],
+                         req: ETLRequestPrefeatures):
     """Load extracted prefeatures to prefeature store"""
     etl_load_prefeatures(data, req)

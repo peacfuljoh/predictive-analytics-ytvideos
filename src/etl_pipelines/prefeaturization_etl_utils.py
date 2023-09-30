@@ -5,7 +5,6 @@ import re
 from collections import OrderedDict
 from typing import Tuple, Dict, List, Union, Optional, Generator
 from pprint import pprint
-import copy
 import datetime
 
 import numpy as np
@@ -16,8 +15,8 @@ from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine, get_mongodb_records
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine
 from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image, is_datetime_formatted_str, df_generator_wrapper
-from src.crawler.crawler.constants import STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS
-from src.etl_pipelines.etl_request import ETLRequest
+from src.crawler.crawler.constants import STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS, TIMESTAMP_FMT
+from src.etl_pipelines.etl_request import ETLRequest, req_to_etl_config_record
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
@@ -25,17 +24,6 @@ DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE'] # NoSQL thumbnail
 DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
 DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
-
-ETL_CONFIG_VALID_KEYS_PREFEATURES = dict(
-    extract=['filters', 'limit'],
-    transform=['include_additional_keys'],
-    load=[]
-)
-ETL_CONFIG_EXCLUDE_FOR_PREFEATURES = dict(
-    extract=['filters', 'limit'],
-    transform=[],
-    load=[]
-)
 
 CHARSETS = {
     'LNP': 'abcdefghijklmnopqrstuvwxyz1234567890.?!$\ ',
@@ -48,7 +36,6 @@ MIN_DESCRIPTION_LEN_1 = 20
 REPL_STRS_TS_TO_MKEY = {'-': 'd', ' ': 's', ':': 'c', '.': 'p'}
 REPL_STRS_MKEY_TO_TS = {'d': '-', 's': ' ', 'c': ':', 'p': '.'}
 
-TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 
 
 
@@ -57,11 +44,6 @@ class ETLRequestPrefeatures(ETLRequest):
     """
     Request object for Extract-Transform-Load operations.
     """
-    def __init__(self,
-                 config: dict,
-                 name: str):
-        super().__init__(config, name)
-
     def _validate_config_extract(self, config_: dict):
         # ensure specified options are a subset of valid options
         self._validate_config_keys(config_, 'extract')
@@ -101,79 +83,6 @@ class ETLRequestPrefeatures(ETLRequest):
             assert isinstance(config_['include_additional_keys'], list)
             assert all([isinstance(val, str) for val in config_['include_additional_keys']])
 
-    def _validate_config_load(self, config_: dict):
-        # ensure specified options are a subset of valid options
-        self._validate_config_keys(config_, 'load')
-
-        # validate load filters
-        # ...
-
-        # validate other load options
-        # ...
-
-    def _validate_config_keys(self,
-                              sub_config: dict,
-                              mode: str):
-        """Validate keys specified in a sub-config."""
-        assert mode in ['extract', 'transform', 'load']
-        assert len(set(list(sub_config.keys())) - set(ETL_CONFIG_VALID_KEYS_PREFEATURES[mode])) == 0
-
-    def get_config_as_dict(self,
-                           mode: str = 'all',
-                           validity_check: bool = True) \
-            -> dict:
-        """
-        Return full config as a dictionary.
-
-        Arg 'mode' determines what is included in returned dict:
-        - 'all': include everything
-        - 'prefeatures': only include fields relevant to prefeatures extract + transform (i.e. not filters or limit)
-        """
-        if validity_check:
-            self._check_if_valid()
-
-        assert mode in ['all', 'prefeatures']
-        d = copy.deepcopy(dict(
-            extract=self._extract,
-            transform=self._transform,
-            load=self._load
-        ))
-        if mode == 'all':
-            pass
-        elif mode == 'prefeatures':
-            for key in d.keys():
-                d[key] = {key_: val_ for key_, val_ in d[key].items()
-                          if key_ not in ETL_CONFIG_EXCLUDE_FOR_PREFEATURES[key]}
-        return {self.name: d}
-
-
-
-def req_to_etl_config_record(req: ETLRequestPrefeatures) -> dict:
-    """Get ETL config dict for insertion into prefeatures config db"""
-    d_req = req.get_config_as_dict(mode='prefeatures', validity_check=False)
-    d_req = {
-        '_id': req.name,
-        **d_req[req.name]
-    }
-    return d_req
-
-def verify_valid_prefeatures_etl_config(req: ETLRequestPrefeatures):
-    """Check that specified ETL config doesn't conflict with any existing configs in the ETL config db"""
-    d_req = req_to_etl_config_record(req) # specified config
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'],
-                           verbose=True)
-    d_req_exist = engine.find_one(d_req['_id']) # existing config
-
-    # check for invalid ETL config
-    if (d_req_exist is not None) and (d_req_exist['_id'] == d_req['_id']):
-        if d_req != d_req_exist: # ensure that options match exactly
-            raise Exception(f'The specified ETL pipeline options do not match those of '
-                            f'the existing config for name {req.name}.')
-
-    # mark request as valid
-    req.set_valid(True)
 
 
 
@@ -531,27 +440,18 @@ def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None],
     Parse out raw model inputs and outputs from generated DataFrames into raw feature records.
     Text is space-separated word lists.
     """
+    # all keys; final key list contains num + meta + tokens + other
     keys_text = ['title', 'keywords', 'tags']
     keys_num = ['subscriber_count', 'comment_count', 'like_count', 'view_count']
     keys_meta = ['username', 'video_id', 'timestamp_accessed']
     key_tokens = "tokens"
     keys_other = req.get_transform()['include_additional_keys'] if 'include_additional_keys' in req.get_transform() else []
 
-    # dfs: List[pd.DataFrame] = []
-
-    # while not (df := next(df_gen)).empty:
-    #     df[key_tokens] = df[keys_text].agg(' '.join, axis=1)
-    #     yield df[[key_tokens] + keys_num + keys_meta]
-
-    # df_out = pd.concat(dfs, axis=0, ignore_index=True)
-
     df = next(df_gen)
     if df.empty:
         raise StopIteration
     df[key_tokens] = df[keys_text].agg(' '.join, axis=1)
     return df[list(set([key_tokens] + keys_num + keys_meta + keys_other))]
-
-    # return df_out
 
 def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
                   req: ETLRequestPrefeatures) \
@@ -588,18 +488,6 @@ def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
 
 
 """ ETL Load """
-def timestamp_to_mkey(ts: datetime.datetime.timestamp) -> str:
-    ts: str = ts.strftime(TIMESTAMP_FMT)
-    for key, val in REPL_STRS_TS_TO_MKEY.items():
-        ts = ts.replace(key, val)
-    return ts
-
-def mkey_to_timestamp(mkey: str) -> datetime.datetime.timestamp:
-    for key, val in REPL_STRS_MKEY_TO_TS.items():
-        mkey = mkey.replace(key, val)
-    mkey = datetime.datetime.strptime(mkey, TIMESTAMP_FMT)
-    return mkey
-
 def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
                                             req: ETLRequestPrefeatures) \
         -> List[dict]:
@@ -657,7 +545,7 @@ def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
                            database=DB_FEATURES_NOSQL_DATABASE,
                            collection=DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'],
                            verbose=True)
-    d_req = req_to_etl_config_record(req)
+    d_req = req_to_etl_config_record(req, 'subset')
     engine.insert_one(d_req)
 
     # insert records
