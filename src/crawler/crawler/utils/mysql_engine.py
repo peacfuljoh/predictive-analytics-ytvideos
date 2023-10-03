@@ -9,6 +9,9 @@ import mysql.connector
 import pandas as pd
 
 
+SELECT_RECORDS_GEN_MAX_COUNT = 1000
+
+
 
 class MySQLEngine():
     """MySQL convenience class for CRUD and other operations on database records."""
@@ -184,7 +187,7 @@ class MySQLEngine():
             with self._get_connection(database=database) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(query)
-                    while (records := cursor.fetchmany(1000)) is not None:
+                    while (records := cursor.fetchmany(SELECT_RECORDS_GEN_MAX_COUNT)) is not None:
                         if mode == 'pandas':
                             yield pd.DataFrame(records, columns=cols)
                         else:

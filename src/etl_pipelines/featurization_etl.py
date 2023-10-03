@@ -5,12 +5,12 @@ ETL (prefeatures -> features)
     - load: send features to feature store
 """
 
-from typing import Generator
+from typing import Generator, Optional, List
 
 import pandas as pd
 
 from src.etl_pipelines.featurization_etl_utils import \
-    ETLRequestFeatures, etl_extract_token_records, etl_create_vocab, etl_load_vocab_to_db, \
+    ETLRequestFeatures, etl_extract_prefeature_records, etl_create_vocab, etl_load_vocab_to_db, \
     etl_featurize_records_with_vocab, etl_load_features_to_db
 
 
@@ -18,25 +18,26 @@ from src.etl_pipelines.featurization_etl_utils import \
 def etl_features_main(req: ETLRequestFeatures):
     """Entry point for ETL preprocessor"""
     # vocabulary
-    df_gen = etl_features_extract(req)
+    df_gen = etl_features_vocab_extract(req)
     data = etl_features_vocab_transform(df_gen, req)
     etl_features_vocab_load(data, req)
 
     # tokens
-    df_gen = etl_features_extract(req)
+    df_gen = etl_features_tokens_extract(req)
     feat_gen = etl_features_tokens_transform(df_gen, req)
     etl_features_load(feat_gen, req)
 
-def etl_features_extract(req: ETLRequestFeatures) -> Generator[pd.DataFrame, None, None]:
-    """Extract step of ETL pipeline"""
-    return etl_extract_token_records(req)
-
 
 """ Vocabulary """
-def etl_features_vocab_transform(df_gen: Generator[pd.DataFrame, None, None],
+def etl_features_vocab_extract(req: ETLRequestFeatures) \
+        -> Generator[pd.DataFrame, None, None]:
+    """Extract step of ETL pipeline"""
+    return etl_extract_prefeature_records(req, distinct='tokens')
+
+def etl_features_vocab_transform(lst_gen: Generator[List[str], None, None],
                                  req: ETLRequestFeatures):
     """Transform step of ETL pipeline"""
-    return etl_create_vocab(df_gen, req)
+    return etl_create_vocab(lst_gen, req)
 
 def etl_features_vocab_load(data,
                             req: ETLRequestFeatures):
@@ -45,6 +46,11 @@ def etl_features_vocab_load(data,
 
 
 """ Tokens """
+def etl_features_tokens_extract(req: ETLRequestFeatures) \
+        -> Generator[pd.DataFrame, None, None]:
+    """Extract step of ETL pipeline"""
+    return etl_extract_prefeature_records(req)
+
 def etl_features_tokens_transform(df_gen: Generator[pd.DataFrame, None, None],
                                   req: ETLRequestFeatures) \
         -> Generator[pd.DataFrame, None, None]:
@@ -55,3 +61,4 @@ def etl_features_load(feat_gen: Generator[pd.DataFrame, None, None],
                       req: ETLRequestFeatures):
     """Load extracted features to feature store"""
     etl_load_features_to_db(feat_gen, req)
+

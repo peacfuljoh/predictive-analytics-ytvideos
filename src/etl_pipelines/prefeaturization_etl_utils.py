@@ -531,7 +531,7 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
                 'timestamp_accessed': ts_str,
                 'video_id': video_id,
                 'etl_config': req.name,
-                'data': rec
+                **rec
             }
             records_all.append(record_to_insert)
 

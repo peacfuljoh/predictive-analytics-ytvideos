@@ -203,7 +203,10 @@ def is_datetime_formatted_str(s: Any, fmt: str) -> bool:
 
 
 def df_generator_wrapper(func):
-    """Wrapper for handling StopIteration and other generator exceptions when yielding a DataFrame"""
+    """
+    Wrapper for handling StopIteration and other generator exceptions when yielding a DataFrame.
+    Use this to decorate functions that return a DataFrame.
+    """
     def wrap(*args, **kwargs):
         while 1:
             try:

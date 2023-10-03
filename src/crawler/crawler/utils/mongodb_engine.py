@@ -1,11 +1,17 @@
 """MongoDB Engine or CRUD and other ops"""
 
-from typing import Dict, Union, Optional, Callable, List, Tuple
+from typing import Dict, Union, Optional, Callable, List, Tuple, Generator
 import math
+
+import pandas as pd
 
 from pymongo import MongoClient
 from pymongo.collection import Collection, ObjectId
 from pymongo.errors import BulkWriteError
+
+
+FIND_MANY_GEN_MAX_COUNT = 1000
+
 
 
 class MongoDBEngine():
@@ -152,6 +158,48 @@ class MongoDBEngine():
             return [d for d in cursor]
         return self._query_wrapper(func)
 
+    def find_many_gen(self,
+                      filter: Optional[dict] = None,
+                      projection: Optional[dict] = None) \
+            -> Generator[pd.DataFrame, None, None]:
+        """Generator of records given filter options."""
+        if filter is None:
+            filter = {}
+        if projection is None:
+            projection = {}
+
+        def func():
+            cn = self._get_collection()
+            cursor = cn.find(filter, projection)
+            while 1:
+                recs: List[dict] = []
+                for _ in range(FIND_MANY_GEN_MAX_COUNT):
+                    rec_ = next(cursor, None)
+                    if rec_ is None:
+                        break
+                    recs.append(rec_)
+                yield pd.DataFrame.from_records(recs) if len(recs) > 0 else pd.DataFrame()
+
+        return self._query_wrapper(func)
+
+    def find_distinct_gen(self,
+                          field: str) \
+            -> Generator[pd.DataFrame, None, None]:
+        """Find all distinct values of a given field"""
+        def func():
+            cn = self._get_collection()
+            cursor = cn.aggregate([{"$group": {"_id": "$" + field}}])
+            while 1:
+                recs: List[str] = []
+                for _ in range(FIND_MANY_GEN_MAX_COUNT):
+                    rec_ = next(cursor, None)
+                    if rec_ is None:
+                        break
+                    recs.append(rec_['_id'])
+                yield pd.DataFrame(recs, columns=[field]) if len(recs) > 0 else pd.DataFrame()
+
+        return self._query_wrapper(func)
+
     def delete_many(self, ids: Optional[List[str]] = None):
         """Delete records by id"""
         assert isinstance(ids, list)
@@ -190,3 +238,23 @@ def get_mongodb_records(database: str,
         return engine.find_one(ids)
     if isinstance(ids, list):
         return engine.find_many(ids=ids, limit=limit)
+
+def get_mongodb_record_gen_features(database: str,
+                                    collection: str,
+                                    db_config: dict,
+                                    filter_options: dict,
+                                    projection: Optional[dict] = None,
+                                    distinct: Optional[str] = None) \
+        -> Generator[pd.DataFrame, None, None]:
+    """Prepare MongoDB feature generator with extract configuration."""
+    filter: dict = {}
+    for key, val in filter_options.items():
+        assert key in ['username']
+        if key == 'username':
+            filter[key] = {'$in': val}
+
+    engine = MongoDBEngine(db_config, database=database, collection=collection)
+    if distinct is not None:
+        return engine.find_distinct_gen(distinct)
+    else:
+        return engine.find_many_gen(filter, projection=projection)

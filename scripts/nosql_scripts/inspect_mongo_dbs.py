@@ -47,4 +47,4 @@ def delete_records_by_id():
 
 if __name__ == '__main__':
     # delete_records_by_id()
-    inspect_mongodb(inject_data=True)
+    inspect_mongodb(inject_data=False)
