@@ -24,6 +24,6 @@ def fetch_url_and_save_image(database: str,
                              verbose: bool = False):
     """Fetch image and insert into MongoDB collection, but only if it isn't already there."""
     engine = MongoDBEngine(db_config, database=database, collection=collection, verbose=verbose)
-    if engine.find_one(id=video_id) is None:
+    if engine.find_one_by_id(id=video_id) is None:
         record = {'_id': video_id, 'img': fetch_data_at_url(url, delay=delay)}
         engine.insert_one(record)

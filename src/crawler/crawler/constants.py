@@ -25,6 +25,22 @@ META_ALL_COLS_NO_URL = META_NUMERICAL_COLS + META_DATETIME_COLS + META_TEXT_COLS
 META_URL_COLS = ['thumbnail_url']
 META_ALL_COLS = META_ALL_COLS_NO_URL + META_URL_COLS
 
+# column names for 'prefeatures' collection
+PREFEATURES_USERNAME_COL = 'username'
+PREFEATURES_TIMESTAMP_COL = 'timestamp_accessed'
+PREFEATURES_VIDEO_ID_COL = 'video_id'
+PREFEATURES_ETL_CONFIG_COL = 'etl_config'
+PREFEATURES_TOKENS_COL = 'tokens'
+
+# column names for 'vocabulary' collection
+VOCAB_VOCABULARY_COL = 'vocabulary'
+VOCAB_TIMESTAMP_COL = 'timestamp'
+VOCAB_ETL_CONFIG_COL = 'etl_config_vocabulary'
+
+# column names for 'features' collection
+FEATURES_VECTOR_COL = 'vec'
+FEATURES_ETL_CONFIG_COL = 'etl_config_features'
+
 # other
 VIDEO_STATS_CAPTURE_WINDOW_DAYS = 3 # number of days into the past to consider current videos
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'

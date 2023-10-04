@@ -8,6 +8,8 @@ from typing import Dict, Optional, Callable, List, Union, Generator
 import mysql.connector
 import pandas as pd
 
+from .misc_utils import is_subset
+
 
 SELECT_RECORDS_GEN_MAX_COUNT = 1000
 
@@ -273,7 +275,7 @@ def prep_keys_for_insert_or_update(database: str,
     assert len(keys) > 0
 
     # keys is a subset of dict keys
-    assert len(set(keys) - set(data.keys())) == 0
+    is_subset(keys, data)
 
     # if multiple records, must have same number of records for all keys
     if isinstance(data[keys[0]], list):
@@ -336,7 +338,8 @@ def update_records_from_dict(database: str,
     if condition_keys is None:
         condition_keys = get_table_primary_keys(database, tablename, db_config)
     assert len(condition_keys) > 0
-    assert len(set(condition_keys) - set(data.keys())) == 0
+    is_subset(condition_keys, data)
+    # assert len(set(condition_keys) - set(data.keys())) == 0
 
     query = f"UPDATE {tablename} SET " + ', '.join([key + ' = %s' for key in keys])
     query += ' WHERE ' + ' AND '.join([key + ' = %s' for key in condition_keys])

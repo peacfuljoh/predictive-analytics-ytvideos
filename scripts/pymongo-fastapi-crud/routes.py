@@ -11,11 +11,11 @@ def create_book(request: Request, book: Book = Body(...)):
     """Insert a new book into the database"""
     book = jsonable_encoder(book)
     # print(book)
-    if (book_ := request.app.database["books"].find_one({"_id": book['_id']})) is not None:
+    if (book_ := request.app.database["books"].find_one_by_id({"_id": book['_id']})) is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Book with ID {book_['_id']} already exists.")
 
     new_book = request.app.database["books"].insert_one(book)
-    created_book = request.app.database["books"].find_one({"_id": new_book.inserted_id})
+    created_book = request.app.database["books"].find_one_by_id({"_id": new_book.inserted_id})
 
     return created_book
 
@@ -29,7 +29,7 @@ def list_books(request: Request):
 @router.get("/{id}", response_description="Get a single book by id", response_model=Book)
 def find_book(id: str, request: Request):
     """Find a book by its unique ID"""
-    if (book := request.app.database["books"].find_one({"_id": id})) is not None:
+    if (book := request.app.database["books"].find_one_by_id({"_id": id})) is not None:
         return book
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Book with ID {id} not found")
@@ -44,7 +44,7 @@ def update_book(id: str, request: Request, book: BookUpdate = Body(...)):
         if update_result.modified_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Book with ID {id} not found")
 
-    if (existing_book := request.app.database["books"].find_one({"_id": id})) is not None:
+    if (existing_book := request.app.database["books"].find_one_by_id({"_id": id})) is not None:
         return existing_book
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Book with ID {id} not found")

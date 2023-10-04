@@ -9,6 +9,8 @@ from pymongo import MongoClient
 from pymongo.collection import Collection, ObjectId
 from pymongo.errors import BulkWriteError
 
+from ..utils.misc_utils import is_list_of_strings
+
 
 FIND_MANY_GEN_MAX_COUNT = 1000
 
@@ -137,16 +139,31 @@ class MongoDBEngine():
                 cn.update_many(filter, update_i, upsert=upsert)
         return self._query_wrapper(func)
 
-    def find_one(self, id: str) -> Optional[dict]:
+    def find_one_by_id(self, id: str) -> Optional[dict]:
         """Find a single record"""
         def func():
             cn = self._get_collection()
             return cn.find_one({"_id": id})
         return self._query_wrapper(func)
 
-    def find_many(self,
-                  ids: Optional[List[str]] = None,
-                  limit: int = 0) \
+    def find_one(self,
+                 filter: Optional[dict] = None,
+                 projection: Optional[dict] = None):
+        """Same as self.find_many_gen() but for a single record."""
+        if filter is None:
+            filter = {}
+        if projection is None:
+            projection = {}
+
+        def func():
+            cn = self._get_collection()
+            cursor = cn.find(filter, projection, limit=1)
+            return next(cursor, None)
+        return self._query_wrapper(func)
+
+    def find_many_by_ids(self,
+                         ids: Optional[List[str]] = None,
+                         limit: int = 0) \
             -> List[dict]:
         """Find many records"""
         def func():
@@ -161,7 +178,16 @@ class MongoDBEngine():
                       filter: Optional[dict] = None,
                       projection: Optional[dict] = None) \
             -> Generator[pd.DataFrame, None, None]:
-        """Generator of records given filter options."""
+        """
+        Generator of records given optional filter and projection arguments.
+
+        Args:
+        - 'filter' is a dict with options analogous to a WHERE clause in a SQL query.
+            e.g. filter = dict(name={'$in': ['a', 'b']}).
+        - 'projection' is a dict with fields to return, analogous to "SELECT item, status FROM ..."
+          instead of "SELECT * FROM ..." in a SQL query:
+            e.g. {"item": 1, "status": 1, "_id": 0} # this drops '_id' in the returned dict
+        """
         if filter is None:
             filter = {}
         if projection is None:
@@ -182,12 +208,20 @@ class MongoDBEngine():
         return self._query_wrapper(func)
 
     def find_distinct_gen(self,
-                          field: str) \
+                          group: str,
+                          filter: Optional[dict] = None) \
             -> Generator[pd.DataFrame, None, None]:
         """Find all distinct values of a given field"""
         def func():
             cn = self._get_collection()
-            cursor = cn.aggregate([{"$group": {"_id": "$" + field}}])
+
+            pipeline = []
+            if filter is not None:
+                pipeline += [filter]
+            pipeline += [{"$group": {"_id": "$" + group}}]
+
+            cursor = cn.aggregate(pipeline)
+
             while 1:
                 recs: List[str] = []
                 for _ in range(FIND_MANY_GEN_MAX_COUNT):
@@ -195,7 +229,7 @@ class MongoDBEngine():
                     if rec_ is None:
                         break
                     recs.append(rec_['_id'])
-                yield pd.DataFrame(recs, columns=[field]) if len(recs) > 0 else pd.DataFrame()
+                yield pd.DataFrame(recs, columns=[group]) if len(recs) > 0 else pd.DataFrame()
 
         return self._query_wrapper(func)
 
@@ -221,39 +255,49 @@ class MongoDBEngine():
         return self._query_wrapper(func)
 
 
-def get_mongodb_records(database: str,
-                        collection: str,
-                        db_config: dict,
-                        ids: Optional[Union[str, List[str]]] = None,
-                        limit: int = 0) \
-        -> Union[dict, List[dict], None]:
-    """Get one or more MongoDB records from a single ID or list of IDs"""
-    assert ids is None or isinstance(ids, (str, list))
+# def get_mongodb_records(database: str,
+#                         collection: str,
+#                         db_config: dict,
+#                         ids: Optional[Union[str, List[str]]] = None,
+#                         limit: int = 0) \
+#         -> Union[dict, List[dict], None]:
+#     """Get one or more MongoDB records from a single ID or list of IDs"""
+#     assert ids is None or isinstance(ids, (str, list))
+#
+#     engine = MongoDBEngine(db_config, database=database, collection=collection)
+#     if ids is None:
+#         return engine.find_many(limit=limit)
+#     if isinstance(ids, str):
+#         return engine.find_one(ids)
+#     if isinstance(ids, list):
+#         return engine.find_many(ids=ids, limit=limit)
 
-    engine = MongoDBEngine(db_config, database=database, collection=collection)
-    if ids is None:
-        return engine.find_many(limit=limit)
-    if isinstance(ids, str):
-        return engine.find_one(ids)
-    if isinstance(ids, list):
-        return engine.find_many(ids=ids, limit=limit)
-
-def get_mongodb_record_gen_features(database: str,
-                                    collection: str,
-                                    db_config: dict,
-                                    filter_options: dict,
-                                    projection: Optional[dict] = None,
-                                    distinct: Optional[str] = None) \
+def get_mongodb_records_gen(database: str,
+                            collection: str,
+                            db_config: dict,
+                            filter: Optional[dict] = None,
+                            projection: Optional[dict] = None,
+                            distinct: Optional[dict] = None) \
         -> Generator[pd.DataFrame, None, None]:
     """Prepare MongoDB feature generator with extract configuration."""
-    filter: dict = {}
-    for key, val in filter_options.items():
-        assert key in ['username']
-        if key == 'username':
-            filter[key] = {'$in': val}
+    using_filt = filter is not None
+    using_proj = projection is not None
+    using_dist = distinct is not None
+    using_filt_or_proj = using_filt or using_proj
+    assert not (using_filt and using_proj) # at most one can be specified of these two options
+    assert not (using_filt_or_proj and using_dist) # using one or the other, but not both
 
     engine = MongoDBEngine(db_config, database=database, collection=collection)
     if distinct is not None:
-        return engine.find_distinct_gen(distinct)
+        return engine.find_distinct_gen(distinct['group'], filter=distinct.get('filter'))
     else:
-        return engine.find_many_gen(filter, projection=projection)
+        filter_for_req: dict = {}
+        for key, val in filter.items():
+            if isinstance(val, str):
+                filter_for_req[key] = val
+            if is_list_of_strings(val):
+                filter_for_req[key] = {'$in': val}
+            else:
+                raise NotImplementedError(f"Filter type not yet implemented: {key}: {val}.")
+
+        return engine.find_many_gen(filter_for_req, projection=projection)

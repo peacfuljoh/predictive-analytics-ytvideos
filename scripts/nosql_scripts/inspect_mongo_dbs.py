@@ -29,7 +29,7 @@ def inspect_mongodb(inject_data: bool = False):
     print(len(ids))
     # print(ids)
 
-    data = engine.find_many()
+    data = engine.find_many_by_ids()
     print(len(data))
     pprint(data[:10])
 

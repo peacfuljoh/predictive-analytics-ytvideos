@@ -10,8 +10,9 @@ from PIL import Image
 
 import pandas as pd
 
-from src.etl_pipelines.prefeaturization_etl_utils import ETLRequestPrefeatures, etl_extract_tabular, etl_extract_nontabular, \
-    etl_clean_raw_data, etl_featurize, etl_load_prefeatures
+from src.etl_pipelines.prefeaturization_etl_utils import (ETLRequestPrefeatures, etl_extract_tabular,
+                                                          etl_extract_nontabular, etl_clean_raw_data, etl_featurize,
+                                                          etl_load_prefeatures)
 
 
 def etl_prefeatures_main(req: ETLRequestPrefeatures,

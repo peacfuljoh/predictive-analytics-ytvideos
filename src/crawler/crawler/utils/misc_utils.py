@@ -1,8 +1,8 @@
+"""Miscellaneous utils"""
 
-import os
 import json
 import re
-from typing import Union, List, Dict, Optional, Tuple, Any
+from typing import Union, List, Dict, Optional, Tuple, Any, Sequence, Callable
 import datetime
 import time
 from datetime import timedelta
@@ -193,7 +193,7 @@ if __name__ == '__main__':
 
 def is_datetime_formatted_str(s: Any, fmt: str) -> bool:
     """Check that string is date-formatted"""
-    if not isinstance(s, str):
+    if not isinstance(s, str): # possibly redundant, but safer
         return False
     try:
         datetime.datetime.strptime(s, fmt)
@@ -214,3 +214,43 @@ def df_generator_wrapper(func):
             except StopIteration:
                 yield pd.DataFrame()
     return wrap
+
+
+def is_list_of_strings(obj: Sequence) -> bool:
+    """Check that object is a list of strings."""
+    return isinstance(obj, list) and all([isinstance(e, str) for e in obj])
+
+def is_list_of_list_of_strings(obj: Sequence) -> bool:
+    """Check that iterable is a list of lists of strings."""
+    return isinstance(obj, list) and all([is_list_of_strings(lst) for lst in obj])
+
+def is_list_of_formatted_strings(obj: Sequence,
+                                 fmt_check_func: Callable,
+                                 list_len: Optional[int] = None) -> bool:
+    """Check that iterable is list of formatted strings (formatting checked by provided function)."""
+    if isinstance(obj, list):
+        len_cond = True if list_len is None else len(obj) == list_len
+        return len_cond and all([fmt_check_func(e) for e in obj])
+    return False
+
+def is_list_of_list_of_time_range_strings(obj: Sequence,
+                                          func: Callable,
+                                          num_ranges: Optional[int] = None) \
+        -> bool:
+    """Check that object is of the form [[<date_or_timestamp_string>, <date_or_timestamp_string>], ...]."""
+    if isinstance(obj, list):
+        len_cond = True if num_ranges is None else len(obj) == num_ranges
+        return len_cond and all([is_list_of_formatted_strings(lst, func, list_len=2) for lst in obj])
+    return False
+
+def is_subset(obj1: Sequence,
+              obj2: Sequence) \
+        -> bool:
+    """
+    Check that the elements in one iterable comprise a subset of the elements in the other.
+
+    For example:
+        assert_subset([0, 1, 2], [0, 4, 2, 1]) returns True
+        assert_subset([0, 1, 2], [3, 2, 1, 5]) returns False
+    """
+    return len(set(obj1) - set(obj2)) == 0

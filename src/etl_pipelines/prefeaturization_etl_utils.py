@@ -12,10 +12,15 @@ import pandas as pd
 from PIL import Image
 
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
-from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine, get_mongodb_records
+from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine
-from src.crawler.crawler.utils.misc_utils import convert_bytes_to_image, is_datetime_formatted_str, df_generator_wrapper
-from src.crawler.crawler.constants import STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS, TIMESTAMP_FMT
+from src.crawler.crawler.utils.misc_utils import (convert_bytes_to_image, is_datetime_formatted_str,
+                                                  df_generator_wrapper, is_list_of_strings,
+                                                  is_list_of_list_of_time_range_strings)
+from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS, TIMESTAMP_FMT,
+                                           PREFEATURES_USERNAME_COL, PREFEATURES_TIMESTAMP_COL,
+                                           PREFEATURES_VIDEO_ID_COL, PREFEATURES_ETL_CONFIG_COL,
+                                           PREFEATURES_TOKENS_COL)
 from src.etl_pipelines.etl_request import ETLRequest, req_to_etl_config_record
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
@@ -39,6 +44,9 @@ REPL_STRS_MKEY_TO_TS = {'d': '-', 's': ' ', 'c': ':', 'p': '.'}
 
 
 
+
+
+
 """ ETL request class for prefeatures processing """
 class ETLRequestPrefeatures(ETLRequest):
     """
@@ -51,17 +59,17 @@ class ETLRequestPrefeatures(ETLRequest):
         # validate extract filters
         for key, val in config_['filters'].items():
             if key == 'video_id':
-                assert isinstance(val, str) or (isinstance(val, list) and all([isinstance(s, str) for s in val]))
+                assert isinstance(val, str) or is_list_of_strings(val)
             elif key == 'username':
-                assert isinstance(val, str) or (isinstance(val, list) and all([isinstance(s, str) for s in val]))
+                assert isinstance(val, str) or is_list_of_strings(val)
             elif key == 'upload_date':
                 fmt = '%Y-%m-%d'
-                assert (is_datetime_formatted_str(val, fmt) or
-                        (isinstance(val, list) and len(val) == 2 and all([is_datetime_formatted_str(s, fmt) for s in val])))
+                func = lambda s: is_datetime_formatted_str(s, fmt)
+                assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
             elif key == 'timestamp_accessed':
                 fmt = '%Y-%m-%d %H:%M:%S.%f'
-                assert (is_datetime_formatted_str(val, fmt) or
-                        (isinstance(val, list) and len(val) == 2 and all([is_datetime_formatted_str(s, fmt) for s in val])))
+                func = lambda s: is_datetime_formatted_str(s, fmt)
+                assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
             else:
                 raise NotImplementedError(f'Extract condition {key} is not available.')
 
@@ -81,7 +89,7 @@ class ETLRequestPrefeatures(ETLRequest):
         # validate other transform options
         if 'include_additional_keys' in config_:
             assert isinstance(config_['include_additional_keys'], list)
-            assert all([isinstance(val, str) for val in config_['include_additional_keys']])
+            assert is_list_of_strings(list(config_['include_additional_keys']))
 
 
 
@@ -161,15 +169,17 @@ def etl_extract_nontabular(df: pd.DataFrame,
                            info_tabular_extract: dict) \
         -> Dict[str, Image]:
     """Non-tabular data"""
-    video_ids: List[str] = list(df['video_id'].unique())  # get unique video IDs
-    records_lst: List[Dict[str, Union[str, bytes]]] = get_mongodb_records(
-        DB_VIDEOS_NOSQL_DATABASE,
-        DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'],
-        DB_MONGO_CONFIG,
-        ids=video_ids
-    )
-    records: Dict[str, Image] = {e['_id']: convert_bytes_to_image(e['img']) for e in records_lst}
-    return records
+    # TODO: replace call to get_mongodb_records() with call to get_mongodb_records_gen() and iter through gen
+    pass
+    # video_ids: List[str] = list(df['video_id'].unique())  # get unique video IDs
+    # records_lst: List[Dict[str, Union[str, bytes]]] = get_mongodb_records(
+    #     DB_VIDEOS_NOSQL_DATABASE,
+    #     DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'],
+    #     DB_MONGO_CONFIG,
+    #     ids=video_ids
+    # )
+    # records: Dict[str, Image] = {e['_id']: convert_bytes_to_image(e['img']) for e in records_lst}
+    # return records
 
 
 """ ETL Transform """
@@ -444,14 +454,13 @@ def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None],
     keys_text = ['title', 'keywords', 'tags']
     keys_num = ['subscriber_count', 'comment_count', 'like_count', 'view_count']
     keys_meta = ['username', 'video_id', 'timestamp_accessed']
-    key_tokens = "tokens"
     keys_other = req.get_transform()['include_additional_keys'] if 'include_additional_keys' in req.get_transform() else []
 
     df = next(df_gen)
     if df.empty:
         raise StopIteration
-    df[key_tokens] = df[keys_text].agg(' '.join, axis=1)
-    return df[list(set([key_tokens] + keys_num + keys_meta + keys_other))]
+    df[PREFEATURES_TOKENS_COL] = df[keys_text].agg(' '.join, axis=1)
+    return df[list(set([PREFEATURES_TOKENS_COL] + keys_num + keys_meta + keys_other))]
 
 def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
                   req: ETLRequestPrefeatures) \
@@ -524,13 +533,12 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
                 ts_str_id = ts_str_id.replace(key, '')
 
             # define record for insertion
-            id_ = f'{video_id}_{ts_str_id}_{req.name}'
             record_to_insert = {
-                '_id': id_,
-                'username': username,
-                'timestamp_accessed': ts_str,
-                'video_id': video_id,
-                'etl_config': req.name,
+                '_id': f'{video_id}_{ts_str_id}_{req.name}',
+                PREFEATURES_USERNAME_COL: username,
+                PREFEATURES_TIMESTAMP_COL: ts_str,
+                PREFEATURES_VIDEO_ID_COL: video_id,
+                PREFEATURES_ETL_CONFIG_COL: req.name,
                 **rec
             }
             records_all.append(record_to_insert)

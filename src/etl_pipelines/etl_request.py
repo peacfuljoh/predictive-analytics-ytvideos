@@ -1,10 +1,10 @@
 """ETL request parent class"""
 
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Tuple
 import copy
 
 from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
-
+from src.crawler.crawler.utils.misc_utils import is_subset, is_list_of_list_of_strings
 
 
 class ETLRequest():
@@ -16,7 +16,7 @@ class ETLRequest():
                  exclude_keys: Dict[str, List[str]]):
         # fields
         self.name = name
-        self._validate_key_dicts((valid_keys, exclude_keys))
+        self._validate_key_dicts([valid_keys, exclude_keys])
         self._valid_keys = valid_keys
         self._exclude_keys = exclude_keys
 
@@ -31,12 +31,10 @@ class ETLRequest():
         self._transform = config['transform']
         self._load = config['load']
 
-    def _validate_key_dicts(self, dicts: tuple):
+    def _validate_key_dicts(self, dicts: List[dict]):
         """Check that key dicts are valid"""
         for d in dicts:
-            assert (isinstance(d, dict) and
-                    all([isinstance(lst, list) and all([isinstance(val, str) for val in lst])
-                         for lst in d.values()]))
+            assert (isinstance(d, dict) and is_list_of_list_of_strings(list(d.values())))
 
     def _validate_config(self, config: dict) -> dict:
         """Validate configuration"""
@@ -76,7 +74,7 @@ class ETLRequest():
                               mode: str):
         """Validate keys specified in a sub-config."""
         assert mode in ['extract', 'transform', 'load']
-        assert len(set(list(sub_config.keys())) - set(self._valid_keys[mode])) == 0
+        assert is_subset(sub_config, self._valid_keys[mode])
 
     def get_config_as_dict(self,
                            mode: str = 'all',
@@ -147,7 +145,7 @@ def validate_etl_config(req: ETLRequest,
                            database=database,
                            collection=collection,
                            verbose=True)
-    d_req_exist = engine.find_one(d_req['_id']) # existing config
+    d_req_exist = engine.find_one_by_id(d_req['_id']) # existing config
 
     # check for invalid ETL config
     if (d_req_exist is not None) and (d_req_exist['_id'] == d_req['_id']):

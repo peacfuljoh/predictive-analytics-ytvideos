@@ -8,7 +8,7 @@ import datetime
 import pandas as pd
 import numpy as np
 
-from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames, get_ts_now_str
+from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames, get_ts_now_str, is_subset
 from .mysql_engine import MySQLEngine
 from ..config import DB_CONFIG, DB_INFO
 from ..constants import (MOST_RECENT_VID_LIMIT, VIDEO_URL_COL_NAME, DB_KEY_TIMESTAMP_FIRST_SEEN,
@@ -27,10 +27,8 @@ def get_usernames_from_db(usernames_desired: Optional[List[str]] = None) -> List
     usernames: List[str] = [e[0] for e in usernames]
 
     if usernames_desired is not None:
-        set_usernames = set(usernames)
-        set_usernames_desired = set(usernames_desired)
-        assert len(set_usernames_desired - set_usernames) == 0 # ensure that desired usernames are all valid
-        usernames = list(set_usernames.intersection(set_usernames_desired))
+        assert is_subset(usernames_desired, usernames) # ensure that desired usernames are all valid
+        usernames = usernames_desired
 
     return usernames
 
