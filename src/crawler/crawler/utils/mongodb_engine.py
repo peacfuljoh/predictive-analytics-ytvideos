@@ -85,10 +85,9 @@ class MongoDBEngine():
     def insert_one(self, record: dict):
         """Insert one record"""
         def func():
-            assert '_id' in record
-
             cn = self._get_collection()
-            if cn.find_one({"_id": record['_id']}) is not None:
+
+            if ('_id' in record) and (cn.find_one({"_id": record['_id']}) is not None):
                 raise Exception(f'MongoDBEngine: A record with id {record["_id"]} already exists in collection '
                                 f'{self._collection} of database {self._database}.')
 
