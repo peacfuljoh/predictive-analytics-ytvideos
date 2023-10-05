@@ -13,45 +13,51 @@ from src.etl_pipelines.etl_request import validate_etl_config
 ETL_CONFIG_VOCAB_VALID_KEYS = dict(
     extract=['filters', 'etl_config_prefeatures'],
     transform=[],
-    load=[]
+    load=[],
+    preconfig=[PREFEATURES_ETL_CONFIG_COL]
 )
 ETL_CONFIG_VOCAB_EXCLUDE_KEYS = dict(
     extract=[],
     transform=[],
-    load=[]
+    load=[],
+    preconfig=[]
 )
 
 ETL_CONFIG_FEATURES_VALID_KEYS = dict(
     extract=['filters', 'etl_config_prefeatures', 'etl_config_vocab_name'],
     transform=[],
-    load=[]
+    load=[],
+    preconfig=[PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL]
 )
 ETL_CONFIG_FEATURES_EXCLUDE_KEYS = dict(
     extract=[],
     transform=[],
-    load=[]
+    load=[],
+    preconfig=[]
 )
 
 
 # set up etl config options
-etl_config_prefeatures_name = 'test'
-etl_config_name = 'test'
+etl_config_prefeatures_name = 'test3'
+etl_config_name = 'test217' # vocab and features
 
-usernames = ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
 
-if etl_config_name == 'test':
+if etl_config_name == 'test217':
     etl_config_vocab = {
         'extract': {
             'filters': {
-                'username': usernames
+                'username': ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
             },
         },
-        PREFEATURES_ETL_CONFIG_COL: etl_config_prefeatures_name
+        'preconfig': {
+            PREFEATURES_ETL_CONFIG_COL: etl_config_prefeatures_name
+        }
     }
 
     etl_config_features = copy.deepcopy(etl_config_vocab)
-    etl_config_features[VOCAB_ETL_CONFIG_COL] = etl_config_name
+    etl_config_features['preconfig'][VOCAB_ETL_CONFIG_COL] = etl_config_name
     etl_config_features['extract']['filters'][PREFEATURES_ETL_CONFIG_COL] = etl_config_prefeatures_name
+
 
 # set up request objects
 req_vocab = ETLRequestVocabulary(etl_config_vocab,
@@ -75,4 +81,3 @@ validate_etl_config(req_features,
 
 # run pipeline
 etl_features_main(req_vocab, req_features)
-

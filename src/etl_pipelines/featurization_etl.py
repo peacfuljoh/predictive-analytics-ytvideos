@@ -16,7 +16,7 @@ from gensim.corpora import Dictionary
 
 from src.etl_pipelines.featurization_etl_utils import \
     ETLRequestFeatures, ETLRequestVocabulary, etl_extract_prefeature_records, etl_create_vocab, etl_load_vocab_to_db, \
-    etl_featurize_records_with_vocab, etl_load_features_to_db, etl_load_vocab
+    etl_featurize_records_with_vocab, etl_load_features_to_db, etl_load_vocab_from_db
 from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, VOCAB_ETL_CONFIG_COL
 
 
@@ -28,11 +28,9 @@ def etl_features_main(req_vocab: ETLRequestVocabulary,
 
 def etl_vocabulary_pipeline(req_vocab: ETLRequestVocabulary):
     # extract
-    # TODO: update 'etl_config' in prefeatures records to 'etl_config_prefeatures'
-    # TODO: add etl config names as fields in doc, not through _id
-    # TODO: remove manual _id in prefeatures and other collections
-    filter = {'$match': {PREFEATURES_ETL_CONFIG_COL: req_vocab.get_extract()['etl_config_prefeatures']}}
-    df_gen = etl_extract_prefeature_records(req_vocab, distinct=dict(group=PREFEATURES_TOKENS_COL, filter=filter))
+    filter = {'$match': {PREFEATURES_ETL_CONFIG_COL: req_vocab.get_preconfig()[PREFEATURES_ETL_CONFIG_COL]}}
+    distinct = dict(group=PREFEATURES_TOKENS_COL, filter=filter) # filter is applied first
+    df_gen = etl_extract_prefeature_records(req_vocab, distinct=distinct)
 
     # transform
     vocabulary: Dictionary = etl_create_vocab(df_gen, req_vocab)
@@ -43,7 +41,7 @@ def etl_vocabulary_pipeline(req_vocab: ETLRequestVocabulary):
 def etl_features_pipeline(req_features: ETLRequestFeatures):
     # extract
     df_gen = etl_extract_prefeature_records(req_features)
-    vocabulary: Dictionary = etl_load_vocab(req_features)
+    vocabulary: dict = etl_load_vocab_from_db(req_features)
 
     # transform
     feat_gen = etl_featurize_records_with_vocab(df_gen, vocabulary, req_features)

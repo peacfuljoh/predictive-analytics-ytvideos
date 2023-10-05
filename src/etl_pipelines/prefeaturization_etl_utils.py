@@ -5,7 +5,6 @@ import re
 from collections import OrderedDict
 from typing import Tuple, Dict, List, Union, Optional, Generator
 from pprint import pprint
-import datetime
 
 import numpy as np
 import pandas as pd
@@ -14,10 +13,11 @@ from PIL import Image
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine
-from src.crawler.crawler.utils.misc_utils import (convert_bytes_to_image, is_datetime_formatted_str,
+from src.crawler.crawler.utils.misc_utils import (is_datetime_formatted_str,
                                                   df_generator_wrapper, is_list_of_strings,
                                                   is_list_of_list_of_time_range_strings)
-from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS, TIMESTAMP_FMT,
+from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
+from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
                                            PREFEATURES_USERNAME_COL, PREFEATURES_TIMESTAMP_COL,
                                            PREFEATURES_VIDEO_ID_COL, PREFEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_TOKENS_COL)
@@ -37,15 +37,6 @@ CHARSETS = {
 
 MIN_DESCRIPTION_LEN_0 = 20
 MIN_DESCRIPTION_LEN_1 = 20
-
-REPL_STRS_TS_TO_MKEY = {'-': 'd', ' ': 's', ':': 'c', '.': 'p'}
-REPL_STRS_MKEY_TO_TS = {'d': '-', 's': ' ', 'c': ':', 'p': '.'}
-
-
-
-
-
-
 
 """ ETL request class for prefeatures processing """
 class ETLRequestPrefeatures(ETLRequest):
@@ -527,14 +518,11 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
         # set update info
         for ts, rec in d_records.items():
             # convert ts format
-            ts_str = ts.strftime(TIMESTAMP_FMT)
-            ts_str_id = ts_str
-            for key in REPL_STRS_TS_TO_MKEY.keys():
-                ts_str_id = ts_str_id.replace(key, '')
+            ts_str, ts_str_id = convert_ts_fmt_for_mongo_id(ts)
 
             # define record for insertion
             record_to_insert = {
-                '_id': f'{video_id}_{ts_str_id}_{req.name}',
+                '_id': f'{video_id}_{ts_str_id}_{req.name}', # required to avoid duplication
                 PREFEATURES_USERNAME_COL: username,
                 PREFEATURES_TIMESTAMP_COL: ts_str,
                 PREFEATURES_VIDEO_ID_COL: video_id,

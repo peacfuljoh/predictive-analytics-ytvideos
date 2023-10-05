@@ -9,7 +9,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection, ObjectId
 from pymongo.errors import BulkWriteError
 
-from ..utils.misc_utils import is_list_of_strings
+from .misc_utils import is_list_of_strings
 
 
 FIND_MANY_GEN_MAX_COUNT = 1000
@@ -163,13 +163,15 @@ class MongoDBEngine():
 
     def find_many_by_ids(self,
                          ids: Optional[List[str]] = None,
-                         limit: int = 0) \
+                         limit: int = 0,
+                         filter_other: Optional[dict] = None) \
             -> List[dict]:
         """Find many records"""
         def func():
             cn = self._get_collection()
-            # args = {} if ids is None else {"_id": {"$in": [ObjectId(id_) for id_ in ids]}}
             filter = {} if ids is None else {"_id": {"$in": ids}}
+            if filter_other is not None:
+                filter = {**filter, **filter_other}
             cursor = cn.find(filter, limit=limit)
             return [d for d in cursor]
         return self._query_wrapper(func)
@@ -203,34 +205,50 @@ class MongoDBEngine():
                     if rec_ is None:
                         break
                     recs.append(rec_)
-                yield pd.DataFrame.from_records(recs) if len(recs) > 0 else pd.DataFrame()
+                yield pd.DataFrame(recs) if len(recs) > 0 else pd.DataFrame()
 
         return self._query_wrapper(func)
 
-    def find_distinct_gen(self,
-                          group: str,
-                          filter: Optional[dict] = None) \
+    def find_with_group_gen(self,
+                            group: dict,
+                            filter: Optional[dict] = None) \
             -> Generator[pd.DataFrame, None, None]:
-        """Find all distinct values of a given field"""
+        """Find records using an aggregation pipeline"""
         def func():
             cn = self._get_collection()
 
             pipeline = []
             if filter is not None:
                 pipeline += [filter]
-            pipeline += [{"$group": {"_id": "$" + group}}]
+            pipeline += [{"$group": group}]
 
             cursor = cn.aggregate(pipeline)
 
             while 1:
-                recs: List[str] = []
+                recs: List[dict] = []
                 for _ in range(FIND_MANY_GEN_MAX_COUNT):
                     rec_ = next(cursor, None)
                     if rec_ is None:
                         break
-                    recs.append(rec_['_id'])
-                yield pd.DataFrame(recs, columns=[group]) if len(recs) > 0 else pd.DataFrame()
+                    recs.append(rec_)
+                yield pd.DataFrame(recs) if len(recs) > 0 else pd.DataFrame()
 
+        return self._query_wrapper(func)
+
+    def find_distinct_gen(self,
+                          field: str,
+                          filter: Optional[dict] = None) \
+            -> Generator[pd.DataFrame, None, None]:
+        """
+        Find all distinct values of a given field.
+        Output is a generator of DataFrames that have one column whose label is the field input arg.
+        """
+        def func():
+            group = {"_id": "$" + field}
+            df_gen = self.find_with_group_gen(group, filter=filter)
+            while 1:
+                df = next(df_gen)
+                yield df.rename(columns={'_id': field}) if not df.empty else pd.DataFrame()
         return self._query_wrapper(func)
 
     def delete_many(self, ids: Optional[List[str]] = None):
@@ -279,25 +297,42 @@ def get_mongodb_records_gen(database: str,
                             projection: Optional[dict] = None,
                             distinct: Optional[dict] = None) \
         -> Generator[pd.DataFrame, None, None]:
-    """Prepare MongoDB feature generator with extract configuration."""
+    """
+    Prepare MongoDB feature generator with extract configuration.
+    Provide (filter and/or projection) or distinct, or neither, but not both. Specifying both will raise an error.
+    """
     using_filt = filter is not None
     using_proj = projection is not None
     using_dist = distinct is not None
     using_filt_or_proj = using_filt or using_proj
-    assert not (using_filt and using_proj) # at most one can be specified of these two options
     assert not (using_filt_or_proj and using_dist) # using one or the other, but not both
 
     engine = MongoDBEngine(db_config, database=database, collection=collection)
     if distinct is not None:
+        assert 'group' in distinct
         return engine.find_distinct_gen(distinct['group'], filter=distinct.get('filter'))
     else:
         filter_for_req: dict = {}
-        for key, val in filter.items():
-            if isinstance(val, str):
-                filter_for_req[key] = val
-            if is_list_of_strings(val):
-                filter_for_req[key] = {'$in': val}
-            else:
-                raise NotImplementedError(f"Filter type not yet implemented: {key}: {val}.")
+        if filter:
+            for key, val in filter.items():
+                if isinstance(val, str):
+                    filter_for_req[key] = val
+                elif is_list_of_strings(val):
+                    filter_for_req[key] = {'$in': val}
+                else:
+                    raise NotImplementedError(f"Filter type not yet implemented: {key}: {val}.")
 
         return engine.find_many_gen(filter_for_req, projection=projection)
+
+def load_all_recs_with_distinct(database: str,
+                                collection: str,
+                                db_config: dict,
+                                group: str,
+                                filter: Optional[dict] = None) \
+        -> pd.DataFrame:
+    distinct_ = dict(group=group, filter=filter)  # filter is applied first
+    df_gen = get_mongodb_records_gen(database, collection, db_config, distinct=distinct_)
+    dfs = []
+    while not (df := next(df_gen)).empty:
+        dfs.append(df)
+    return pd.concat(dfs, axis=0, ignore_index=True)

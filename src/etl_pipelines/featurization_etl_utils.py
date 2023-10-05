@@ -9,10 +9,12 @@ from gensim.corpora import Dictionary
 
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL,
-                                           VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL)
+                                           VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL,
+                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL)
 from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, MongoDBEngine
 from src.crawler.crawler.utils.misc_utils import get_ts_now_str, is_list_of_strings, df_generator_wrapper
 from src.etl_pipelines.etl_request import ETLRequest, req_to_etl_config_record
+from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 
 
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
@@ -46,7 +48,12 @@ class ETLRequestVocabulary(ETLRequest):
         else:
             config_['limit'] = None
 
-        for key in ['etl_config_prefeatures']:
+    def _validate_config_preconfig(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'preconfig')
+
+        # validate entries
+        for key in [PREFEATURES_ETL_CONFIG_COL]:
             assert key in config_ and isinstance(config_[key], str)
 
 class ETLRequestFeatures(ETLRequest):
@@ -61,11 +68,17 @@ class ETLRequestFeatures(ETLRequest):
         for key, val in config_['filters'].items():
             if key == 'username':
                 assert isinstance(val, str) or is_list_of_strings(val)
+            elif key == PREFEATURES_ETL_CONFIG_COL:
+                assert isinstance(val, str)
             else:
                 raise NotImplementedError(f'Extract condition {key} is not available.')
 
-        # validate other extract options
-        for key in ['etl_config_prefeatures', 'etl_config_vocabulary']:
+    def _validate_config_preconfig(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'preconfig')
+
+        # validate entries
+        for key in [PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL]:
             assert key in config_ and isinstance(config_[key], str)
 
 
@@ -77,7 +90,12 @@ def etl_extract_prefeature_records(req: Union[ETLRequestVocabulary, ETLRequestFe
                                    projection: Optional[dict] = None,
                                    distinct: Optional[dict] = None) \
         -> Generator[pd.DataFrame, None, None]:
-    """Get a generator of prefeature records."""
+    """
+    Get a generator of prefeature records.
+
+    If using 'distinct' input arg, filter is specified through the distinct dict:
+        e.g. distinct = dict(group=<str>, filter=<dict>)
+    """
     assert projection is None or distinct is None  # at most one can be specified
 
     filter = None if (distinct is not None) else req.get_extract()['filters']
@@ -170,23 +188,41 @@ def etl_load_vocab_to_db(dictionary: Dictionary,
 
 
 """ Tokens """
-def etl_load_vocab(req: ETLRequestFeatures) -> Dictionary:
+def etl_load_vocab_from_db(req: ETLRequestFeatures,
+                           timestamp_vocab: Optional[str] = None) \
+        -> dict:
+    """Load vocabulary given specified options"""
     engine = MongoDBEngine(DB_MONGO_CONFIG,
                            database=DB_FEATURES_NOSQL_DATABASE,
                            collection=DB_FEATURES_NOSQL_COLLECTIONS['vocabulary'],
                            verbose=True)
 
-    etl_config_name: str = req.get_extract()['etl_config_vocabulary']
-    filter = dict(etl_config=etl_config_name)
-    rec = engine.find_one(filter=filter)
-    assert isinstance(rec, dict) and 'vocabulary' in rec
-    dictionary = convert_string_to_gs_dictionary(rec['vocabulary'])
+    # TODO: replace with aggregation pipeline (first filter, then pick record with max timestamp_vocabulary)
+    # get records
+    etl_config_name = req.get_preconfig()[VOCAB_ETL_CONFIG_COL]
+    filter = {VOCAB_ETL_CONFIG_COL: etl_config_name}
+    if timestamp_vocab is not None:
+        filter[VOCAB_TIMESTAMP_COL] = timestamp_vocab
+    recs_all = engine.find_many_gen(filter=filter)
 
-    return dictionary
+    # pick most recent
+    dfs = []
+    while not (df := next(recs_all)).empty:
+        dfs.append(df)
+    df = pd.concat(dfs, axis=0, ignore_index=True)
+    rec: pd.DataFrame = df.loc[df[VOCAB_TIMESTAMP_COL] == df[VOCAB_TIMESTAMP_COL].max()] # argmax not allowed for strings
+    assert len(rec) == 1
+    rec = rec.iloc[0].to_dict()
+
+    # convert vocab string to Dictionary object
+    assert 'vocabulary' in rec
+    rec['vocabulary'] = convert_string_to_gs_dictionary(rec['vocabulary'])
+
+    return rec
 
 @df_generator_wrapper
 def etl_featurize_records_with_vocab(df_gen: Generator[pd.DataFrame, None, None],
-                                     vocabulary: Dictionary,
+                                     vocabulary: dict,
                                      req: ETLRequestFeatures) \
         -> Generator[pd.DataFrame, None, None]:
     """Featurize prefeature records using vocabulary"""
@@ -195,15 +231,19 @@ def etl_featurize_records_with_vocab(df_gen: Generator[pd.DataFrame, None, None]
         raise StopIteration
 
     # map tokens to vectors in-place and rename col
-    df[PREFEATURES_TOKENS_COL] = {i: vocabulary.doc2bow(rec[PREFEATURES_TOKENS_COL].split())
+    df[PREFEATURES_TOKENS_COL] = {i: vocabulary[VOCAB_VOCABULARY_COL].doc2bow(rec[PREFEATURES_TOKENS_COL].split())
                                   for i, rec in df.iterrows()}
     df = df.rename(columns={PREFEATURES_TOKENS_COL: FEATURES_VECTOR_COL})
 
-    # Note: df only contains etl_config_prefeatures column at this point
+    # add vocabulary metadata
+    df[VOCAB_ETL_CONFIG_COL] = req.get_preconfig()[VOCAB_ETL_CONFIG_COL]
+    df[VOCAB_TIMESTAMP_COL] = vocabulary[VOCAB_TIMESTAMP_COL]
 
+    # Note: df only contains etl_config_prefeatures column at this point
     return df
 
 def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
+                                            ts_feat: str,
                                             req: ETLRequestFeatures) \
         -> List[dict]:
     """
@@ -211,10 +251,9 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
     """
     records_all: List[dict] = df.to_dict('records')
     for rec in records_all:
-        # prefeatures_etl_config is already present, need to add etl configs for vocab and features stages
-        rec[VOCAB_ETL_CONFIG_COL] = req.get_extract()[VOCAB_ETL_CONFIG_COL]
-        rec[FEATURES_ETL_CONFIG_COL] = req.get_extract()[FEATURES_ETL_CONFIG_COL]
-
+        rec[FEATURES_ETL_CONFIG_COL] = req.name
+        rec[FEATURES_TIMESTAMP_COL] = ts_feat
+        rec['_id'] += '_' + convert_ts_fmt_for_mongo_id(ts_feat)[1]
     return records_all
 
 def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],
@@ -229,10 +268,11 @@ def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],
     engine.insert_one(d_req)
 
     # save vocab
+    ts_feat = get_ts_now_str('ms') # has to be same for all records in this run
     engine = MongoDBEngine(DB_MONGO_CONFIG,
                            database=DB_FEATURES_NOSQL_DATABASE,
                            collection=DB_FEATURES_NOSQL_COLLECTIONS['features'],
                            verbose=True)
     while not (df := next(feat_gen)).empty:
-        records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, req)
+        records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
         engine.insert_many(records)

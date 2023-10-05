@@ -43,8 +43,17 @@ def delete_records_by_id():
         engine.delete_many(ids=ids)
         # engine.delete_all_records('yes')
 
+def delete_all_records():
+    if input('About to delete records. Are you sure (yes/no)? ') == 'yes':
+        for _, collection in DB_FEATURES_NOSQL_COLLECTIONS.items():
+            engine = MongoDBEngine(DB_MONGO_CONFIG,
+                                   database=DB_FEATURES_NOSQL_DATABASE,
+                                   collection=collection)
+            engine.delete_all_records('yes')
+
 
 
 if __name__ == '__main__':
     # delete_records_by_id()
-    inspect_mongodb(inject_data=False)
+    # inspect_mongodb(inject_data=False)
+    delete_all_records()

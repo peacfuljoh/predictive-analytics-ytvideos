@@ -29,16 +29,17 @@ META_ALL_COLS = META_ALL_COLS_NO_URL + META_URL_COLS
 PREFEATURES_USERNAME_COL = 'username'
 PREFEATURES_TIMESTAMP_COL = 'timestamp_accessed'
 PREFEATURES_VIDEO_ID_COL = 'video_id'
-PREFEATURES_ETL_CONFIG_COL = 'etl_config'
+PREFEATURES_ETL_CONFIG_COL = 'etl_config_prefeatures'
 PREFEATURES_TOKENS_COL = 'tokens'
 
 # column names for 'vocabulary' collection
 VOCAB_VOCABULARY_COL = 'vocabulary'
-VOCAB_TIMESTAMP_COL = 'timestamp'
+VOCAB_TIMESTAMP_COL = 'timestamp_vocabulary'
 VOCAB_ETL_CONFIG_COL = 'etl_config_vocabulary'
 
 # column names for 'features' collection
 FEATURES_VECTOR_COL = 'vec'
+FEATURES_TIMESTAMP_COL = 'timestamp_features'
 FEATURES_ETL_CONFIG_COL = 'etl_config_features'
 
 # other

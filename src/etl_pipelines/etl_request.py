@@ -23,13 +23,16 @@ class ETLRequest():
         self._extract: dict = None
         self._transform: dict = None
         self._load: dict = None
+        self._preconfig: dict = None
         self._valid = False
+        self._config_keys = ['extract', 'transform', 'load', 'preconfig']
 
         # set fields with validation
         config = self._validate_config(config)
         self._extract = config['extract']
         self._transform = config['transform']
         self._load = config['load']
+        self._preconfig = config['preconfig']
 
     def _validate_key_dicts(self, dicts: List[dict]):
         """Check that key dicts are valid"""
@@ -38,12 +41,13 @@ class ETLRequest():
 
     def _validate_config(self, config: dict) -> dict:
         """Validate configuration"""
-        for key in ['extract', 'transform', 'load']:
+        for key in self._config_keys:
             if key not in config:
                 config[key] = {}
         self._validate_config_extract(config['extract'])
         self._validate_config_transform(config['transform'])
         self._validate_config_load(config['load'])
+        self._validate_config_preconfig(config['preconfig'])
         return config
 
     def _validate_config_extract(self, config: dict):
@@ -64,6 +68,10 @@ class ETLRequest():
 
         # ... other validation goes here ...
 
+    def _validate_config_preconfig(self, config: dict):
+        """Validate preconfig"""
+        self._validate_config_keys(config, 'preconfig')
+
     def _check_if_valid(self):
         """Check if config is valid"""
         if not self._valid:
@@ -73,7 +81,7 @@ class ETLRequest():
                               sub_config: dict,
                               mode: str):
         """Validate keys specified in a sub-config."""
-        assert mode in ['extract', 'transform', 'load']
+        assert mode in self._config_keys
         assert is_subset(sub_config, self._valid_keys[mode])
 
     def get_config_as_dict(self,
@@ -94,7 +102,8 @@ class ETLRequest():
         d = copy.deepcopy(dict(
             extract=self._extract,
             transform=self._transform,
-            load=self._load
+            load=self._load,
+            preconfig=self._preconfig
         ))
         if mode == 'all':
             pass
@@ -117,6 +126,11 @@ class ETLRequest():
         """Get load configuration"""
         self._check_if_valid()
         return self._load
+
+    def get_preconfig(self) -> dict:
+        """Get preconfig"""
+        self._check_if_valid()
+        return self._preconfig
 
     def set_valid(self, valid: bool):
         """Set config validity"""

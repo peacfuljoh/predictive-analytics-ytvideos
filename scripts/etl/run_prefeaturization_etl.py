@@ -14,21 +14,23 @@ from src.visualization.dashboard import Dashboard
 ETL_CONFIG_VALID_KEYS_PREFEATURES = dict(
     extract=['filters', 'limit'],
     transform=['include_additional_keys'],
-    load=[]
+    load=[],
+    preconfig=[]
 )
 ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES = dict(
     extract=['filters', 'limit'],
     transform=[],
-    load=[]
+    load=[],
+    preconfig=[]
 )
 
 
 
 
-etl_config_name = 'test'
+etl_config_name = 'test3'
 # etl_config_name = 'dashboard'
 
-if etl_config_name == 'test':
+if etl_config_name == 'test3':
     etl_config = {
         'extract': {
             'filters': {
