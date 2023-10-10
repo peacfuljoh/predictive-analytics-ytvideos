@@ -20,7 +20,7 @@ from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_
 from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
                                            PREFEATURES_USERNAME_COL, PREFEATURES_TIMESTAMP_COL,
                                            PREFEATURES_VIDEO_ID_COL, PREFEATURES_ETL_CONFIG_COL,
-                                           PREFEATURES_TOKENS_COL)
+                                           PREFEATURES_TOKENS_COL, TIMESTAMP_FMT)
 from src.etl_pipelines.etl_request import ETLRequest, req_to_etl_config_record
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
@@ -58,7 +58,7 @@ class ETLRequestPrefeatures(ETLRequest):
                 func = lambda s: is_datetime_formatted_str(s, fmt)
                 assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
             elif key == 'timestamp_accessed':
-                fmt = '%Y-%m-%d %H:%M:%S.%f'
+                fmt = TIMESTAMP_FMT
                 func = lambda s: is_datetime_formatted_str(s, fmt)
                 assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
             else:

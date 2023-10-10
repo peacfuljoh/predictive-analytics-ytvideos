@@ -1,6 +1,6 @@
 """Script for testing train and test"""
 
-from src.ml.train_utils import load_feature_records
+from src.ml.train_utils import load_feature_records, train_test_split, prepare_feature_records
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import load_config_timestamp_sets_for_features
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                                            FEATURES_TIMESTAMP_COL)
@@ -22,10 +22,13 @@ configs = {
 # print_df_full(configs_timestamps)
 
 # load feature records
-df_gen = load_feature_records(configs)
+df_gen, config_data = load_feature_records(configs)
+
+# preprocess feature records
+data_all = prepare_feature_records(df_gen)
 
 # split into train and test
-# TODO: implement next
+data_split = train_test_split(data_all)
 
 # train model
 
