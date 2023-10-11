@@ -43,9 +43,10 @@ FEATURES_TIMESTAMP_COL = 'timestamp_features'
 FEATURES_ETL_CONFIG_COL = 'etl_config_features'
 
 # other
-VIDEO_STATS_CAPTURE_WINDOW_DAYS = 3 # number of days into the past to consider current videos
+VIDEO_STATS_CAPTURE_WINDOW_DAYS = 5 # number of days into the past to consider current videos
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 
-# ML dataset
-MIN_SAMPLES_FOR_DATASET = 10
-NUM_INTVLS_PER_VIDEO = 50
+# ML model
+MIN_VID_SAMPS_FOR_DATASET = 10
+NUM_INTVLS_PER_VIDEO = 100
+VEC_EMBED_DIMS = 1000

@@ -10,8 +10,8 @@ from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL,
-                                           PREFEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_SAMPLES_FOR_DATASET,
-                                           NUM_INTVLS_PER_VIDEO)
+                                           PREFEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
+                                           NUM_INTVLS_PER_VIDEO, VEC_EMBED_DIMS)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import load_config_timestamp_sets_for_features
 
 
@@ -81,17 +81,7 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None]) -> pd.D
         data_all.append(df[keys_extract])
     df_data = pd.concat(data_all, axis=0, ignore_index=True)
 
-    """
-    inputs: 
-        vec
-        subscriber count
-        username (one-hot-coded vector)
-        time_after_upload at source time
-        comment/like/view counts at source time
-        time_after_upload at target time
-    outputs: 
-        comment/like/view counts at target time
-    """
+    
 
     # encode usernames
     usernames = df_data['username'].unique()
@@ -102,7 +92,7 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None]) -> pd.D
     data_all: List[pd.DataFrame] = []
     for _, df in df_data.groupby(KEYS_ID):
         # ignore videos without enough measurements
-        if len(df) < MIN_SAMPLES_FOR_DATASET:
+        if len(df) < MIN_VID_SAMPS_FOR_DATASET:
             continue
 
         # add time elapsed since first timestamp
@@ -111,9 +101,6 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None]) -> pd.D
 
         # generate data samples
         idx_pairs = make_causal_index_pairs(len(df), NUM_INTVLS_PER_VIDEO)
-
-        # TODO: implement the ML feature vector preparation
-        #   - how to encode sparse doc vecs?
 
 
         # add group to dataset
