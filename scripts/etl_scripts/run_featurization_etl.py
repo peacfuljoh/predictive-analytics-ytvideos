@@ -37,7 +37,7 @@ ETL_CONFIG_FEATURES_EXCLUDE_KEYS = dict(
 )
 
 
-# set up etl config options
+# set up etl_scripts config options
 etl_config_prefeatures_name = 'test3'
 etl_config_name = 'test217' # vocab and features
 

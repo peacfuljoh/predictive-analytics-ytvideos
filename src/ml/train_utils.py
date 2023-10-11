@@ -69,7 +69,9 @@ def make_causal_index_pairs(num_idxs: int,
 
     return idxs
 
-def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None]) -> pd.DataFrame:
+def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
+                            ml_config: MLRequest) \
+        -> pd.DataFrame:
     """Stream data in and convert to format needed for ML"""
     # define cols to keep
     keys_extract = KEYS_ID + [FEATURES_VECTOR_COL, PREFEATURES_TIMESTAMP_COL] + KEYS_NUM
