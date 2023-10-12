@@ -255,4 +255,14 @@ def is_subset(obj1: Sequence,
     """
     return len(set(obj1) - set(obj2)) == 0
 
-
+def is_list_of_tuples(obj: Sequence,
+                      len_: Optional[int] = None) \
+        -> bool:
+    """Check that object is a list of tuples, optionally checking length of each tuple."""
+    if isinstance(obj, list):
+        for e in obj:
+            valid = isinstance(e, tuple) and (True if len_ is None else len(e) == len_)
+            if not valid:
+                return False
+        return True
+    return False
