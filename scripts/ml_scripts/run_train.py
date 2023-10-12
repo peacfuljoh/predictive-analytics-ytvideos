@@ -43,7 +43,7 @@ ml_request = MLRequest(config_ml)
 df_gen, config_data = load_feature_records(config_load)
 
 # preprocess feature records
-data_all = prepare_feature_records(df_gen, ml_request)
+data_all, data_bow = prepare_feature_records(df_gen, ml_request)
 
 # split into train and test
 data_split = train_test_split(data_all)

@@ -9,7 +9,7 @@ from sklearn.random_projection import SparseRandomProjection
 
 from src.crawler.crawler.constants import FEATURES_VECTOR_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, \
     ML_MODEL_TYPE_LIN_PROJ_RAND, ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY
-from src.crawler.crawler.utils.misc_utils import is_list_of_tuples
+from src.crawler.crawler.utils.misc_utils import is_list_of_sequences
 from src.ml.ml_request import MLRequest
 
 
@@ -30,7 +30,7 @@ class MLModel():
         assert FEATURES_VECTOR_COL in data.columns
         if self._n_features is not None:
             for _, pts in self._bow_gen(data):
-                assert is_list_of_tuples(pts, 2)
+                assert is_list_of_sequences(pts, (list, tuple), 2)
                 assert all([pt[0] < self._n_features for pt in pts])
 
     def _bow_gen(self, data: pd.DataFrame) -> List[tuple]:
