@@ -1,7 +1,6 @@
 """Train utils"""
 
-from typing import Generator, Tuple, Dict, List, Set
-import math
+from typing import Generator, Tuple, Dict, List, Optional
 
 import pandas as pd
 import numpy as np
@@ -11,21 +10,17 @@ from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL,
                                            PREFEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
-                                           NUM_INTVLS_PER_VIDEO, VEC_EMBED_DIMS, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
-                                           ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_EMBED_DIM,
-                                           ML_MODEL_TYPE_LIN_PROJ_RAND)
+                                           NUM_INTVLS_PER_VIDEO, ML_MODEL_TYPE, ML_MODEL_TYPE_LIN_PROJ_RAND, TRAIN_TEST_SPLIT,
+                                           KEYS_TRAIN_ID, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT,
+                                           KEY_TRAIN_TIME_DIFF)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import load_config_timestamp_sets_for_features
 from src.ml.ml_request import MLRequest
-from src.ml.ml_models import MLModelLinProjRandom
+from src.ml.ml_models import MLModelLinProjRandom, MLModelRegressionSimple
 
 
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
 DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
 
-
-KEYS_ID = ['username', 'video_id']
-KEYS_NUM = ['comment_count', 'like_count', 'view_count', 'subscriber_count']
-KEY_TIME_DIFF = 'time_after_upload' # seconds
 
 
 """ Load """
@@ -75,86 +70,140 @@ def make_causal_index_pairs(num_idxs: int,
             break
     return idxs[0], idxs[1]
 
-def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
-                            ml_request: MLRequest) \
-        -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Stream data in and convert to format needed for ML"""
-    # setup
-    keys_extract = KEYS_ID + [FEATURES_VECTOR_COL, PREFEATURES_TIMESTAMP_COL] + KEYS_NUM # define cols to keep
-    keys_feat = KEYS_NUM + [KEY_TIME_DIFF] # columns of interest for output vectors
+def embed_bow_with_lin_proj_rand(ml_request: MLRequest,
+                                 df_bow: pd.DataFrame) \
+        -> MLModelLinProjRandom:
+    # embed bag-of-words features: data-independent dimensionality reduction
+    model = MLModelLinProjRandom(ml_request)
+    model.fit(df_bow) # only uses shape
+    df_bow[FEATURES_VECTOR_COL] = model.transform(df_bow, dtype=pd.Series)
+    return model
 
-
-    ### get data
-    # stream all data into RAM
+def stream_all_features_into_ram(df_gen: Generator[pd.DataFrame, None, None],
+                                 keys_extract: Optional[List[str]] = None) \
+        -> pd.DataFrame:
+    # stream all feature DataFrames into RAM
     data_all: List[pd.DataFrame] = []
+
     while not (df := next(df_gen)).empty:
         df[PREFEATURES_TIMESTAMP_COL] = pd.to_datetime(df[PREFEATURES_TIMESTAMP_COL], format=TIMESTAMP_FMT)
-        data_all.append(df[keys_extract])
+        if keys_extract is not None:
+            df = df[keys_extract]
+        data_all.append(df)
 
-    df_data = pd.concat(data_all, axis=0, ignore_index=True)
+    return pd.concat(data_all, axis=0, ignore_index=True)
 
+def split_feature_df_and_filter(df_data: pd.DataFrame,
+                                min_samps: Optional[int] = None) \
+        -> Tuple[pd.DataFrame, pd.DataFrame]:
     # filter by group and collect bag-of-words info in a separate DataFrame
     data_all: List[pd.DataFrame] = []
     bows_all: List[pd.DataFrame] = []
-    for _, df in df_data.groupby(KEYS_ID):
+
+    for _, df in df_data.groupby(KEYS_TRAIN_ID):
         # ignore videos without enough measurements
-        if len(df) < MIN_VID_SAMPS_FOR_DATASET:
+        if min_samps is not None and len(df) < min_samps:
             continue
 
         # split bow vectors into separate DataFrame
-        bows_all.append(df.loc[:0, ['username', 'video_id', FEATURES_VECTOR_COL]])
+        assert len(set(df[FEATURES_VECTOR_COL])) == 1 # ensure unique bow representation for this group
+        bows_all.append(df.loc[:0, KEYS_TRAIN_ID + [FEATURES_VECTOR_COL]])
         data_all.append(df.drop(columns=[FEATURES_VECTOR_COL]))
 
     df_data = pd.concat(data_all, axis=0, ignore_index=True)
     df_bow = pd.concat(bows_all, axis=0, ignore_index=True)
 
+    return df_data, df_bow
 
-    ### embed feature vectors
-    # embed bag-of-words features: data-independent dimensionality reduction
-    config_ml = ml_request.get_config()
-    if config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND:
-        model = MLModelLinProjRandom(ml_request)
-        model.fit(df_bow) # only uses shape
-        df_bow[FEATURES_VECTOR_COL] = model.transform(df_bow, dtype=pd.Series)
-
-    # encode usernames in indicator vectors
-    # usernames = df_data['username'].unique()
-    # username_code_vecs: Dict[str, List[int]] = {name: [int(i == j) for j in range(len(usernames))]
-    #                                             for i, name in enumerate(usernames)}
-
-
-    ### prepare input and output vector info
-    # preprocess in groups (one group per video)
+def prepare_input_output_vectors(df_data: pd.DataFrame,
+                                 keys_feat: List[str]) \
+        -> pd.DataFrame:
+    """
+    Prepare non-bow features. Forms measurement pairs (in time).
+    """
     data_all: List[pd.DataFrame] = []
-    for ids, df in df_data.groupby(KEYS_ID):
+
+    for ids, df in df_data.groupby(KEYS_TRAIN_ID): # one group per video
         # sort by timestamp (index pairing assumes time-ordering)
         df = df.sort_values(by=[PREFEATURES_TIMESTAMP_COL])
 
         # add time elapsed since first timestamp
         diffs_ = df[PREFEATURES_TIMESTAMP_COL] - df[PREFEATURES_TIMESTAMP_COL].min()
-        df[KEY_TIME_DIFF] = diffs_.dt.total_seconds()
-        df = df.drop(columns=[PREFEATURES_TIMESTAMP_COL]) # drop timestamp
+        df[KEY_TRAIN_TIME_DIFF] = diffs_.dt.total_seconds()
+        df = df.drop(columns=[PREFEATURES_TIMESTAMP_COL])  # drop timestamp
 
         # generate data samples by causal temporal pairs
         idxs_src, idxs_tgt = make_causal_index_pairs(len(df), NUM_INTVLS_PER_VIDEO)
-        # print(len(idxs_src))
-        df_src = df.iloc[idxs_src].reset_index(drop=True) # has video identifiers
-        df_tgt = df[keys_feat].iloc[idxs_tgt].reset_index(drop=True) # does not have video identifiers
+        df_src = df.iloc[idxs_src].reset_index(drop=True)  # has video identifiers
+        df_tgt = df[keys_feat].iloc[idxs_tgt].reset_index(drop=True) # does not have video identifiers (otherwise concat would duplicate)
         df_src = df_src.rename(columns={key: key + '_src' for key in keys_feat})
         df_tgt = df_tgt.rename(columns={key: key + '_tgt' for key in keys_feat})
         df_feat = pd.concat((df_src, df_tgt), axis=1)
 
         # double-check time ordering
-        assert all(df_feat[KEY_TIME_DIFF + '_tgt'] > df_feat[KEY_TIME_DIFF + '_src'])
+        assert all(df_feat[KEY_TRAIN_TIME_DIFF + '_tgt'] > df_feat[KEY_TRAIN_TIME_DIFF + '_src'])
 
         # add group to dataset
         data_all.append(df_feat)
 
     df_data = pd.concat(data_all, axis=0, ignore_index=True)
 
-    return df_data, df_bow
+    return df_data
 
-def train_test_split(data: pd.DataFrame):
+def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
+                            ml_request: MLRequest) \
+        -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
+    """Stream data in and convert to format needed for ML"""
+    config_ml = ml_request.get_config()
+    assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
+
+    # setup
+    keys_extract = KEYS_TRAIN_ID + [FEATURES_VECTOR_COL, PREFEATURES_TIMESTAMP_COL] + KEYS_TRAIN_NUM  # define cols to keep
+    keys_feat = KEYS_TRAIN_NUM_TGT + [KEY_TRAIN_TIME_DIFF] # columns of interest for output vectors
+
+    # stream all data into RAM
+    df_data = stream_all_features_into_ram(df_gen, keys_extract)
+
+    # filter by group and collect bag-of-words info in a separate DataFrame
+    df_nonbow, df_bow = split_feature_df_and_filter(df_data, MIN_VID_SAMPS_FOR_DATASET)
+
+    # embed bag-of-words features: data-independent dimensionality reduction
+    model_embed = embed_bow_with_lin_proj_rand(ml_request, df_bow) # df_bow modified in-place
+
+    # encode usernames in indicator vectors
+    # usernames = df_data['username'].unique()
+    # username_code_vecs: Dict[str, List[int]] = {name: [int(i == j) for j in range(len(usernames))]
+    #                                             for i, name in enumerate(usernames)}
+
+    # prepare non-bow features
+    df_nonbow = prepare_input_output_vectors(df_nonbow, keys_feat)
+
+    return dict(nonbow=df_nonbow, bow=df_bow), model_embed
+
+def train_test_split(data: Dict[str, pd.DataFrame],
+                     ml_request: MLRequest):
     """Split full dataset into train and test sets"""
-    pass
+    tt_split: float = ml_request.get_config()[TRAIN_TEST_SPLIT]
 
+    data_nonbow = data['nonbow']
+    num_samps = len(data_nonbow)
+    num_samp_train = int(num_samps * tt_split)
+    ii = np.random.permutation(num_samps)
+    data_train = data_nonbow.iloc[ii[:num_samp_train]]
+    data_test = data_nonbow.iloc[ii[num_samp_train:]]
+
+    data['nonbow_train'] = data_train
+    data['nonbow_test'] = data_test
+    del data['nonbow'] # save on memory
+
+def train_regression_model_simple(data: Dict[str, pd.DataFrame],
+                                  ml_request: MLRequest):
+    """Train simple regression model"""
+    config_ml = ml_request.get_config()
+    assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
+
+    # fit model
+    model_reg = MLModelRegressionSimple(ml_request)
+    model_reg.fit(data['nonbow_train'], data['bow'])
+
+    return model_reg

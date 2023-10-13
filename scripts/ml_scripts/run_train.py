@@ -2,12 +2,14 @@
 
 import math
 
-from src.ml.train_utils import load_feature_records, train_test_split, prepare_feature_records
+from src.ml.train_utils import (load_feature_records, train_test_split, prepare_feature_records,
+                                train_regression_model_simple)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import load_config_timestamp_sets_for_features
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                                            FEATURES_TIMESTAMP_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
                                            ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_EMBED_DIM,
-                                           ML_MODEL_TYPE_LIN_PROJ_RAND, VEC_EMBED_DIMS)
+                                           ML_MODEL_TYPE_LIN_PROJ_RAND, VEC_EMBED_DIMS, TRAIN_TEST_SPLIT,
+                                           ML_HYPERPARAM_SR_ALPHA)
 from src.crawler.crawler.utils.misc_utils import print_df_full
 from src.ml.ml_request import MLRequest
 
@@ -23,14 +25,18 @@ config_load = {
 
 # specify ML model options
 n_features_approx = 30000
-rlp_density = 1 / math.sqrt(n_features_approx)
+rlp_density = 1 / math.sqrt(n_features_approx) # density of sparse projector matrix
+train_test_split_fract = 0.8 # fraction of data for train
+sr_alpha = 0.0001 # simple regression regularization coefficient
 
 config_ml = {
     ML_MODEL_TYPE: ML_MODEL_TYPE_LIN_PROJ_RAND,
     ML_MODEL_HYPERPARAMS: {
         ML_HYPERPARAM_EMBED_DIM: VEC_EMBED_DIMS, # number of dimensions in dense vectors after projecting sparse bow vecs
-        ML_HYPERPARAM_RLP_DENSITY: rlp_density # density of sparse projector matrix
-    }
+        ML_HYPERPARAM_RLP_DENSITY: rlp_density,
+        ML_HYPERPARAM_SR_ALPHA: sr_alpha
+    },
+    TRAIN_TEST_SPLIT: train_test_split_fract
 }
 
 ml_request = MLRequest(config_ml)
@@ -43,13 +49,13 @@ ml_request = MLRequest(config_ml)
 df_gen, config_data = load_feature_records(config_load)
 
 # preprocess feature records
-data_all, data_bow = prepare_feature_records(df_gen, ml_request)
+data_all, model_embed = prepare_feature_records(df_gen, ml_request)
 
 # split into train and test
-data_split = train_test_split(data_all)
+train_test_split(data_all, ml_request) # in-place
 
 # train model
-
+model_reg = train_regression_model_simple(data_all, ml_request)
 
 # evaluate on held-out test set
 

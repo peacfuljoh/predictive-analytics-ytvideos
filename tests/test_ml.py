@@ -48,7 +48,7 @@ def test_rand_lin_proj():
     # num_nonzeros = len(model._model.components_.nonzero()[0])
     # assert abs(num_nonzero_in_proj - num_nonzeros) < 5 # randomized number of nonzeros in final projector matrix
 
-
+def test_
 
 
 if __name__ == '__main__':

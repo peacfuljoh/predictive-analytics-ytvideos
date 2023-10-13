@@ -50,12 +50,20 @@ TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 MIN_VID_SAMPS_FOR_DATASET = 10
 NUM_INTVLS_PER_VIDEO = 100
 VEC_EMBED_DIMS = 512
+TRAIN_TEST_SPLIT_DFLT = 0.8
 
 ML_MODEL_TYPE = 'model_type'
 ML_MODEL_HYPERPARAMS = 'hyperparams'
 ML_MODEL_TYPE_LIN_PROJ_RAND = 'lin_proj_random'
 ML_MODEL_TYPE_GAM_TOPIC = 'gam_topic'
 ML_HYPERPARAM_EMBED_DIM = 'embed_dim'
-ML_HYPERPARAM_RLP_DENSITY = 'density'
+ML_HYPERPARAM_RLP_DENSITY = 'lin_proj_random_density'
+ML_HYPERPARAM_SR_ALPHA = 'simple_reg_alpha'
 ML_CONFIG_KEYS = [ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS]
 ML_MODEL_TYPES = [ML_MODEL_TYPE_LIN_PROJ_RAND, ML_MODEL_TYPE_GAM_TOPIC]
+TRAIN_TEST_SPLIT = 'tt_split'
+KEYS_TRAIN_ID = ['username', 'video_id']
+KEYS_TRAIN_NUM = ['comment_count', 'like_count', 'view_count', 'subscriber_count']
+KEYS_TRAIN_NUM_TGT = [key for key in KEYS_TRAIN_NUM if key != 'subscriber_count']
+KEY_TRAIN_TIME_DIFF = 'time_after_upload' # seconds
+

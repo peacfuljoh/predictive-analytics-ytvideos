@@ -2,8 +2,9 @@
 
 import copy
 
-from src.crawler.crawler.constants import ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, ML_MODEL_TYPE_LIN_PROJ_RAND, \
-    ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS, ML_MODEL_TYPES
+from src.crawler.crawler.constants import (ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, ML_MODEL_TYPE_LIN_PROJ_RAND, \
+    ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS, ML_MODEL_TYPES, TRAIN_TEST_SPLIT,
+                                           TRAIN_TEST_SPLIT_DFLT, ML_HYPERPARAM_SR_ALPHA)
 
 
 class MLRequest():
@@ -31,6 +32,9 @@ class MLRequest():
         else:
             raise NotImplementedError(f'The specified model type ({config[ML_MODEL_TYPE]}) is not available.')
 
+        # insert defaults if not present
+        config[TRAIN_TEST_SPLIT] = config.get(TRAIN_TEST_SPLIT, TRAIN_TEST_SPLIT_DFLT)
+
         # mark request as valid
         self._valid = True
 
@@ -41,12 +45,16 @@ class MLRequest():
         # validate hyperparameters
         hp = config[ML_MODEL_HYPERPARAMS]
 
+        # embedding
         assert ML_HYPERPARAM_EMBED_DIM in hp
         assert isinstance(hp[ML_HYPERPARAM_EMBED_DIM], int)
 
         hp[ML_HYPERPARAM_RLP_DENSITY] = hp.get(ML_HYPERPARAM_RLP_DENSITY, 'auto') # if 'auto': 1 / sqrt(n_features)
         if not isinstance(hp[ML_HYPERPARAM_RLP_DENSITY], str): # must be float
             assert 0.0 < hp[ML_HYPERPARAM_RLP_DENSITY] < 1.0
+
+        # regression
+        assert ML_HYPERPARAM_SR_ALPHA in hp
 
     def get_config(self) -> dict:
         assert self.get_valid()
