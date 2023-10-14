@@ -106,8 +106,8 @@ def split_feature_df_and_filter(df_data: pd.DataFrame,
             continue
 
         # split bow vectors into separate DataFrame
-        assert len(set(df[FEATURES_VECTOR_COL])) == 1 # ensure unique bow representation for this group
-        bows_all.append(df.loc[:0, KEYS_TRAIN_ID + [FEATURES_VECTOR_COL]])
+        assert len(df[FEATURES_VECTOR_COL].drop_duplicates()) == 1 # ensure unique bow representation for this group
+        bows_all.append(df.iloc[:1][KEYS_TRAIN_ID + [FEATURES_VECTOR_COL]])
         data_all.append(df.drop(columns=[FEATURES_VECTOR_COL]))
 
     df_data = pd.concat(data_all, axis=0, ignore_index=True)
@@ -116,7 +116,8 @@ def split_feature_df_and_filter(df_data: pd.DataFrame,
     return df_data, df_bow
 
 def prepare_input_output_vectors(df_data: pd.DataFrame,
-                                 keys_feat: List[str]) \
+                                 keys_feat_src: List[str],
+                                 keys_feat_tgt: List[str]) \
         -> pd.DataFrame:
     """
     Prepare non-bow features. Forms measurement pairs (in time).
@@ -135,9 +136,9 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
         # generate data samples by causal temporal pairs
         idxs_src, idxs_tgt = make_causal_index_pairs(len(df), NUM_INTVLS_PER_VIDEO)
         df_src = df.iloc[idxs_src].reset_index(drop=True)  # has video identifiers
-        df_tgt = df[keys_feat].iloc[idxs_tgt].reset_index(drop=True) # does not have video identifiers (otherwise concat would duplicate)
-        df_src = df_src.rename(columns={key: key + '_src' for key in keys_feat})
-        df_tgt = df_tgt.rename(columns={key: key + '_tgt' for key in keys_feat})
+        df_tgt = df[keys_feat_tgt].iloc[idxs_tgt].reset_index(drop=True) # does not have video identifiers (otherwise concat would duplicate)
+        df_src = df_src.rename(columns={key: key + '_src' for key in keys_feat_src})
+        df_tgt = df_tgt.rename(columns={key: key + '_tgt' for key in keys_feat_tgt})
         df_feat = pd.concat((df_src, df_tgt), axis=1)
 
         # double-check time ordering
@@ -159,7 +160,8 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
 
     # setup
     keys_extract = KEYS_TRAIN_ID + [FEATURES_VECTOR_COL, PREFEATURES_TIMESTAMP_COL] + KEYS_TRAIN_NUM  # define cols to keep
-    keys_feat = KEYS_TRAIN_NUM_TGT + [KEY_TRAIN_TIME_DIFF] # columns of interest for output vectors
+    keys_feat_src = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]  # columns of interest for output vectors
+    keys_feat_tgt = KEYS_TRAIN_NUM_TGT + [KEY_TRAIN_TIME_DIFF] # columns of interest for output vectors
 
     # stream all data into RAM
     df_data = stream_all_features_into_ram(df_gen, keys_extract)
@@ -176,7 +178,7 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
     #                                             for i, name in enumerate(usernames)}
 
     # prepare non-bow features
-    df_nonbow = prepare_input_output_vectors(df_nonbow, keys_feat)
+    df_nonbow = prepare_input_output_vectors(df_nonbow, keys_feat_src, keys_feat_tgt)
 
     return dict(nonbow=df_nonbow, bow=df_bow), model_embed
 
@@ -203,7 +205,9 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
 
     # fit model
-    model_reg = MLModelRegressionSimple(ml_request)
+    model_reg = MLModelRegressionSimple(ml_request, verbose=True)
     model_reg.fit(data['nonbow_train'], data['bow'])
+
+    out = model_reg.predict(data['nonbow_test'])
 
     return model_reg

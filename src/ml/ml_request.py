@@ -3,8 +3,10 @@
 import copy
 
 from src.crawler.crawler.constants import (ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, ML_MODEL_TYPE_LIN_PROJ_RAND, \
-    ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS, ML_MODEL_TYPES, TRAIN_TEST_SPLIT,
-                                           TRAIN_TEST_SPLIT_DFLT, ML_HYPERPARAM_SR_ALPHA)
+                                           ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS, ML_MODEL_TYPES, TRAIN_TEST_SPLIT,
+                                           TRAIN_TEST_SPLIT_DFLT, ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
+                                           ML_HYPERPARAM_SR_CV_COUNT)
+from src.crawler.crawler.utils.misc_utils import is_list_of_floats
 
 
 class MLRequest():
@@ -54,7 +56,12 @@ class MLRequest():
             assert 0.0 < hp[ML_HYPERPARAM_RLP_DENSITY] < 1.0
 
         # regression
-        assert ML_HYPERPARAM_SR_ALPHA in hp
+        assert ML_HYPERPARAM_SR_ALPHAS in hp
+        assert is_list_of_floats(hp[ML_HYPERPARAM_SR_ALPHAS])
+
+        # cross validation
+        assert ML_HYPERPARAM_SR_CV_SPLIT in hp
+        assert ML_HYPERPARAM_SR_CV_COUNT in hp
 
     def get_config(self) -> dict:
         assert self.get_valid()

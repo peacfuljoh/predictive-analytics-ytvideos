@@ -1,19 +1,20 @@
 """Machine learning models"""
 
-from typing import List, Sequence, Union, Optional
+from typing import List, Union, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_array
 from sklearn.random_projection import SparseRandomProjection
-from sklearn.linear_model import SGDRegressor
+from sklearn.linear_model import SGDRegressor, LinearRegression, Ridge
 from sklearn.preprocessing import StandardScaler
 
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
                                            ML_MODEL_TYPE_LIN_PROJ_RAND, ML_HYPERPARAM_EMBED_DIM,
-                                           ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_SR_ALPHA,
-                                           KEYS_TRAIN_ID, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT, KEY_TRAIN_TIME_DIFF)
-from src.crawler.crawler.utils.misc_utils import is_list_of_sequences
+                                           ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_SR_ALPHAS,
+                                           KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT, KEY_TRAIN_TIME_DIFF, KEYS_TRAIN_ID,
+                                           ML_HYPERPARAM_SR_CV_COUNT, ML_HYPERPARAM_SR_CV_SPLIT)
+from src.crawler.crawler.utils.misc_utils import is_list_of_sequences, join_on_dfs, convert_mixed_df_to_array
 from src.ml.ml_request import MLRequest
 
 
@@ -121,78 +122,170 @@ class MLModelLinProjRandom(MLModelProjection):
             return pd.Series(X_proj.tolist())
 
 
+class LinearRegressionCustom():
+    def __init__(self, alpha: float):
+        self._alpha = alpha
+
+        self._coeffs = None
+
+    def _concat_const(self, X: np.ndarray) -> np.ndarray:
+        """Concatenate constant value (ones) to feature matrix."""
+        return np.hstack((X, np.ones((X.shape[0], 1))))
+
+    def fit(self,
+            X: np.ndarray,
+            y: np.ndarray):
+        """Fit model to data."""
+        _, N = X.shape
+        Xs = self._concat_const(X)
+        H = Xs.T @ Xs + self._alpha * np.eye(N + 1)
+        V = Xs.T @ y
+        self._coeffs = np.linalg.inv(H) @ V
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Apply model to make prediction for input data."""
+        return self._concat_const(X) @ self._coeffs
+
+
 class MLModelRegressionSimple():
-    def __init__(self, ml_request: MLRequest):
+    def __init__(self,
+                 ml_request: MLRequest,
+                 verbose: bool = False):
+        # validate and store config
         assert ml_request.get_valid()
         self._config = ml_request.get_config()
 
+        self._verbose = verbose
+
         # fields
+        self._data_bow: pd.DataFrame = None
+
+        # models
         self._preprocessor: StandardScaler = StandardScaler()
-        self._model: SGDRegressor = None
+        self._model: LinearRegressionCustom = None
+        # self._model = Ridge(
+        #     alpha=self._config[ML_MODEL_HYPERPARAMS][ML_HYPERPARAM_SR_ALPHA],
+        #     solver='lsqr'  # scipy, fast
+        # )
 
     def _fit_preprocessor(self,
-                          data_nonbow: pd.DataFrame,
-                          data_bow: pd.DataFrame):
+                          data_nonbow: pd.DataFrame):
         """Fit preprocessor before regression."""
-        # TODO: partial_fit for incremental computation
-        # fit preprocessor
         ss_bow = StandardScaler()
-        X = np.array(list(data_bow[FEATURES_VECTOR_COL]))
+        X = np.array(list(self._data_bow[FEATURES_VECTOR_COL]))
         ss_bow.fit(X)
 
         ss_nonbow = StandardScaler()
         X = data_nonbow[KEYS_FOR_FIT_NONBOW_SRC].to_numpy()
         ss_nonbow.fit(X)
 
+        # order matters - DO NOT change order
         self._preprocessor.scale_ = np.concatenate((ss_bow.scale_, ss_nonbow.scale_))
         self._preprocessor.mean_ = np.concatenate((ss_bow.mean_, ss_nonbow.mean_))
         self._preprocessor.var_ = np.concatenate((ss_bow.var_, ss_nonbow.var_))  # TODO: necessary?
 
-    def _merge_dfs(self,
-                   data_nonbow: pd.DataFrame,
-                   data_bow: pd.DataFrame,
-                   idxs_nonbow: Sequence[int] = None)  \
-            -> np.ndarray:
-        """Merge bow and non-bow dataframes into a single dense array."""
-        # TODO: move out of class
-        # TODO: test
-        # select rows
-        if idxs_nonbow is not None:
-            data_nonbow = data_nonbow.iloc[idxs_nonbow]
+    def _dfs_to_arrs(self,
+                     data_nonbow: pd.DataFrame,
+                     mode: str) \
+            -> Tuple[np.ndarray, np.ndarray]:
+        """Join dataframes on IDs and construct input and output arrays."""
+        assert mode in ['train', 'test']
 
-        # find index mapping from bow df to nonbow df
-        data_bow_midx = data_bow.set_index(KEYS_TRAIN_ID, drop=True)
-        ids_ = data_nonbow[KEYS_TRAIN_ID].to_numpy().tolist()
-        vecs = data_bow_midx.loc[ids_, FEATURES_VECTOR_COL]
-        X_bow = np.array(list(vecs))
+        df_join = join_on_dfs(data_nonbow, self._data_bow, KEYS_TRAIN_ID, df1_keys_select=[FEATURES_VECTOR_COL])
+        X = convert_mixed_df_to_array(df_join, [FEATURES_VECTOR_COL] + KEYS_FOR_FIT_NONBOW_SRC) # order matters - DO NOT change order
+        y = None if mode == 'test' else convert_mixed_df_to_array(df_join, KEYS_FOR_FIT_NONBOW_TGT)
 
-        # convert to numpy arrays
-        X_nonbow = data_nonbow[KEYS_FOR_FIT_NONBOW_SRC].to_numpy()
-        X = np.concatenate((X_bow, X_nonbow), axis=1)
-
-        return X
+        return X, y
 
     def fit(self,
             data_nonbow: pd.DataFrame,
             data_bow: pd.DataFrame):
         """Fit model to data."""
+        hp = self._config[ML_MODEL_HYPERPARAMS]
+
+        # validate and store bow data
+        # assert len(data_bow.drop_duplicates()) == len(data_bow) # no duplicated rows --> drop_duplicates() fails
+        self._data_bow = data_bow
+
         # fit preprocessor
-        self._fit_preprocessor(data_nonbow, data_bow)
+        self._fit_preprocessor(data_nonbow) # TODO: include preprocessor fit in cv splits
 
         # fit regression model
-        self._model = SGDRegressor(
-            loss='squared_error',
-            penalty='l2',
-            alpha=self._config[ML_MODEL_HYPERPARAMS][ML_HYPERPARAM_SR_ALPHA],
-            learning_rate='invscaling',
-            eta0=0.01 # initial learning rate
-        )
+        X, y = self._dfs_to_arrs(data_nonbow, 'train')
+        X = self._preprocessor.transform(X)
 
+        num_samps_all = X.shape[0]
+        num_samps_train = int(num_samps_all * hp[ML_HYPERPARAM_SR_CV_SPLIT])
 
+        num_splits = hp[ML_HYPERPARAM_SR_CV_COUNT]
+        alphas = hp[ML_HYPERPARAM_SR_ALPHAS]
 
-    def predict(self,
-                data_nonbow: pd.DataFrame,
-                data_bow: pd.DataFrame) \
-            -> np.ndarray:
+        models = [] # alphas x trials
+        objs = []
+        for i, alpha in enumerate(alphas):
+            objs_ = []
+            models_ = []
+
+            for j in range(num_splits):
+                # train-val split
+                idxs = np.random.permutation(num_samps_all)
+                idxs_train, idxs_val = idxs[:num_samps_train], idxs[num_samps_train:]
+                X_train = X[idxs_train, :]
+                y_train = y[idxs_train, :]
+                X_val = X[idxs_val, :]
+                y_val = y[idxs_val, :]
+
+                # fit model
+                model_ = LinearRegressionCustom(
+                    alpha=alpha
+                )
+                model_.fit(X_train, y_train)
+
+                # eval on val set
+                y_pred = model_.predict(X_val)
+                obj_ = np.sum((y_val - y_pred) ** 2)
+
+                if self._verbose:
+                    print(f'LinearRegressionCustom: alpha={alpha}, split={j}, obj={obj_}.')
+
+                # save results
+                models_.append(model_)
+                objs_.append(obj_)
+
+            models.append(models_)
+            objs.append(objs_)
+
+        # pick best alpha value
+        objs_avg = [np.mean(v) for v in objs]
+        idx_best = np.argmin(objs_avg) # idx of winning alpha value
+        alpha_best = alphas[idx_best]
+        if self._verbose:
+            d = {alpha_: obj_ for alpha_, obj_ in zip(alphas, objs_avg)}
+            print(f'LinearRegressionCustom: cv_objs={d}.')
+
+        # set model
+        self._model = LinearRegressionCustom(alpha=alpha_best)
+        self._model._coeffs = np.mean(np.vstack([model_._coeffs for model_ in models[idx_best]]), axis=0)
+
+    def predict(self, data_nonbow: pd.DataFrame) -> np.ndarray:
         """Predict"""
-        pass
+        X, _ = self._dfs_to_arrs(data_nonbow, 'test')
+        X = self._preprocessor.transform(X)
+        return self._model.predict(X)
+
+
+
+
+
+
+
+
+
+
+# self._model = SGDRegressor(
+        #     loss='squared_error',
+        #     penalty='l2',
+        #     alpha=self._config[ML_MODEL_HYPERPARAMS][ML_HYPERPARAM_SR_ALPHA],
+        #     learning_rate='invscaling',
+        #     eta0=0.01 # initial learning rate
+        # )
