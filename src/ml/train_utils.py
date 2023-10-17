@@ -220,7 +220,7 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
             df_nonbow = df_nonbow[df_nonbow['username'] == uname]
             model.fit(df_nonbow, data['bow'])
 
-        if 1:
+        if 0:
             # try model encoding and decoding
             model_dicts = {}
             for uname, model in models.items():
@@ -233,16 +233,15 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
     # out = model.predict(data['nonbow_test'])
 
     # see predictions
-    if 1:
+    if 0:
         import matplotlib.pyplot as plt
 
         if not split_by_username:
             plot_predictions(data, model)
         else:
             for uname, model in models.items():
-                data_ = copy.deepcopy(data)
-                df_nonbow = data_['nonbow_test']
-                data_['nonbow_test'] = df_nonbow[df_nonbow['username'] == uname]
+                df_nonbow = data['nonbow_test']
+                data_ = dict(nonbow_test=df_nonbow[df_nonbow['username'] == uname])
                 plot_predictions(data_, model)
 
         plt.show()
