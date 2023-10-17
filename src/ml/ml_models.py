@@ -1,6 +1,6 @@
 """Machine learning models"""
 
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -120,9 +120,8 @@ class MLModelLinProjRandom(MLModelProjection):
 
 
 class LinearRegressionCustom():
-    def __init__(self, alpha: float):
+    def __init__(self, alpha: float = 0.0):
         self._alpha = alpha
-
         self._coeffs = None
 
     def _concat_const(self, X: np.ndarray) -> np.ndarray:
@@ -143,27 +142,41 @@ class LinearRegressionCustom():
         """Apply model to make prediction for input data."""
         return self._concat_const(X) @ self._coeffs
 
+    def get_params_dict(self) -> dict:
+        """Pack params into a dict for storage"""
+        return dict(
+            alpha=self._alpha,
+            coeffs=self._coeffs.tolist()
+        )
+
+    def set_params_from_dict(self, d: dict):
+        """Set parameters from storage dict format"""
+        self._alpha = d['alpha']
+        self._coeffs = np.array(d['coeffs'])
+
 
 class MLModelRegressionSimple():
     def __init__(self,
-                 ml_request: MLRequest,
-                 verbose: bool = False):
-        # validate and store config
-        assert ml_request.get_valid()
-        self._config = ml_request.get_config()
-
+                 ml_request: Optional[MLRequest] = None,
+                 verbose: bool = False,
+                 model_dict: Optional[dict] = None):
         self._verbose = verbose
 
         # fields
         self._data_bow: pd.DataFrame = None
-
-        # models
         self._preprocessor: StandardScaler = StandardScaler()
-        self._model: LinearRegressionCustom = None
-        # self._model = Ridge(
-        #     alpha=self._config[ML_MODEL_HYPERPARAMS][ML_HYPERPARAM_SR_ALPHA],
-        #     solver='lsqr'  # scipy, fast
-        # )
+        self._model: LinearRegressionCustom = LinearRegressionCustom()
+
+        # process input args
+        assert (ml_request is not None) ^ (model_dict is not None)
+
+        if ml_request is not None:
+            # validate and store config
+            assert ml_request.get_valid()
+            self._config = ml_request.get_config()
+        else:
+            # load model info from dict
+            self.decode(model_dict)
 
     def _fit_preprocessor(self,
                           data_nonbow: pd.DataFrame):
@@ -284,6 +297,44 @@ class MLModelRegressionSimple():
         for i, key in enumerate(KEYS_FOR_PRED_NONBOW_TGT):
             data_pred[key] = y_pred[:, i]
         return data_pred
+
+    def encode(self) -> dict:
+        """Convert model info to storage dict."""
+        d = {}
+        d['config'] = self._config
+        d['data_bow'] = self._data_bow.to_dict()
+        d['preprocessor'] = dict(
+            name='StandardScaler',
+            params=dict(
+                scale_ = list(self._preprocessor.scale_),
+                mean_ = list(self._preprocessor.mean_),
+                var_ = list(self._preprocessor.var_)
+            )
+        )
+        d['model'] = dict(
+            name='LinearRegressionCustom',
+            params=self._model.get_params_dict()
+        )
+
+        return d
+
+    def decode(self, model_dict: dict):
+        """Load model from storage dict."""
+        self._config = model_dict['config']
+        self._data_bow = pd.DataFrame.from_dict(model_dict['data_bow'])
+
+        pre = model_dict['preprocessor']
+        assert pre['name'] == 'StandardScaler'
+        par = pre['params']
+        self._preprocessor.scale_ = np.array(par['scale_'])
+        self._preprocessor.mean_ = np.array(par['mean_'])
+        self._preprocessor.var_ = np.array(par['var_'])
+
+        mod = model_dict['model']
+        assert mod['name'] == 'LinearRegressionCustom'
+        self._model.set_params_from_dict(mod['params'])
+
+
 
 
 

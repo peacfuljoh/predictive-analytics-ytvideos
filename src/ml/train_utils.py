@@ -1,6 +1,7 @@
 """Train utils"""
 
-from typing import Generator, Tuple, Dict, List, Optional
+from typing import Generator, Tuple, Dict, List, Optional, Union
+import copy
 
 import pandas as pd
 import numpy as np
@@ -73,7 +74,7 @@ def make_causal_index_pairs(num_idxs: int,
 def embed_bow_with_lin_proj_rand(ml_request: MLRequest,
                                  df_bow: pd.DataFrame) \
         -> MLModelLinProjRandom:
-    # embed bag-of-words features: data-independent dimensionality reduction
+    """Embed bag-of-words features: data-independent dimensionality reduction"""
     model = MLModelLinProjRandom(ml_request)
     model.fit(df_bow) # only uses shape
     df_bow[FEATURES_VECTOR_COL] = model.transform(df_bow, dtype=pd.Series)
@@ -82,7 +83,7 @@ def embed_bow_with_lin_proj_rand(ml_request: MLRequest,
 def stream_all_features_into_ram(df_gen: Generator[pd.DataFrame, None, None],
                                  keys_extract: Optional[List[str]] = None) \
         -> pd.DataFrame:
-    # stream all feature DataFrames into RAM
+    """Stream all feature DataFrames into RAM"""
     data_all: List[pd.DataFrame] = []
 
     while not (df := next(df_gen)).empty:
@@ -96,8 +97,9 @@ def stream_all_features_into_ram(df_gen: Generator[pd.DataFrame, None, None],
 def split_feature_df_and_filter(df_data: pd.DataFrame,
                                 min_samps: Optional[int] = None) \
         -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Split feature DataFrame (with filtering) into non-bow and bow."""
     # filter by group and collect bag-of-words info in a separate DataFrame
-    data_all: List[pd.DataFrame] = []
+    nonbow_all: List[pd.DataFrame] = []
     bows_all: List[pd.DataFrame] = []
 
     for _, df in df_data.groupby(KEYS_TRAIN_ID):
@@ -108,12 +110,12 @@ def split_feature_df_and_filter(df_data: pd.DataFrame,
         # split bow vectors into separate DataFrame
         assert len(df[FEATURES_VECTOR_COL].drop_duplicates()) == 1 # ensure unique bow representation for this group
         bows_all.append(df.iloc[:1][KEYS_TRAIN_ID + [FEATURES_VECTOR_COL]])
-        data_all.append(df.drop(columns=[FEATURES_VECTOR_COL]))
+        nonbow_all.append(df.drop(columns=[FEATURES_VECTOR_COL]))
 
-    df_data = pd.concat(data_all, axis=0, ignore_index=True)
+    df_nonbow = pd.concat(nonbow_all, axis=0, ignore_index=True)
     df_bow = pd.concat(bows_all, axis=0, ignore_index=True)
 
-    return df_data, df_bow
+    return df_nonbow, df_bow
 
 def prepare_input_output_vectors(df_data: pd.DataFrame,
                                  keys_feat_src: List[str],
@@ -199,53 +201,107 @@ def train_test_split(data: Dict[str, pd.DataFrame],
     del data['nonbow'] # save on memory
 
 def train_regression_model_simple(data: Dict[str, pd.DataFrame],
-                                  ml_request: MLRequest):
+                                  ml_request: MLRequest,
+                                  split_by_username: bool = False) \
+        -> Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]]:
     """Train simple regression model"""
     config_ml = ml_request.get_config()
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
 
     # fit model
-    model_reg = MLModelRegressionSimple(ml_request, verbose=True)
-    model_reg.fit(data['nonbow_train'], data['bow'])
+    if not split_by_username:
+        model = MLModelRegressionSimple(ml_request, verbose=True)
+        model.fit(data['nonbow_train'], data['bow'])
+    else:
+        usernames = data['nonbow_train']['username'].drop_duplicates()
+        models = {uname: MLModelRegressionSimple(ml_request, verbose=True) for uname in usernames}
+        for uname, model in models.items():
+            df_nonbow = data['nonbow_train']
+            df_nonbow = df_nonbow[df_nonbow['username'] == uname]
+            model.fit(df_nonbow, data['bow'])
+
+        if 1:
+            # try model encoding and decoding
+            model_dicts = {}
+            for uname, model in models.items():
+                model_dicts[uname] = model.encode()
+            models = {}
+            for uname in usernames:
+                models[uname] = MLModelRegressionSimple(verbose=True, model_dict=model_dicts[uname])
 
     # predict
-    out = model_reg.predict(data['nonbow_test'])
+    # out = model.predict(data['nonbow_test'])
 
     # see predictions
     if 1:
         import matplotlib.pyplot as plt
 
-        n_plots = 5
-        n_pred = 50
-
-        fig = plt.subplots(n_plots, 1, sharex=True)
-
-        for i, row in data['bow'].iterrows():
-            if i < n_plots:
-                # get test data
-                username = row['username']
-                video_id = row['video_id']
-
-                dd = data['nonbow_train']
-                dd = dd[(dd['username'] == username) * (dd['video_id'] == video_id)]
-
-                t0_col = 'time_after_upload_src'
-                tf_col = 'time_after_upload_tgt'
-
-                rec_first = dd.loc[dd[t0_col].argmin()]
-                rec_last = dd.loc[dd[t0_col].argmax()]
-                df = pd.DataFrame([rec_first for _ in range(n_pred)])
-                df[tf_col] = np.linspace(rec_first[t0_col], rec_last[t0_col], n_pred)
-
-                # predict with model
-                
-
-                # plot it
-
-
-                a = 5
+        if not split_by_username:
+            plot_predictions(data, model)
+        else:
+            for uname, model in models.items():
+                data_ = copy.deepcopy(data)
+                df_nonbow = data_['nonbow_test']
+                data_['nonbow_test'] = df_nonbow[df_nonbow['username'] == uname]
+                plot_predictions(data_, model)
 
         plt.show()
 
+    return model
 
-    return model_reg
+def plot_predictions(data: Dict[str, pd.DataFrame],
+                     model):
+    """Plot test data and predictions for various src times."""
+    import matplotlib.pyplot as plt
+
+    n_plots = 5
+    n_pred = 50
+
+    t0_col = 'time_after_upload_src'
+    tf_col = 'time_after_upload_tgt'
+
+    fig, axes = plt.subplots(n_plots, 3, sharex=True)
+
+    data_ids_shuffle = data['nonbow_test'][KEYS_TRAIN_ID].drop_duplicates().sample(frac=1)
+    for i, (_, row) in enumerate(data_ids_shuffle.iterrows()):
+        if i < n_plots:
+            # get data for this video
+            username = row['username']
+            video_id = row['video_id']
+
+            df_i = data['nonbow_test']
+            df_i = df_i[(df_i['username'] == username) * (df_i['video_id'] == video_id)]
+            df_i = df_i.sort_values(by=[t0_col])
+            N = len(df_i)
+
+            # create test sets anchored on a few src times
+            rec_last = df_i.iloc[df_i[t0_col].argmax()]
+            df_test = []
+            for j in [0, int(0.25 * N), int(0.5 * N), int(0.75 * N)]:
+                rec_first = df_i.iloc[j]
+                df_ = pd.DataFrame([rec_first for _ in range(n_pred)])
+                df_[tf_col] = np.linspace(rec_first[t0_col], rec_last[t0_col] * 1.25, n_pred)
+                df_test.append(df_)
+
+            # predict with model
+            df_pred = [model.predict(df_) for df_ in df_test]
+
+            # plot
+            keys_tgt = KEYS_TRAIN_NUM_TGT
+            for j, key in enumerate(keys_tgt):
+                axes[i, j].plot(df_i[t0_col], df_i[key + '_src'])  # obs
+                for df_ in df_pred:
+                    axes[i, j].plot(df_[tf_col], df_[key + '_pred'])  # pred
+            if i == 0:
+                for j, key in enumerate(keys_tgt):
+                    axes[i, j].set_title(key)
+            axes[i, 0].set_ylabel(username + '\n' + video_id)
+
+def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]],
+                   ml_request: MLRequest,
+                   config_load: Dict[str, str]):
+    """Save regression model(s) to the model store along with configs."""
+    # prepare objects to store
+    pass
+    # TODO: finish this up (encode model and write to model store along with data and ML configs)
+

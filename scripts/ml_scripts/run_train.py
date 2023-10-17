@@ -3,7 +3,7 @@
 import math
 
 from src.ml.train_utils import (load_feature_records, train_test_split, prepare_feature_records,
-                                train_regression_model_simple)
+                                train_regression_model_simple, save_reg_model)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import load_config_timestamp_sets_for_features
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                                            FEATURES_TIMESTAMP_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
@@ -27,7 +27,7 @@ config_load = {
 # specify ML model options
 rlp_density = 0.01 # density of sparse projector matrix
 train_test_split_fract = 0.8 # fraction of data for train
-sr_alphas = [1e-6, 1e-5, 1e-4, 1e-3] # simple regression regularization coefficient
+sr_alphas = [1e-6, 1e-4, 1e-2] # simple regression regularization coefficient
 cv_split = 0.9 # cross-validation split ratio
 cv_count = 10 # number of CV splits
 
@@ -59,7 +59,8 @@ data_all, model_embed = prepare_feature_records(df_gen, ml_request)
 train_test_split(data_all, ml_request) # in-place
 
 # train model
-model_reg = train_regression_model_simple(data_all, ml_request)
+split_train_by_username = True
+model_reg = train_regression_model_simple(data_all, ml_request, split_by_username=split_train_by_username)
 
-# evaluate on held-out test set
-
+# store model
+save_reg_model(model_reg, ml_request, config_load)
