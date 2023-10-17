@@ -69,3 +69,10 @@ KEYS_TRAIN_NUM = ['comment_count', 'like_count', 'view_count', 'subscriber_count
 KEYS_TRAIN_NUM_TGT = [key for key in KEYS_TRAIN_NUM if key != 'subscriber_count']
 KEY_TRAIN_TIME_DIFF = 'time_after_upload' # seconds
 
+KEYS_FOR_FIT_NONBOW_SRC = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]
+KEYS_FOR_FIT_NONBOW_SRC = [key + '_src' for key in KEYS_FOR_FIT_NONBOW_SRC] + [KEY_TRAIN_TIME_DIFF + '_tgt']
+KEYS_FOR_FIT_NONBOW_TGT = KEYS_TRAIN_NUM_TGT
+KEYS_FOR_FIT_NONBOW_TGT = [key + '_tgt' for key in KEYS_FOR_FIT_NONBOW_TGT]
+KEYS_FOR_PRED_NONBOW_ID = KEYS_TRAIN_ID + [KEY_TRAIN_TIME_DIFF + suffix for suffix in ['_src', '_tgt']]
+KEYS_FOR_PRED_NONBOW_TGT = [key + '_pred' for key in KEYS_TRAIN_NUM_TGT]
+

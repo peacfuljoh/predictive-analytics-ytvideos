@@ -13,15 +13,12 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, ML_MODEL_TYPE, M
                                            ML_MODEL_TYPE_LIN_PROJ_RAND, ML_HYPERPARAM_EMBED_DIM,
                                            ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_SR_ALPHAS,
                                            KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT, KEY_TRAIN_TIME_DIFF, KEYS_TRAIN_ID,
-                                           ML_HYPERPARAM_SR_CV_COUNT, ML_HYPERPARAM_SR_CV_SPLIT)
+                                           ML_HYPERPARAM_SR_CV_COUNT, ML_HYPERPARAM_SR_CV_SPLIT,
+                                           KEYS_FOR_FIT_NONBOW_SRC, KEYS_FOR_FIT_NONBOW_TGT, KEYS_FOR_PRED_NONBOW_ID,
+                                           KEYS_FOR_PRED_NONBOW_TGT)
 from src.crawler.crawler.utils.misc_utils import is_list_of_sequences, join_on_dfs, convert_mixed_df_to_array
 from src.ml.ml_request import MLRequest
 
-
-KEYS_FOR_FIT_NONBOW_SRC = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]
-KEYS_FOR_FIT_NONBOW_SRC = [key + '_src' for key in KEYS_FOR_FIT_NONBOW_SRC]
-KEYS_FOR_FIT_NONBOW_TGT = KEYS_TRAIN_NUM_TGT + [KEY_TRAIN_TIME_DIFF]
-KEYS_FOR_FIT_NONBOW_TGT = [key + '_tgt' for key in KEYS_FOR_FIT_NONBOW_TGT]
 
 
 
@@ -138,8 +135,8 @@ class LinearRegressionCustom():
         """Fit model to data."""
         _, N = X.shape
         Xs = self._concat_const(X)
-        H = Xs.T @ Xs + self._alpha * np.eye(N + 1)
-        V = Xs.T @ y
+        H = 1 / N * Xs.T @ Xs + self._alpha * np.eye(N + 1)
+        V = 1 / N * Xs.T @ y
         self._coeffs = np.linalg.inv(H) @ V
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -213,6 +210,7 @@ class MLModelRegressionSimple():
         # fit regression model
         X, y = self._dfs_to_arrs(data_nonbow, 'train')
         X = self._preprocessor.transform(X)
+        N, _ = X.shape
 
         num_samps_all = X.shape[0]
         num_samps_train = int(num_samps_all * hp[ML_HYPERPARAM_SR_CV_SPLIT])
@@ -236,14 +234,12 @@ class MLModelRegressionSimple():
                 y_val = y[idxs_val, :]
 
                 # fit model
-                model_ = LinearRegressionCustom(
-                    alpha=alpha
-                )
+                model_ = LinearRegressionCustom(alpha=alpha)
                 model_.fit(X_train, y_train)
 
                 # eval on val set
                 y_pred = model_.predict(X_val)
-                obj_ = np.sum((y_val - y_pred) ** 2)
+                obj_ = 1 / N * np.sum((y_val - y_pred) ** 2)
 
                 if self._verbose:
                     print(f'LinearRegressionCustom: alpha={alpha}, split={j}, obj={obj_}.')
@@ -265,13 +261,30 @@ class MLModelRegressionSimple():
 
         # set model
         self._model = LinearRegressionCustom(alpha=alpha_best)
-        self._model._coeffs = np.mean(np.vstack([model_._coeffs for model_ in models[idx_best]]), axis=0)
+        self._model._coeffs = np.mean(np.stack([model_._coeffs for model_ in models[idx_best]], 2), axis=2)
 
-    def predict(self, data_nonbow: pd.DataFrame) -> np.ndarray:
+    def predict(self,
+                data_nonbow: pd.DataFrame,
+                mode: Union[np.ndarray, pd.DataFrame] = pd.DataFrame) \
+            -> Union[np.ndarray, pd.DataFrame]:
         """Predict"""
+        assert mode in [np.ndarray, pd.DataFrame]
+
         X, _ = self._dfs_to_arrs(data_nonbow, 'test')
         X = self._preprocessor.transform(X)
-        return self._model.predict(X)
+        y_pred = self._model.predict(X)
+        return self._convert_pred_to_df(data_nonbow, y_pred)
+
+    def _convert_pred_to_df(self,
+                            data_nonbow: pd.DataFrame,
+                            y_pred: np.ndarray) \
+        -> pd.DataFrame:
+        """Convert prediction array into DataFrame to retain identifying details."""
+        data_pred = data_nonbow[KEYS_FOR_PRED_NONBOW_ID]
+        for i, key in enumerate(KEYS_FOR_PRED_NONBOW_TGT):
+            data_pred[key] = y_pred[:, i]
+        return data_pred
+
 
 
 

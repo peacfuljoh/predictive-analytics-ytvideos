@@ -136,9 +136,6 @@ def test_join_on_dfs():
 
 
 
-
-
-
 if __name__ == '__main__':
     test_rand_lin_proj()
     test_join_on_dfs()

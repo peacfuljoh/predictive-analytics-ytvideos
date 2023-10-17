@@ -322,7 +322,7 @@ def convert_mixed_df_to_array(df: pd.DataFrame,
         -> np.ndarray:
     """
     Convert DataFrame with mixed-type columns into a numpy array.
-    Only converts numerical columns. Emits warning for non-numerical or list-type columns.
+    Only converts numerical columns. Emits warning for non-numerical/list-type columns.
     """
     if cols is None:
         cols = df.columns

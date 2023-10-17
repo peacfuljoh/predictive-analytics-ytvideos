@@ -27,7 +27,7 @@ config_load = {
 # specify ML model options
 rlp_density = 0.01 # density of sparse projector matrix
 train_test_split_fract = 0.8 # fraction of data for train
-sr_alphas = [0.0001, 0.001, 0.01, 0.1] # simple regression regularization coefficient
+sr_alphas = [1e-6, 1e-5, 1e-4, 1e-3] # simple regression regularization coefficient
 cv_split = 0.9 # cross-validation split ratio
 cv_count = 10 # number of CV splits
 

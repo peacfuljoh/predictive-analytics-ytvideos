@@ -208,6 +208,44 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
     model_reg = MLModelRegressionSimple(ml_request, verbose=True)
     model_reg.fit(data['nonbow_train'], data['bow'])
 
+    # predict
     out = model_reg.predict(data['nonbow_test'])
+
+    # see predictions
+    if 1:
+        import matplotlib.pyplot as plt
+
+        n_plots = 5
+        n_pred = 50
+
+        fig = plt.subplots(n_plots, 1, sharex=True)
+
+        for i, row in data['bow'].iterrows():
+            if i < n_plots:
+                # get test data
+                username = row['username']
+                video_id = row['video_id']
+
+                dd = data['nonbow_train']
+                dd = dd[(dd['username'] == username) * (dd['video_id'] == video_id)]
+
+                t0_col = 'time_after_upload_src'
+                tf_col = 'time_after_upload_tgt'
+
+                rec_first = dd.loc[dd[t0_col].argmin()]
+                rec_last = dd.loc[dd[t0_col].argmax()]
+                df = pd.DataFrame([rec_first for _ in range(n_pred)])
+                df[tf_col] = np.linspace(rec_first[t0_col], rec_last[t0_col], n_pred)
+
+                # predict with model
+                
+
+                # plot it
+
+
+                a = 5
+
+        plt.show()
+
 
     return model_reg
