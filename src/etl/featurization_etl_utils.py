@@ -13,7 +13,7 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL)
 from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, MongoDBEngine
 from src.crawler.crawler.utils.misc_utils import get_ts_now_str, is_list_of_strings, df_generator_wrapper
-from src.etl_pipelines.etl_request import ETLRequest, req_to_etl_config_record
+from src.etl.etl_request import ETLRequest, req_to_etl_config_record
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 
 

@@ -134,7 +134,7 @@ class MySQLEngine():
                                 database: str,
                                 query: str,
                                 records: Optional[Union[str, List[tuple]]] = None):
-        """Insert records into a table using a single query or a split query (instructions + data)"""
+        """Insert records into a table using a single query or a split query (instructions + raw_data)"""
         def func(connection, cursor):
             if records is None:
                 cursor.execute(query)
@@ -339,7 +339,7 @@ def update_records_from_dict(database: str,
         condition_keys = get_table_primary_keys(database, tablename, db_config)
     assert len(condition_keys) > 0
     is_subset(condition_keys, data)
-    # assert len(set(condition_keys) - set(data.keys())) == 0
+    # assert len(set(condition_keys) - set(raw_data.keys())) == 0
 
     query = f"UPDATE {tablename} SET " + ', '.join([key + ' = %s' for key in keys])
     query += ' WHERE ' + ' AND '.join([key + ' = %s' for key in condition_keys])

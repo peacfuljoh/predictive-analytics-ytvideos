@@ -103,6 +103,34 @@ Inputs:
 Outputs:
 - `stats at target time`
 
+### Basic model: L2-regularized linear regression with random linear projection (LR-RLP)
+
+In the basic regression model, a data-independent, random (sparse) linear projection is used to reduce the 
+dimensionality of the bag-of-words vectors from, e.g. 40,000 to 512. Given how sparse the bow vectors are in the first
+place, this is very likely quasi-lossless, especially since we are not using word position information to represent
+the text.
+
+Feature vectors for training are created by sampling pairs of measurement times (e.g. 50-100 per video) to create 
+the input list described above. These features are stacked into a single vector per sample. The resulting dataset
+is fed to a linear regression model with L2 regularization (e.g. `err = err_LS + alpha * || w ||^2`) where the 
+regularization parameter `alpha` is tuned with cross-validation.
+
+Given that this is a linear model, the predicted stats will be linear in time. The intercept of these lines shifts 
+to account for the stat value at the source time, but their slopes do not. This is because the slope is determined
+solely by the coefficient corresponding to the `time_after_upload_tgt` feature.
+
+Better accuracy is observed with user-specific models rather than trying to learn a global model across all users.
+
+Under experimentation: One can create a non-linear extrapolator (analogous to a numerical solver) with this model 
+where evaluations of the
+model over successive, small time increments are able to trace out a non-linear prediction of stats.
+This does a surprisingly good job of tracking some stats curves in some cases, but needs more work.
+
+### Advanced model: generalized additive model (GAM) \[not implemented\]
+
+A more advanced model could attempt to learn a temporal profile of stats values for each word or embedded-word feature.
+These profiles could then be combined according to the other features to make non-linear predictions into the future.
+
 ### Making predictions
 
 This model takes both static metadata (`bow`, `subscriber count`, `username`) and dynamic data (`time_after_upload_src`, `stats`) into 
@@ -119,3 +147,14 @@ all videos, which is then used to construct the `bow` feature representation for
 In practice, the `bow` component of the input is first embedded into a 1000-dimensional dense vector using 
 linear dimensionality reduction or other techniques (e.g. fastText, word2vec). This simplifies and speeds up training
 significantly.
+
+
+## APIs
+
+APIs are implemented as FastAPI processes.
+
+To launch the `raw_data` API process on the command line (at repo root level): 
+`PYTHONPATH=/home/nuc/crawler python src/api/raw_data/main.py`
+
+
+### Raw data

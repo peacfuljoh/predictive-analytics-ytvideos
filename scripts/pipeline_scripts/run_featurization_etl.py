@@ -3,11 +3,11 @@
 import copy
 
 from src.crawler.crawler.config import DB_MONGO_CONFIG
-from src.etl_pipelines.featurization_etl import etl_features_main
-from src.etl_pipelines.featurization_etl_utils import (ETLRequestFeatures, ETLRequestVocabulary,
-                                                       DB_FEATURES_NOSQL_DATABASE, DB_FEATURES_NOSQL_COLLECTIONS)
+from src.etl.featurization_etl import etl_features_main
+from src.etl.featurization_etl_utils import (ETLRequestFeatures, ETLRequestVocabulary,
+                                             DB_FEATURES_NOSQL_DATABASE, DB_FEATURES_NOSQL_COLLECTIONS)
 from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL
-from src.etl_pipelines.etl_request import validate_etl_config
+from src.etl.etl_request import validate_etl_config
 
 
 ETL_CONFIG_VOCAB_VALID_KEYS = dict(

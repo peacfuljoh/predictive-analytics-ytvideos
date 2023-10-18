@@ -21,7 +21,7 @@ from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL,
                                            PREFEATURES_USERNAME_COL, PREFEATURES_TIMESTAMP_COL,
                                            PREFEATURES_VIDEO_ID_COL, PREFEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_TOKENS_COL, TIMESTAMP_FMT)
-from src.etl_pipelines.etl_request import ETLRequest, req_to_etl_config_record
+from src.etl.etl_request import ETLRequest, req_to_etl_config_record
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
@@ -87,7 +87,7 @@ class ETLRequestPrefeatures(ETLRequest):
 
 """ ETL Extract """
 def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFrame, None, None], dict]:
-    """Extract tabular data according to request"""
+    """Extract tabular raw_data according to request"""
     # construct query components
     database = DB_VIDEOS_DATABASE
     tablename_primary = DB_VIDEOS_TABLES['stats']
@@ -159,7 +159,7 @@ def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFr
 def etl_extract_nontabular(df: pd.DataFrame,
                            info_tabular_extract: dict) \
         -> Dict[str, Image]:
-    """Non-tabular data"""
+    """Non-tabular raw_data"""
     # TODO: replace call to get_mongodb_records() with call to get_mongodb_records_gen() and iter through gen
     pass
     # video_ids: List[str] = list(df['video_id'].unique())  # get unique video IDs
@@ -396,7 +396,7 @@ def etl_clean_raw_data_one_df(df: pd.DataFrame):
         df_err = df[STATS_NUMERICAL_COLS].isin(literals_err)
         err_mask_sum: pd.Series = df_err.sum(axis=0)
         if err_mask_sum.sum() > 0:
-            err_msg = f'\netl_clean_raw_data_one_df() -> Some numerical data entries are invalid. Total count is {len(df)}; ' + \
+            err_msg = f'\netl_clean_raw_data_one_df() -> Some numerical raw_data entries are invalid. Total count is {len(df)}; ' + \
                       ', '.join([f'{key}: {val}' for key, val in err_mask_sum.items()])
             print(err_msg)
             # print_df_full(df.loc[df_err.any(axis=1), keys_num + ['video_id', 'username']])
@@ -409,7 +409,7 @@ def etl_clean_raw_data_one_df(df: pd.DataFrame):
 def etl_clean_raw_data(data: dict,
                        req: ETLRequestPrefeatures) \
         -> Generator[pd.DataFrame, None, None]:
-    """Clean the raw data"""
+    """Clean the raw raw_data"""
     df = etl_clean_raw_data_one_df(next(data['stats']))
     return df
 
@@ -456,7 +456,7 @@ def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None],
 def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
                   req: ETLRequestPrefeatures) \
         -> Generator[pd.DataFrame, None, None]:
-    """Map cleaned raw data to features"""
+    """Map cleaned raw raw_data to features"""
     # inspect words lists and counts
     if 0:
         dfs = []
@@ -501,7 +501,7 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
         'timestamp_accessed': ...,
         'video_id': ...,
         'etl_config': ...,
-        'data': ...
+        'raw_data': ...
     }
     """
     cols_exclude = ['username', 'video_id']

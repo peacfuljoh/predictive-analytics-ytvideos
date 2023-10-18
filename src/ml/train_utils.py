@@ -13,7 +13,7 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            PREFEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
                                            NUM_INTVLS_PER_VIDEO, ML_MODEL_TYPE, ML_MODEL_TYPE_LIN_PROJ_RAND, TRAIN_TEST_SPLIT,
                                            KEYS_TRAIN_ID, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT,
-                                           KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME)
+                                           KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME, KEYS_FOR_PRED_NONBOW_ID)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import (load_config_timestamp_sets_for_features,
                                                               convert_ts_fmt_for_mongo_id)
 from src.crawler.crawler.utils.misc_utils import is_dict_of_instances, get_ts_now_str, is_subset
@@ -79,7 +79,7 @@ def make_causal_index_pairs(num_idxs: int,
 def embed_bow_with_lin_proj_rand(ml_request: MLRequest,
                                  df_bow: pd.DataFrame) \
         -> MLModelLinProjRandom:
-    """Embed bag-of-words features: data-independent dimensionality reduction"""
+    """Embed bag-of-words features: raw_data-independent dimensionality reduction"""
     model = MLModelLinProjRandom(ml_request)
     model.fit(df_bow) # only uses shape
     df_bow[FEATURES_VECTOR_COL] = model.transform(df_bow, dtype=pd.Series)
@@ -140,7 +140,7 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
         df[KEY_TRAIN_TIME_DIFF] = diffs_.dt.total_seconds()
         df = df.drop(columns=[PREFEATURES_TIMESTAMP_COL])  # drop timestamp
 
-        # generate data samples by causal temporal pairs
+        # generate raw_data samples by causal temporal pairs
         idxs_src, idxs_tgt = make_causal_index_pairs(len(df), NUM_INTVLS_PER_VIDEO)
         df_src = df.iloc[idxs_src].reset_index(drop=True)  # has video identifiers
         df_tgt = df[keys_feat_tgt].iloc[idxs_tgt].reset_index(drop=True) # does not have video identifiers (otherwise concat would duplicate)
@@ -161,7 +161,7 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
 def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
                             ml_request: MLRequest) \
         -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
-    """Stream data in and convert to format needed for ML"""
+    """Stream raw_data in and convert to format needed for ML"""
     config_ml = ml_request.get_config()
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
 
@@ -170,19 +170,14 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
     keys_feat_src = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]  # columns of interest for output vectors
     keys_feat_tgt = KEYS_TRAIN_NUM_TGT + [KEY_TRAIN_TIME_DIFF] # columns of interest for output vectors
 
-    # stream all data into RAM
+    # stream all raw_data into RAM
     df_data = stream_all_features_into_ram(df_gen, keys_extract)
 
     # filter by group and collect bag-of-words info in a separate DataFrame
     df_nonbow, df_bow = split_feature_df_and_filter(df_data, MIN_VID_SAMPS_FOR_DATASET)
 
-    # embed bag-of-words features: data-independent dimensionality reduction
+    # embed bag-of-words features: raw_data-independent dimensionality reduction
     model_embed = embed_bow_with_lin_proj_rand(ml_request, df_bow) # df_bow modified in-place
-
-    # encode usernames in indicator vectors
-    # usernames = df_data['username'].unique()
-    # username_code_vecs: Dict[str, List[int]] = {name: [int(i == j) for j in range(len(usernames))]
-    #                                             for i, name in enumerate(usernames)}
 
     # prepare non-bow features
     df_nonbow = prepare_input_output_vectors(df_nonbow, keys_feat_src, keys_feat_tgt)
@@ -226,7 +221,7 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
             df_bow = df_bow[df_bow['username'] == uname]
             model_.fit(df_nonbow, df_bow)
 
-        if 0:
+        if 1:
             # try model encoding and decoding
             model_dicts = {}
             for uname, model_ in model.items():
@@ -235,11 +230,8 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
             for uname in usernames:
                 model[uname] = MLModelRegressionSimple(verbose=True, model_dict=model_dicts[uname])
 
-    # predict
-    # out = model.predict(data['nonbow_test'])
-
     # see predictions
-    if 0:
+    if 1:
         import matplotlib.pyplot as plt
 
         if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
@@ -256,7 +248,7 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
 
 def plot_predictions(data: Dict[str, pd.DataFrame],
                      model):
-    """Plot test data and predictions for various src times."""
+    """Plot test raw_data and predictions for various src times."""
     import matplotlib.pyplot as plt
 
     n_plots = 5
@@ -270,7 +262,7 @@ def plot_predictions(data: Dict[str, pd.DataFrame],
     data_ids_shuffle = data['nonbow_test'][KEYS_TRAIN_ID].drop_duplicates().sample(frac=1)
     for i, (_, row) in enumerate(data_ids_shuffle.iterrows()):
         if i < n_plots:
-            # get data for this video
+            # get raw_data for this video
             username = row['username']
             video_id = row['video_id']
 
@@ -279,17 +271,49 @@ def plot_predictions(data: Dict[str, pd.DataFrame],
             df_i = df_i.sort_values(by=[t0_col])
             N = len(df_i)
 
-            # create test sets anchored on a few src times
             rec_last = df_i.iloc[df_i[t0_col].argmax()]
-            df_test = []
-            for j in [0, int(0.25 * N), int(0.5 * N), int(0.75 * N)]:
-                rec_first = df_i.iloc[j]
-                df_ = pd.DataFrame([rec_first for _ in range(n_pred)])
-                df_[tf_col] = np.linspace(rec_first[t0_col], rec_last[t0_col] * 1.25, n_pred)
-                df_test.append(df_)
+            idxs_start = [0, int(0.25 * N), int(0.5 * N), int(0.75 * N)]
 
-            # predict with model
-            df_pred = [model.predict(df_) for df_ in df_test]
+            if 1: # extrapolate out from a few anchor measurements
+                # create test sets anchored on a few src times
+                df_test = []
+                for j in idxs_start:
+                    rec_first = df_i.iloc[j]
+                    df_ = pd.DataFrame([rec_first for _ in range(n_pred)])
+                    df_[tf_col] = np.linspace(rec_first[t0_col], rec_last[t0_col] * 1.25, n_pred)
+                    df_test.append(df_)
+
+                # predict with model
+                df_pred = [model.predict(df_) for df_ in df_test]
+            else: # incremental prediction from a starting time
+                df_pred = []
+
+                # create test sets anchored on a few src times
+                for j in idxs_start:
+                    rec_first = df_i.iloc[j]
+                    df_ = pd.DataFrame([rec_first])
+                    times_ = np.linspace(rec_first[t0_col], rec_last[t0_col] * 1.25, n_pred)
+
+                    df_pred_ = []
+                    for k, t_ in enumerate(times_):
+                        if k == 0:
+                            # first sample
+                            df_pred_one = df_[KEYS_FOR_PRED_NONBOW_ID].copy()
+                            df_pred_one[KEY_TRAIN_TIME_DIFF + '_tgt'] = df_pred_one[KEY_TRAIN_TIME_DIFF + '_src']
+                            for key in KEYS_TRAIN_NUM_TGT:
+                                df_pred_one[key + '_pred'] = df_[key + '_src']
+                        else:
+                            # predict one step forward (update src time, tgt time, and src stats)
+                            df_test = df_[KEYS_FOR_PRED_NONBOW_ID].copy()
+                            df_test[KEY_TRAIN_TIME_DIFF + '_src'] = df_pred_[-1][KEY_TRAIN_TIME_DIFF + '_tgt']
+                            df_test[KEY_TRAIN_TIME_DIFF + '_tgt'] = t_
+                            for key in KEYS_TRAIN_NUM_TGT:
+                                df_test[key + '_src'] = df_pred_[-1][key + '_pred']
+                            for key in ['subscriber_count_src']:
+                                df_test[key] = df_[key]
+                            df_pred_one = model.predict(df_test)
+                        df_pred_.append(df_pred_one)
+                    df_pred.append(pd.concat(df_pred_, axis=0, ignore_index=True))
 
             # plot
             keys_tgt = KEYS_TRAIN_NUM_TGT

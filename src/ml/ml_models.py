@@ -33,7 +33,7 @@ class MLModelProjection():
         self._n_features = None
 
     def _validate_df_bow(self, data):
-        """Make sure data object is valid for bag-of-words models."""
+        """Make sure raw_data object is valid for bag-of-words models."""
         assert isinstance(data, pd.DataFrame)
         assert FEATURES_VECTOR_COL in data.columns
         if self._n_features is not None:
@@ -88,7 +88,7 @@ class MLModelLinProjRandom(MLModelProjection):
         """Fit model"""
         self._validate_df_bow(data)
 
-        # determine data matrix dims
+        # determine raw_data matrix dims
         n_samples = len(data[FEATURES_VECTOR_COL])
         self._n_features = 0
         for _, pts in self._bow_gen(data):
@@ -131,7 +131,7 @@ class LinearRegressionCustom():
     def fit(self,
             X: np.ndarray,
             y: np.ndarray):
-        """Fit model to data."""
+        """Fit model to raw_data."""
         _, N = X.shape
         Xs = self._concat_const(X)
         H = 1 / N * Xs.T @ Xs + self._alpha * np.eye(N + 1)
@@ -139,7 +139,7 @@ class LinearRegressionCustom():
         self._coeffs = np.linalg.inv(H) @ V
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Apply model to make prediction for input data."""
+        """Apply model to make prediction for input raw_data."""
         return self._concat_const(X) @ self._coeffs
 
     def get_params_dict(self) -> dict:
@@ -210,10 +210,10 @@ class MLModelRegressionSimple():
     def fit(self,
             data_nonbow: pd.DataFrame,
             data_bow: pd.DataFrame):
-        """Fit model to data."""
+        """Fit model to raw_data."""
         hp = self._config[ML_MODEL_HYPERPARAMS]
 
-        # validate and store bow data
+        # validate and store bow raw_data
         # assert len(data_bow.drop_duplicates()) == len(data_bow) # no duplicated rows --> drop_duplicates() fails
         self._data_bow = data_bow
 
@@ -293,7 +293,7 @@ class MLModelRegressionSimple():
                             y_pred: np.ndarray) \
         -> pd.DataFrame:
         """Convert prediction array into DataFrame to retain identifying details."""
-        data_pred = data_nonbow[KEYS_FOR_PRED_NONBOW_ID]
+        data_pred = data_nonbow[KEYS_FOR_PRED_NONBOW_ID].copy()
         for i, key in enumerate(KEYS_FOR_PRED_NONBOW_TGT):
             data_pred[key] = y_pred[:, i]
         return data_pred

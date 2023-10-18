@@ -1,4 +1,4 @@
-"""Utils for visualizing data"""
+"""Utils for visualizing raw_data"""
 
 from typing import List, Dict
 

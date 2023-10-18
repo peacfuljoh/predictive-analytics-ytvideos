@@ -3,10 +3,10 @@
 import pandas as pd
 
 from src.crawler.crawler.config import DB_MONGO_CONFIG
-from src.etl_pipelines.prefeaturization_etl import etl_prefeatures_main
-from src.etl_pipelines.prefeaturization_etl_utils import (ETLRequestPrefeatures, DB_FEATURES_NOSQL_DATABASE,
-                                                          DB_FEATURES_NOSQL_COLLECTIONS)
-from src.etl_pipelines.etl_request import validate_etl_config
+from src.etl.prefeaturization_etl import etl_prefeatures_main
+from src.etl.prefeaturization_etl_utils import (ETLRequestPrefeatures, DB_FEATURES_NOSQL_DATABASE,
+                                                DB_FEATURES_NOSQL_COLLECTIONS)
+from src.etl.etl_request import validate_etl_config
 from src.visualization.dashboard import Dashboard
 
 

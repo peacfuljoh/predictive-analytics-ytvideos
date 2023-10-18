@@ -172,7 +172,7 @@ class TimeLock():
 def fetch_data_at_url(url: str,
                       delay: float = 0) \
         -> bytes:
-    """Fetch data at specified URL"""
+    """Fetch raw_data at specified URL"""
     if delay > 0:
         time.sleep(delay)
     return requests.get(url).content
@@ -294,6 +294,7 @@ def join_on_dfs(df0: pd.DataFrame,
 
     The index keys in df0 are treated like foreign keys into df1.
     """
+    # TODO: handle case where index keys in df0 don't exist in df1
     # perform select on df0
     if df0_keys_select is not None:
         df0_select = df0[df0_keys_select]
@@ -342,7 +343,7 @@ def convert_mixed_df_to_array(df: pd.DataFrame,
         elif isinstance(samp0, list):
             data.append(np.array(list(data_)))
         else:
-            print(f'convert_mixed_df_to_array() -> Skipping column {col} with invalid data type {type(samp0)}.')
+            print(f'convert_mixed_df_to_array() -> Skipping column {col} with invalid raw_data type {type(samp0)}.')
 
     return np.hstack(data)
 

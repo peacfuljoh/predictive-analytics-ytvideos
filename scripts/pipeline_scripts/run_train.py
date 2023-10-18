@@ -26,7 +26,7 @@ config_load = {
 
 # specify ML model options
 rlp_density = 0.01 # density of sparse projector matrix
-train_test_split_fract = 0.8 # fraction of data for train
+train_test_split_fract = 0.8 # fraction of raw_data for train
 sr_alphas = [1e-6, 1e-4, 1e-2] # simple regression regularization coefficient
 cv_split = 0.9 # cross-validation split ratio
 cv_count = 10 # number of CV splits
@@ -51,17 +51,20 @@ ml_request = MLRequest(config_ml)
 # configs_timestamps = load_config_timestamp_sets_for_features(configs=configs)
 # print_df_full(configs_timestamps)
 
-# load feature records
-df_gen, config_data = load_feature_records(config_load)
+# get data, train model
+if 1:
+    # load feature records
+    df_gen, config_data = load_feature_records(config_load)
 
-# preprocess feature records
-data_all, model_embed = prepare_feature_records(df_gen, ml_request)
+    # preprocess feature records
+    data_all, model_embed = prepare_feature_records(df_gen, ml_request)
 
-# split into train and test
-train_test_split(data_all, ml_request) # in-place
+    # split into train and test
+    train_test_split(data_all, ml_request)  # in-place
 
-# train model
-model_reg = train_regression_model_simple(data_all, ml_request)
+    # train model
+    model_reg = train_regression_model_simple(data_all, ml_request)
 
 # store model
-save_reg_model(model_reg, ml_request, config_load)
+if 0:
+    save_reg_model(model_reg, ml_request, config_load)

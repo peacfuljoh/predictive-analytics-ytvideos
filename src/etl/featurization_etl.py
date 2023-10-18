@@ -14,7 +14,7 @@ from typing import Dict
 
 from gensim.corpora import Dictionary
 
-from src.etl_pipelines.featurization_etl_utils import \
+from src.etl.featurization_etl_utils import \
     ETLRequestFeatures, ETLRequestVocabulary, etl_extract_prefeature_records, etl_create_vocab, etl_load_vocab_to_db, \
     etl_featurize_records_with_vocab, etl_load_features_to_db, etl_load_vocab_from_db
 from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, VOCAB_ETL_CONFIG_COL

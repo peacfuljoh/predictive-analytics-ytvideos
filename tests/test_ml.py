@@ -24,7 +24,7 @@ def test_rand_lin_proj():
 
     num_nonzero_in_proj = (num_dims_embed * num_features) * density
 
-    # data
+    # raw_data
     data = {FEATURES_VECTOR_COL: []}
     for _ in range(num_samps):
         idxs = np.random.permutation(num_features)[:num_nonzero_per_samp]
