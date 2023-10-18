@@ -74,8 +74,17 @@ class MongoDBEngine():
 
     def get_ids(self) -> List[str]:
         """Get all IDs for a collection"""
-        return [str(id) for id in self._get_collection().distinct('_id')]
-
+        # TODO: implement exception efficiently, e.g. write ids to temp collection, then read from there:
+        #   https://stackoverflow.com/questions/27323107/mongodb-distinct-too-big-16mb-cap
+        try:
+            return [str(id) for id in self._get_collection().distinct('_id')]
+        except:
+            # exception if distinct is too large
+            ids = []
+            df_gen = self.find_many_gen(projection={'_id': 1})
+            while not (df_ := next(df_gen)).empty:
+                ids += list(df_['_id'])
+            return ids
 
     ## DB operations ##
     def _get_collection(self) -> Collection:
@@ -143,7 +152,20 @@ class MongoDBEngine():
         """Find a single record"""
         def func():
             cn = self._get_collection()
-            return cn.find_one({"_id": id})
+
+            # try provided id as-is
+            rec = cn.find_one({"_id": id})
+            if rec is not None:
+                return rec
+
+            # try converting to ObjectId
+            rec = cn.find_one({"_id": ObjectId(id)})
+            if rec is not None:
+                return rec
+
+            # fail
+            raise Exception(f'Could not find record with _id {id}.')
+
         return self._query_wrapper(func)
 
     def find_one(self,

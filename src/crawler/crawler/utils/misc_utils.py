@@ -275,6 +275,12 @@ def is_list_of_sequences(obj: Sequence,
         return True
     return False
 
+def is_dict_of_instances(obj: Sequence,
+                         type) \
+        -> bool:
+    """Check that object is a dict of objects of a specified instance."""
+    return isinstance(obj, dict) and all([isinstance(val, type) for key, val in obj.items()])
+
 
 def join_on_dfs(df0: pd.DataFrame,
                 df1: pd.DataFrame,
@@ -339,3 +345,14 @@ def convert_mixed_df_to_array(df: pd.DataFrame,
             print(f'convert_mixed_df_to_array() -> Skipping column {col} with invalid data type {type(samp0)}.')
 
     return np.hstack(data)
+
+def just_dict_keys(obj: dict) -> Union[dict, None]:
+    """Return dictionary with only keys. Leaf values will be replaced with None."""
+    if not isinstance(obj, dict):
+        return None
+
+    obj_keys = {}
+    for key, val in obj.items():
+        obj_keys[key] = just_dict_keys(val)
+
+    return obj_keys

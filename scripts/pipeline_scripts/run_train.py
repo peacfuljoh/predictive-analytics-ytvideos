@@ -10,7 +10,7 @@ from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CO
                                            ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_EMBED_DIM,
                                            ML_MODEL_TYPE_LIN_PROJ_RAND, VEC_EMBED_DIMS, TRAIN_TEST_SPLIT,
                                            ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
-                                           ML_HYPERPARAM_SR_CV_COUNT)
+                                           ML_HYPERPARAM_SR_CV_COUNT, SPLIT_TRAIN_BY_USERNAME)
 from src.crawler.crawler.utils.misc_utils import print_df_full
 from src.ml.ml_request import MLRequest
 
@@ -30,6 +30,7 @@ train_test_split_fract = 0.8 # fraction of data for train
 sr_alphas = [1e-6, 1e-4, 1e-2] # simple regression regularization coefficient
 cv_split = 0.9 # cross-validation split ratio
 cv_count = 10 # number of CV splits
+split_train_by_username = True
 
 config_ml = {
     ML_MODEL_TYPE: ML_MODEL_TYPE_LIN_PROJ_RAND,
@@ -40,7 +41,8 @@ config_ml = {
         ML_HYPERPARAM_SR_CV_SPLIT: cv_split,
         ML_HYPERPARAM_SR_CV_COUNT: cv_count
     },
-    TRAIN_TEST_SPLIT: train_test_split_fract
+    TRAIN_TEST_SPLIT: train_test_split_fract,
+    SPLIT_TRAIN_BY_USERNAME: split_train_by_username
 }
 
 ml_request = MLRequest(config_ml)
@@ -59,8 +61,7 @@ data_all, model_embed = prepare_feature_records(df_gen, ml_request)
 train_test_split(data_all, ml_request) # in-place
 
 # train model
-split_train_by_username = True
-model_reg = train_regression_model_simple(data_all, ml_request, split_by_username=split_train_by_username)
+model_reg = train_regression_model_simple(data_all, ml_request)
 
 # store model
 save_reg_model(model_reg, ml_request, config_load)

@@ -20,14 +20,20 @@ REPL_STRS_MKEY_TO_TS = {val: key for key, val in REPL_STRS_TS_TO_MKEY.items()}
 
 
 
-def convert_ts_fmt_for_mongo_id(ts: Union[datetime, str]) -> Tuple[str, str]:
+def convert_ts_fmt_for_mongo_id(ts: Union[datetime, str],
+                                replace_chars: bool = False) \
+        -> Tuple[str, str]:
     # convert to string via format if not already there
     ts_str = ts if isinstance(ts, str) else ts.strftime(TIMESTAMP_FMT)
 
     # reformat for _id
     ts_str_id = ts_str
-    for key in REPL_STRS_TS_TO_MKEY.keys():
-        ts_str_id = ts_str_id.replace(key, '')
+    if not replace_chars:
+        for key in REPL_STRS_TS_TO_MKEY.keys():
+            ts_str_id = ts_str_id.replace(key, '')
+    else:
+        for key, val in REPL_STRS_TS_TO_MKEY.items():
+            ts_str_id = ts_str_id.replace(key, val)
     return ts_str, ts_str_id
 
 def save_image_to_db(database: str,

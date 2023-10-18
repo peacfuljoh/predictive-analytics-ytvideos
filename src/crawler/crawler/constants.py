@@ -61,6 +61,7 @@ ML_HYPERPARAM_RLP_DENSITY = 'lin_proj_random_density'
 ML_HYPERPARAM_SR_ALPHAS = 'simple_reg_alphas'
 ML_HYPERPARAM_SR_CV_SPLIT = 'simple_reg_cv_split'
 ML_HYPERPARAM_SR_CV_COUNT = 'simple_reg_cv_count'
+SPLIT_TRAIN_BY_USERNAME = 'split_train_by_username'
 ML_CONFIG_KEYS = [ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS]
 ML_MODEL_TYPES = [ML_MODEL_TYPE_LIN_PROJ_RAND, ML_MODEL_TYPE_GAM_TOPIC]
 TRAIN_TEST_SPLIT = 'tt_split'
@@ -75,4 +76,3 @@ KEYS_FOR_FIT_NONBOW_TGT = KEYS_TRAIN_NUM_TGT
 KEYS_FOR_FIT_NONBOW_TGT = [key + '_tgt' for key in KEYS_FOR_FIT_NONBOW_TGT]
 KEYS_FOR_PRED_NONBOW_ID = KEYS_TRAIN_ID + [KEY_TRAIN_TIME_DIFF + suffix for suffix in ['_src', '_tgt']]
 KEYS_FOR_PRED_NONBOW_TGT = [key + '_pred' for key in KEYS_TRAIN_NUM_TGT]
-

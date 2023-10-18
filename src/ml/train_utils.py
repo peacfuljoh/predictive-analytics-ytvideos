@@ -6,21 +6,26 @@ import copy
 import pandas as pd
 import numpy as np
 
-from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen
+from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, MongoDBEngine
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL,
                                            PREFEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
                                            NUM_INTVLS_PER_VIDEO, ML_MODEL_TYPE, ML_MODEL_TYPE_LIN_PROJ_RAND, TRAIN_TEST_SPLIT,
                                            KEYS_TRAIN_ID, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT,
-                                           KEY_TRAIN_TIME_DIFF)
-from src.crawler.crawler.utils.mongodb_utils_ytvideos import load_config_timestamp_sets_for_features
+                                           KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME)
+from src.crawler.crawler.utils.mongodb_utils_ytvideos import (load_config_timestamp_sets_for_features,
+                                                              convert_ts_fmt_for_mongo_id)
+from src.crawler.crawler.utils.misc_utils import is_dict_of_instances, get_ts_now_str, is_subset
 from src.ml.ml_request import MLRequest
 from src.ml.ml_models import MLModelLinProjRandom, MLModelRegressionSimple
 
 
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
 DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
+
+DB_MODELS_NOSQL_DATABASE = DB_INFO['DB_MODELS_NOSQL_DATABASE']
+DB_MODELS_NOSQL_COLLECTIONS = DB_INFO['DB_MODELS_NOSQL_COLLECTIONS']
 
 
 
@@ -201,33 +206,34 @@ def train_test_split(data: Dict[str, pd.DataFrame],
     del data['nonbow'] # save on memory
 
 def train_regression_model_simple(data: Dict[str, pd.DataFrame],
-                                  ml_request: MLRequest,
-                                  split_by_username: bool = False) \
+                                  ml_request: MLRequest) \
         -> Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]]:
     """Train simple regression model"""
     config_ml = ml_request.get_config()
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
 
     # fit model
-    if not split_by_username:
+    if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
         model = MLModelRegressionSimple(ml_request, verbose=True)
         model.fit(data['nonbow_train'], data['bow'])
     else:
         usernames = data['nonbow_train']['username'].drop_duplicates()
-        models = {uname: MLModelRegressionSimple(ml_request, verbose=True) for uname in usernames}
-        for uname, model in models.items():
+        model = {uname: MLModelRegressionSimple(ml_request, verbose=True) for uname in usernames}
+        for uname, model_ in model.items():
             df_nonbow = data['nonbow_train']
             df_nonbow = df_nonbow[df_nonbow['username'] == uname]
-            model.fit(df_nonbow, data['bow'])
+            df_bow = data['bow']
+            df_bow = df_bow[df_bow['username'] == uname]
+            model_.fit(df_nonbow, df_bow)
 
         if 0:
             # try model encoding and decoding
             model_dicts = {}
-            for uname, model in models.items():
-                model_dicts[uname] = model.encode()
-            models = {}
+            for uname, model_ in model.items():
+                model_dicts[uname] = model_.encode()
+            model = {}
             for uname in usernames:
-                models[uname] = MLModelRegressionSimple(verbose=True, model_dict=model_dicts[uname])
+                model[uname] = MLModelRegressionSimple(verbose=True, model_dict=model_dicts[uname])
 
     # predict
     # out = model.predict(data['nonbow_test'])
@@ -236,13 +242,13 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
     if 0:
         import matplotlib.pyplot as plt
 
-        if not split_by_username:
+        if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
             plot_predictions(data, model)
         else:
-            for uname, model in models.items():
+            for uname, model_ in model.items():
                 df_nonbow = data['nonbow_test']
                 data_ = dict(nonbow_test=df_nonbow[df_nonbow['username'] == uname])
-                plot_predictions(data_, model)
+                plot_predictions(data_, model_)
 
         plt.show()
 
@@ -296,11 +302,62 @@ def plot_predictions(data: Dict[str, pd.DataFrame],
                     axes[i, j].set_title(key)
             axes[i, 0].set_ylabel(username + '\n' + video_id)
 
+def make_model_obj(model_,
+                   _id: str,
+                   uname_: Optional[str] = '') \
+        -> dict:
+    return dict(
+        model=model_.encode(),
+        meta_id=_id,
+        name=uname_
+    )
+
 def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]],
                    ml_request: MLRequest,
                    config_load: Dict[str, str]):
     """Save regression model(s) to the model store along with configs."""
-    # prepare objects to store
-    pass
-    # TODO: finish this up (encode model and write to model store along with data and ML configs)
+    # check that model is the right format/type
+    is_lrs_model = (isinstance(model_reg, MLModelRegressionSimple) or
+                    is_dict_of_instances(model_reg, MLModelRegressionSimple))
+
+    assert is_lrs_model
+
+    # get _id from timestamp
+    ts_str = get_ts_now_str('ms')
+    _, _id = convert_ts_fmt_for_mongo_id(ts_str)
+
+    ### configs and other metadata
+    # prepare object
+    obj = dict(_id=_id, meta={}, config={})
+    if is_lrs_model:
+        obj['meta']['model_type'] = ML_MODEL_TYPE_LIN_PROJ_RAND
+    else:
+        raise Exception('Model type not recognized.')
+    obj['config']['load'] = config_load
+    obj['config']['ml'] = ml_request.get_config()
+
+    # validate obj
+    assert set(obj) == {'_id', 'meta', 'config'}
+    assert is_subset(['model_type'], obj['meta'])
+    assert set(obj['config']) == {'load', 'ml'}
+
+    # write to model store
+    engine = MongoDBEngine(DB_MONGO_CONFIG,
+                           database=DB_MODELS_NOSQL_DATABASE,
+                           collection=DB_MODELS_NOSQL_COLLECTIONS['meta'],
+                           verbose=True)
+    engine.insert_one(obj)
+
+    ### models
+    engine.set_db_info(collection=DB_MODELS_NOSQL_COLLECTIONS['models'])
+
+    # encode model(s) and write to store
+    if isinstance(model_reg, dict): # multiple models
+        for uname, model in model_reg.items():
+            obj_ = make_model_obj(model, _id, uname)
+            engine.insert_one(obj_)
+    else:
+        obj_ = make_model_obj(model_reg, _id)
+        engine.insert_one(obj_)
+
 

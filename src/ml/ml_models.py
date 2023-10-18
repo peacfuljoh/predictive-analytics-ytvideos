@@ -302,7 +302,7 @@ class MLModelRegressionSimple():
         """Convert model info to storage dict."""
         d = {}
         d['config'] = self._config
-        d['data_bow'] = self._data_bow.to_dict()
+        d['data_bow'] = self._data_bow.to_dict('records') # drops record indices
         d['preprocessor'] = dict(
             name='StandardScaler',
             params=dict(
