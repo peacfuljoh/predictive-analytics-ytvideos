@@ -6,16 +6,34 @@ THIS PROJECT IS UNDER CONSTRUCTION. IT'S CURRENTLY HIGHLY MODULAR ALBEIT MONOLIT
 
 This repo contains an end-to-end, full-stack web application implementing predictive analytics for YouTube (YT) videos. The goal is to predict future stats (e.g. likes, comments, views) from current stats, metadata (e.g. subscribers), text (e.g. title, description, tags, keywords), and the video's thumbnail image.
 
-1. Data collection: A backend web crawler process regularly pulls video stats and other info for desired YT channels and stores them in a raw MySQL database.
-2. Featurization: An ETL pipeline converts these records into "prefeatures" that are fed through a second ETL pipeline to produce "features". Prefeaturization is sample-specific while featurization involves creating a dictionary for the text features from a desired subset of video information and thus requires processing the entire dataset together.
-3. Model training: A desired feature set is used to train a regression model that predict future video stats from stats at a previous point in time.
-4. Front-end dashboard: Allows for exploration of the database (slicing and filtering as desired), training models with desired feature subsets, and visualizing predictions.
+1. Data collection: A backend web crawler process regularly pulls video stats and other info for desired YT channels and stores them in MySQL tables.
+2. Featurization: An ETL pipeline converts these records into "prefeatures" that are fed through a second ETL pipeline to produce "features", stored in MongoDB collections. Prefeaturization is sample-specific while featurization involves creating a dictionary for the text features from a desired subset of videos and users, and thus requires processing the entire dataset together.
+3. Model training: A desired feature set is used to train a regression model that predicts future video stats from stats at a previous point in time.
+4. Front-end dashboard: A Flask-served dashboard enables exploration of the database (slicing and filtering as desired), training models with desired feature subsets, and visualizing predictions.
 
 The pipeline components use Python generators wherever possible to minimize memory use. This is a common data streaming technique when working with large-scale document datasets and is standard practice in text-processing libraries like Gensim (used in this project).
 
 All steps in the pipeline have associated JSON-format configs that are stored alongside the corresponding ETL output artifacts. This enables feature and model versioning (a.k.a. provenance) and therefore reproducibility. If all data stores (not raw data!) are emptied, the pipeline can be re-run with the same config options to produce the same outputs.
 
 Raw data is continuously crawled for the latest videos, so we can run predictive analytics in real-time!
+
+
+### Frameworks
+
+Frameworks/technologies used (initial dev, on-prem):
+- Database: MySQL, MongoDB, Redis
+- Web: Scrapy, Flask (w/ Jinja, Plotly)
+- API: FastAPI (w/ OpenAPI spec)
+- Text: Gensim
+- Automation/Deployment: Make, Github Actions
+- Packaging: Poetry
+
+Frameworks/technologies used (cloud, serverless):
+- Database: RDS, DynamoDB
+- Web: Scrapy, Flask
+- API: FastAPI + API Gateway
+- ETL pipelines: Lambda
+- Automation/Deployment: CodeCommit, CodeBuild, CodeDeploy, CodePipeline
 
 
 ## Steps to set up the repo
