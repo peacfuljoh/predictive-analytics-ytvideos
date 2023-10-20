@@ -2,31 +2,12 @@
 
 import pandas as pd
 
-from src.crawler.crawler.config import DB_MONGO_CONFIG
 from src.etl.prefeaturization_etl import etl_prefeatures_main
-from src.etl.prefeaturization_etl_utils import (ETLRequestPrefeatures, DB_FEATURES_NOSQL_DATABASE,
-                                                DB_FEATURES_NOSQL_COLLECTIONS)
-from src.etl.etl_request import validate_etl_config
+from src.etl.prefeaturization_etl_utils import get_etl_req_prefeats
 from src.visualization.dashboard import Dashboard
 
 
-
-ETL_CONFIG_VALID_KEYS_PREFEATURES = dict(
-    extract=['filters', 'limit'],
-    transform=['include_additional_keys'],
-    load=[],
-    preconfig=[]
-)
-ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES = dict(
-    extract=['filters', 'limit'],
-    transform=[],
-    load=[],
-    preconfig=[]
-)
-
-
-
-
+# setup config
 etl_config_name = 'test3'
 # etl_config_name = 'dashboard'
 
@@ -54,17 +35,13 @@ if etl_config_name == 'dashboard':
         }
     }
 
-req = ETLRequestPrefeatures(etl_config,
-                            etl_config_name,
-                            ETL_CONFIG_VALID_KEYS_PREFEATURES,
-                            ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES)
-validate_etl_config(req,
-                    DB_MONGO_CONFIG,
-                    DB_FEATURES_NOSQL_DATABASE,
-                    DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
+# make ETL request object
+req = get_etl_req_prefeats(etl_config_name, etl_config)
 
+# run pipeline
 data = etl_prefeatures_main(req, return_for_dashboard=etl_config_name == 'dashboard')
 
+# run dashboard
 if etl_config_name == 'dashboard':
     dfs = []
     while not (df_ := next(data)).empty:

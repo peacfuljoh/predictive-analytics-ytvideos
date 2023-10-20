@@ -418,3 +418,50 @@ def make_sql_query_where_one(tablename: str,
             return f" {tablename}.{key} IN ({','.join(val_strs)})"
     raise Exception('Where clause options not recognized.')
 
+
+def get_duplicate_idxs(df: pd.DataFrame,
+                       colname: str) \
+        -> pd.DataFrame:
+    """
+    Get duplicate indices for entries in a specified column of a DataFrame.
+
+    Steps:
+        - adds col with index values
+        - group rows by specified column
+        - aggregate rows into groups, add two cols with duplicate first appearance + row indices where duplicates appear
+        - convert to DataFrame with index (first index) and one column (duplicate indices)
+    """
+    idxs = (df[[colname]].reset_index()
+            .groupby([colname])['index']
+            .agg(['first', tuple])
+            .set_index('first')['tuple'])
+    return idxs
+
+
+def remove_trailing_chars(s: str,
+                          trail_chars: Optional[List[str]] = None) \
+        -> str:
+    """Remove trailing chars from a string (e.g. newlines, empty spaces)."""
+    if len(s) == 0:
+        return s
+    if trail_chars is None:
+        trail_chars = ['\n', ' ']
+    i = len(s) - 1
+    while (i >= 0) and (s[i] in trail_chars):
+        i -= 1
+    return s[:i + 1]
+
+
+def df_dt_codec(df: pd.DataFrame,
+                opts: dict,
+                mode: str):
+    """
+    In-place conversion of specified columns (keys of opts) between strings and datetimes with specified format
+    (vals in opts).
+
+    encode: from timestamps or datetimes to strings
+    decode: from strings to datetime of specified formats
+    """
+    assert mode in ['encode', 'decode']
+    for key, val in opts.items():
+        df[key] = df[key].astype(str)

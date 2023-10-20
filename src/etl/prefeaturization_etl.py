@@ -29,10 +29,16 @@ def etl_prefeatures_main(req: ETLRequestPrefeatures,
 def etl_prefeatures_extract(req: ETLRequestPrefeatures) \
         -> Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]]:
     """Extract step of ETL pipeline"""
-    df, info_tabular_extract = etl_extract_tabular(req)
+    df_gen, info_tabular_extract, _ = etl_extract_tabular(req)
+
+    # df_ = next(df_gen)
+    # from src.crawler.crawler.utils.misc_utils import print_df_full
+    # print_df_full(df_)
+    # data_send = df_.to_dict('records')
+
     # records = etl_extract_nontabular(df, info_tabular_extract)
     records = None
-    return dict(stats=df, images=records)
+    return dict(stats=df_gen, images=records)
 
 
 """ Transform """

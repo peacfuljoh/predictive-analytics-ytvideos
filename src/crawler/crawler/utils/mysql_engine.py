@@ -3,12 +3,12 @@ Database utils for MySQL including basic CRUD operations and more
 complex functionality using the engine.
 """
 
-from typing import Dict, Optional, Callable, List, Union, Generator
+from typing import Dict, Optional, Callable, List, Union, Generator, Tuple
 
 import mysql.connector
 import pandas as pd
 
-from .misc_utils import is_subset
+from .misc_utils import is_subset, make_sql_query_where_one
 
 
 SELECT_RECORDS_GEN_MAX_COUNT = 1000
@@ -359,4 +359,71 @@ def update_records_from_dict(database: str,
     engine = MySQLEngine(db_config)
     engine.insert_records_to_table(database, query, records)
 
+def perform_join_mysql_query(db_config: dict,
+                             database: str,
+                             tablename_primary: str,
+                             tablename_secondary: str,
+                             table_pseudoname_primary: str,
+                             table_pseudoname_secondary: str,
+                             join_condition: str,
+                             cols_all: Dict[str, List[str]],
+                             filters: Optional[dict] = None,
+                             limit: Optional[int] = None,
+                             as_generator: bool = False) \
+        -> Tuple[Generator[pd.DataFrame, None, None], MySQLEngine]:
+    """
+    Perform join query with specified options.
+
+    Args:
+        database: name of database to perform query on
+        tablename_primary: first table in join
+        tablename_secondary: second table in join
+        table_pseudoname_primary: post-join name for first table
+        table_pseudoname_secondary: post-join name for second table
+        join_condition: join condition clause in query
+        cols_all: dict with columns from the two tables to return (keys are table
+                  pseudonames and keys are lists of corresponding column names)
+        filters: dict with conditions for WHERE clause, e.g. filters = dict(username=['uname1', 'uname2']). See all
+                 options for specifying sub-clauses. All sub-clauses are AND'd together.
+        limit: max number of records to return
+    """
+    # column info for query
+    cols_for_query = ([f'{table_pseudoname_primary}.{colname}' for colname in cols_all[table_pseudoname_primary]] +
+                      [f'{table_pseudoname_secondary}.{colname}' for colname in cols_all[table_pseudoname_secondary]])
+    cols_for_df = cols_all[table_pseudoname_primary] + cols_all[table_pseudoname_secondary]
+
+    # where clause
+    where_clause = None
+
+    if filter is not None and len(filters) > 0:
+        where_clauses = []
+        for key, val in filters.items():
+            # identify table that this condition applies to
+            tablename_ = [tname for tname, colnames_ in cols_all.items() if key in colnames_]
+            assert len(tablename_) == 1
+            tablename_ = tablename_[0]
+
+            # add where clause
+            where_clauses.append(make_sql_query_where_one(tablename_, key, val))
+
+        # join sub-clauses
+        where_clause = ' AND '.join(where_clauses)
+
+    # issue request
+    engine = MySQLEngine(db_config)
+    df = engine.select_records_with_join(
+        database,
+        tablename_primary,
+        tablename_secondary,
+        join_condition,
+        cols_for_query,
+        table_pseudoname_primary=table_pseudoname_primary,
+        table_pseudoname_secondary=table_pseudoname_secondary,
+        where_clause=where_clause,
+        limit=limit,
+        cols_for_df=cols_for_df,
+        as_generator=as_generator
+    )
+
+    return df, engine
 

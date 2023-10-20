@@ -11,6 +11,8 @@ MAX_LEN_TAG = 25
 MAX_NUM_KEYWORDS = 25
 MAX_LEN_KEYWORD = 40
 
+VIDEO_STATS_CAPTURE_WINDOW_DAYS = 5 # number of days into the past to consider current videos
+
 # Column names for 'stats' table
 STATS_NUMERICAL_COLS = ['like_count', 'comment_count', 'subscriber_count', 'view_count']
 STATS_DATETIME_COLS = ['timestamp_accessed']
@@ -19,7 +21,7 @@ STATS_ALL_COLS = STATS_NUMERICAL_COLS + STATS_DATETIME_COLS + STATS_TEXT_COLS
 
 # column names for 'meta' table
 META_NUMERICAL_COLS = ['duration']
-META_DATETIME_COLS = ['upload_date', 'timestamp_first_seen']
+META_DATETIME_COLS = [DB_KEY_UPLOAD_DATE, DB_KEY_TIMESTAMP_FIRST_SEEN]
 META_TEXT_COLS = ['video_id', 'username', 'title', 'keywords', 'description', 'tags']
 META_ALL_COLS_NO_URL = META_NUMERICAL_COLS + META_DATETIME_COLS + META_TEXT_COLS
 META_URL_COLS = ['thumbnail_url']
@@ -42,9 +44,14 @@ FEATURES_VECTOR_COL = 'vec'
 FEATURES_TIMESTAMP_COL = 'timestamp_features'
 FEATURES_ETL_CONFIG_COL = 'etl_config_features'
 
-# other
-VIDEO_STATS_CAPTURE_WINDOW_DAYS = 5 # number of days into the past to consider current videos
+# timestamps
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
+DATE_FMT = '%Y-%m-%d'
+TIMESTAMP_CONVERSION_FMTS = dict(
+    timestamp_accessed=TIMESTAMP_FMT,
+    timestamp_first_seen=TIMESTAMP_FMT,
+    upload_date=DATE_FMT
+)
 
 # ML model
 MIN_VID_SAMPS_FOR_DATASET = 10
@@ -76,3 +83,46 @@ KEYS_FOR_FIT_NONBOW_TGT = KEYS_TRAIN_NUM_TGT
 KEYS_FOR_FIT_NONBOW_TGT = [key + '_tgt' for key in KEYS_FOR_FIT_NONBOW_TGT]
 KEYS_FOR_PRED_NONBOW_ID = KEYS_TRAIN_ID + [KEY_TRAIN_TIME_DIFF + suffix for suffix in ['_src', '_tgt']]
 KEYS_FOR_PRED_NONBOW_TGT = [key + '_pred' for key in KEYS_TRAIN_NUM_TGT]
+
+# ETL config key info
+ETL_CONFIG_VALID_KEYS_PREFEATURES = dict(
+    extract=['filters', 'limit'],
+    transform=['include_additional_keys'],
+    load=[],
+    preconfig=[]
+)
+ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES = dict(
+    extract=['filters', 'limit'],
+    transform=[],
+    load=[],
+    preconfig=[]
+)
+ETL_CONFIG_VALID_KEYS_VOCAB = dict(
+    extract=['filters', 'etl_config_prefeatures'],
+    transform=[],
+    load=[],
+    preconfig=[PREFEATURES_ETL_CONFIG_COL]
+)
+ETL_CONFIG_EXCLUDE_KEYS_VOCAB = dict(
+    extract=[],
+    transform=[],
+    load=[],
+    preconfig=[]
+)
+ETL_CONFIG_VALID_KEYS_FEATURES = dict(
+    extract=['filters', 'etl_config_prefeatures', 'etl_config_vocab_name'],
+    transform=[],
+    load=[],
+    preconfig=[PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL]
+)
+ETL_CONFIG_EXCLUDE_KEYS_FEATURES = dict(
+    extract=[],
+    transform=[],
+    load=[],
+    preconfig=[]
+)
+
+# web sockets
+WS_STREAM_TERM_MSG = 'DONE'
+
+WS_MAX_RECORDS_SEND = 100

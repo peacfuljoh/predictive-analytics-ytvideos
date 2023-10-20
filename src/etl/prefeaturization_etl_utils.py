@@ -12,16 +12,18 @@ from PIL import Image
 
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
-from src.crawler.crawler.utils.mysql_engine import MySQLEngine
+from src.crawler.crawler.utils.mysql_engine import MySQLEngine, perform_join_mysql_query
 from src.crawler.crawler.utils.misc_utils import (is_datetime_formatted_str,
                                                   df_generator_wrapper, is_list_of_strings,
-                                                  is_list_of_list_of_time_range_strings, make_sql_query_where_one)
+                                                  is_list_of_list_of_time_range_strings, make_sql_query_where_one,
+                                                  get_duplicate_idxs, remove_trailing_chars)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
                                            PREFEATURES_USERNAME_COL, PREFEATURES_TIMESTAMP_COL,
                                            PREFEATURES_VIDEO_ID_COL, PREFEATURES_ETL_CONFIG_COL,
-                                           PREFEATURES_TOKENS_COL, TIMESTAMP_FMT)
-from src.etl.etl_request import ETLRequest, req_to_etl_config_record
+                                           PREFEATURES_TOKENS_COL, TIMESTAMP_FMT, DATE_FMT,
+                                           ETL_CONFIG_VALID_KEYS_PREFEATURES, ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES)
+from src.etl.etl_request import ETLRequest, req_to_etl_config_record, validate_etl_config
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
@@ -54,7 +56,7 @@ class ETLRequestPrefeatures(ETLRequest):
             elif key == 'username':
                 assert isinstance(val, str) or is_list_of_strings(val)
             elif key == 'upload_date':
-                fmt = '%Y-%m-%d'
+                fmt = DATE_FMT
                 func = lambda s: is_datetime_formatted_str(s, fmt)
                 assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
             elif key == 'timestamp_accessed':
@@ -82,69 +84,50 @@ class ETLRequestPrefeatures(ETLRequest):
             assert isinstance(config_['include_additional_keys'], list)
             assert is_list_of_strings(list(config_['include_additional_keys']))
 
+def get_etl_req_prefeats(etl_config_name: str,
+                         etl_config: dict) \
+        -> ETLRequestPrefeatures:
+    req = ETLRequestPrefeatures(etl_config,
+                                etl_config_name,
+                                ETL_CONFIG_VALID_KEYS_PREFEATURES,
+                                ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES)
+    validate_etl_config(req,
+                        DB_MONGO_CONFIG,
+                        DB_FEATURES_NOSQL_DATABASE,
+                        DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
+    return req
 
 
 """ ETL Extract """
-def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFrame, None, None], dict]:
+def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
     """Extract tabular raw_data according to request"""
-    # construct query components
+    # required inputs
     database = DB_VIDEOS_DATABASE
     tablename_primary = DB_VIDEOS_TABLES['stats']
     tablename_secondary = DB_VIDEOS_TABLES['meta']
     table_pseudoname_primary = 'stats'
     table_pseudoname_secondary = 'meta'
     join_condition = f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id'
-
     cols_all = {
         table_pseudoname_primary: STATS_ALL_COLS,
         table_pseudoname_secondary: [col for col in META_ALL_COLS_NO_URL if col != 'video_id']
     }
-    cols_for_query = ([f'{table_pseudoname_primary}.{colname}' for colname in cols_all[table_pseudoname_primary]] +
-                      [f'{table_pseudoname_secondary}.{colname}' for colname in cols_all[table_pseudoname_secondary]])
-    cols_for_df = cols_all[table_pseudoname_primary] + cols_all[table_pseudoname_secondary]
+    extract_ = req.get_extract()
+    filters = extract_.get('filters')
+    limit = extract_.get('limit')
 
-    # where clause
-    where_clause = None
-
-    filters = req.get_extract()['filters']
-    if len(filters) > 0:
-        where_clauses = []
-        for key, val in filters.items():
-            # identify table that this condition applies to
-            tablename_ = [tname for tname, colnames_ in cols_all.items() if key in colnames_]
-            assert len(tablename_) == 1
-            tablename_ = tablename_[0]
-
-            # add where clause
-            where_clauses.append(make_sql_query_where_one(tablename_, key, val))
-            # if isinstance(val, str):  # equality
-            #     where_clauses.append(f" {tablename_}.{key} = '{val}'")
-            # elif isinstance(val, list): # range or subset
-            #     if isinstance(val[0], list): # range
-            #         where_clauses.append(f" {tablename_}.{key} BETWEEN '{val[0][0]}' AND '{val[0][1]}'")
-            #     else: # subset
-            #         val_strs = [f"'{s}'" for s in val] # add apostrophes for SQL query with strings
-            #         where_clauses.append(f" {tablename_}.{key} IN ({','.join(val_strs)})")
-
-        # join sub-clauses
-        where_clause = ' AND '.join(where_clauses)
-
-    # limit
-    limit = req.get_extract()['limit']
-
-    # issue request
-    engine = MySQLEngine(DB_CONFIG)
-    df = engine.select_records_with_join(
+    # perform query
+    df, engine = perform_join_mysql_query(
+        DB_CONFIG,
         database,
         tablename_primary,
         tablename_secondary,
+        table_pseudoname_primary,
+        table_pseudoname_secondary,
         join_condition,
-        cols_for_query,
-        table_pseudoname_primary=table_pseudoname_primary,
-        table_pseudoname_secondary=table_pseudoname_secondary,
-        where_clause=where_clause,
+        cols_all,
+        filters=filters,
         limit=limit,
-        cols_for_df=cols_for_df,
         as_generator=True
     )
 
@@ -154,7 +137,7 @@ def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFr
         table_pseudoname_secondary=table_pseudoname_secondary
     )
 
-    return df, extract_info
+    return df, extract_info, engine
 
 
 def etl_extract_nontabular(df: pd.DataFrame,
@@ -175,34 +158,6 @@ def etl_extract_nontabular(df: pd.DataFrame,
 
 
 """ ETL Transform """
-def get_duplicate_idxs(df: pd.DataFrame,
-                       colname: str) \
-        -> pd.DataFrame:
-    """
-    Get duplicate indices for entries in a specified column of a DataFrame.
-
-    Steps:
-        - adds col with index values
-        - group rows by specified column
-        - aggregate rows into groups, add two cols with duplicate first appearance + row indices where duplicates appear
-        - convert to DataFrame with index (first index) and one column (duplicate indices)
-    """
-    idxs = (df[[colname]].reset_index()
-            .groupby([colname])['index']
-            .agg(['first', tuple])
-            .set_index('first')['tuple'])
-    return idxs
-
-def remove_trailing_chars(s: str) -> str:
-    """Remove trailing chars from a string (e.g. newlines, empty spaces)."""
-    if len(s) == 0:
-        return s
-    trail_chars = ['\n', ' ']
-    i = len(s) - 1
-    while (i >= 0) and (s[i] in trail_chars):
-        i -= 1
-    return s[:i + 1]
-
 def etl_process_title_and_comment(df: pd.DataFrame,
                                   colname: str,
                                   chars: Optional[Union[OrderedDict[str, str], Dict[str, str]]] = None,
