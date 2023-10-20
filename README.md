@@ -1,11 +1,21 @@
-# crawler
+# Predictive analytics for YouTube content creators
 
-Web crawling for YouTube videos.
+THIS PROJECT IS UNDER CONSTRUCTION. IT'S CURRENTLY HIGHLY MODULAR ALBEIT MONOLITHIC. ONCE READY, IT WILL BE PARTITIONED INTO DISTINCT SERVICES. AFTER THAT, IT WILL BE MIGRATED TO AN AWS SERVERLESS ARCHITECTURE. STAY TUNED!!
 
-NOTE: YouTube has a dedicated data API that should be a first point of contact with their content statistics. 
-In contrast, this repo runs scrapy spiders to read recently-posted videos' stats for a small number of desired users 
-at a slow pace. Doing this slowly is polite as it doesn't overwhelm the target domain's servers. This also helps 
-to avoid an IP ban. Please use this functionality responsibly.
+## Summary
+
+This repo contains an end-to-end, full-stack web application implementing predictive analytics for YouTube (YT) videos. The goal is to predict future stats (e.g. likes, comments, views) from current stats, metadata (e.g. subscribers), text (e.g. title, description, tags, keywords), and the video's thumbnail image.
+
+1. Data collection: A backend web crawler process regularly pulls video stats and other info for desired YT channels and stores them in a raw MySQL database.
+2. Featurization: An ETL pipeline converts these records into "prefeatures" that are fed through a second ETL pipeline to produce "features". Prefeaturization is sample-specific while featurization involves creating a dictionary for the text features from a desired subset of video information and thus requires processing the entire dataset together.
+3. Model training: A desired feature set is used to train a regression model that predict future video stats from stats at a previous point in time.
+4. Front-end dashboard: Allows for exploration of the database (slicing and filtering as desired), training models with desired feature subsets, and visualizing predictions.
+
+The pipeline components use Python generators wherever possible to minimize memory use. This is a common data streaming technique when working with large-scale document datasets and is standard practice in text-processing libraries like Gensim (used in this project).
+
+All steps in the pipeline have associated JSON-format configs that are stored alongside the corresponding ETL output artifacts. This enables feature and model versioning (a.k.a. provenance) and therefore reproducibility. If all data stores (not raw data!) are emptied, the pipeline can be re-run with the same config options to produce the same outputs.
+
+Raw data is continuously crawled for the latest videos, so we can run predictive analytics in real-time!
 
 
 ## Steps to set up the repo
@@ -85,6 +95,15 @@ There are several `make` commands that are utilities for running processes from 
 These activate the conda env, cd into a directory, and then run a script. See the `Makefile` for more info.
 
 
+## Note on web crawling
+
+YouTube has a dedicated data API that should be a first point of contact with their content statistics. 
+In contrast, this repo runs scrapy spiders to read recently-posted videos' stats for a small number of desired users 
+at a slow pace. Doing this slowly is polite as it doesn't overwhelm the target domain's servers. This also helps 
+to avoid an IP ban. Please use this functionality responsibly.
+
+
+
 ## Machine learning
 
 ### Regression model and features
@@ -151,7 +170,7 @@ significantly.
 
 ## APIs
 
-APIs are implemented as FastAPI processes.
+APIs are implemented as FastAPI processes with an OpenAPI spec and associated Swagger docs.
 
 To launch the `raw_data` API process on the command line (at repo root level): 
 `PYTHONPATH=/home/nuc/crawler python src/api/raw_data/main.py`
