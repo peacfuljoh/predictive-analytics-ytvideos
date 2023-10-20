@@ -28,9 +28,8 @@ Frameworks/technologies used (initial dev, on-prem):
 - Automation/Deployment: Make, Github Actions
 - Packaging: Poetry
 
-Frameworks/technologies used (cloud, serverless):
-- Database: RDS, DynamoDB
-- Web: Scrapy, Flask
+Frameworks/technologies used (cloud, serverless) (if different from on-prem dev):
+- Database: RDS, DynamoDB, ElastiCache
 - API: FastAPI + API Gateway
 - ETL pipelines: Lambda
 - Automation/Deployment: CodeCommit, CodeBuild, CodeDeploy, CodePipeline
