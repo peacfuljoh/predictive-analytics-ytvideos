@@ -1,15 +1,18 @@
 """Raw data API"""
 
 from fastapi import FastAPI
-from routes import router
+from routes import router_root, router_rawdata
 
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine
 from src.crawler.crawler.config import DB_CONFIG
 
 
+
+# app init
 app = FastAPI()
 app.mysql_engine = None # set on startup
 
+# app event handlers
 @app.on_event("startup")
 def startup_db_client():
     # app.mongodb_engine = MongoDBEngine(DB_MONGO_CONFIG)
@@ -19,4 +22,6 @@ def startup_db_client():
 def shutdown_db_client():
     del app.mysql_engine
 
-app.include_router(router, tags=["raw_data"], prefix="/raw_data")
+# add routes
+app.include_router(router_root, tags=["root"])
+app.include_router(router_rawdata, tags=["rawdata"], prefix="/rawdata")

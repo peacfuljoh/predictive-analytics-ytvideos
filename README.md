@@ -189,8 +189,20 @@ significantly.
 
 APIs are implemented as FastAPI processes with an OpenAPI spec and associated Swagger docs.
 
-To launch the `raw_data` API process on the command line (at repo root level): 
-`PYTHONPATH=/home/nuc/crawler python src/api/raw_data/main.py`
+To launch the API process in dev on the command line (at repo root level): 
+`PYTHONPATH=$(pwd) python src/api/main.py`
+
+Example of a CURL request to get selected columns from filtered video `stats` records (and print nicely to command line
+with `jq`):
+
+```
+curl \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"cols": ["video_id", "like_count", "view_count", "timestamp_accessed"], "where": {"timestamp_accessed": [["2023-10-19 05:00:00", "2023-10-19 05:05:00"]]}}' \
+    http://<HOST>:<PORT>/rawdata/stats \
+    | jq
+```
 
 
 ### Raw data

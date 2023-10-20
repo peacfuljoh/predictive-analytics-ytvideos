@@ -1,11 +1,15 @@
 """Routes for video raw_data store"""
 
+from typing import List, Tuple
+from pprint import pprint
+
 from fastapi import APIRouter, Body, Request, Response, HTTPException, status
 from fastapi.encoders import jsonable_encoder
-from typing import List
 
 # from models import Book, BookUpdate
 
+from src.crawler.crawler.utils.mysql_engine import MySQLEngine
+from src.crawler.crawler.utils.misc_utils import make_sql_query
 from src.crawler.crawler.config import DB_INFO
 
 
@@ -13,19 +17,78 @@ DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
 
 
-router = APIRouter()
+router_root = APIRouter()
+router_rawdata = APIRouter()
 
 
 
-@router.get("/usernames/all", response_description="Get all usernames", response_model=List[str])
-def get_usernames(request: Request):
-    """Get all usernames"""
+""" Setup """
+def get_mysql_engine_and_tablename(request: Request,
+                                   key: str) \
+        -> Tuple[MySQLEngine, str]:
+    """Get MySQL engine and tablename"""
     engine = request.app.mysql_engine
-    tablename = DB_VIDEOS_TABLES["users"]
-    query = f'SELECT * FROM {tablename}'
-    ids = engine.select_records(DB_VIDEOS_DATABASE, query)
+    tablename = DB_VIDEOS_TABLES[key]
+
+    return engine, tablename
+
+
+
+""" Root """
+@router_root.get("/", response_description="Test for liveness", response_model=str)
+def get_usernames(request: Request):
+    """Test for liveness"""
+    return "The app is running"
+
+
+
+""" Raw data """
+@router_rawdata.get("/users", response_description="Get video usernames", response_model=List[str])
+def get_video_usernames(request: Request):
+    """Get all usernames"""
+    # db access
+    engine, tablename = get_mysql_engine_and_tablename(request, 'users')
+
+    # query
+    query = make_sql_query(tablename)
+
+    # get records
+    ids: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
+    ids: List[str] = [id_[0] for id_ in ids]
+
     return ids
 
+@router_rawdata.post("/meta", response_description="Get video metadata", response_model=List[tuple])
+def get_video_metadata(request: Request, opts: dict):
+    """Get video meta information"""
+    pprint(opts)
+
+    # db access
+    engine, tablename = get_mysql_engine_and_tablename(request, 'meta')
+
+    # query
+    query = make_sql_query(tablename, opts.get('cols'), opts.get('where'), opts.get('limit'))
+
+    # get records
+    records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
+
+    return records
+
+@router_rawdata.post("/stats", response_description="Get video stats", response_model=List[tuple])
+def get_video_stats(request: Request, opts: dict):
+    """Get video meta information"""
+    pprint(opts)
+
+    # db access
+    engine, tablename = get_mysql_engine_and_tablename(request, 'stats')
+
+    # query
+    query = make_sql_query(tablename, opts.get('cols'), opts.get('where'), opts.get('limit'))
+
+    # get records
+    records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
+
+    return records
 
 
 
@@ -33,8 +96,6 @@ def get_usernames(request: Request):
 
 
 
-
-#
 # @router.post("/", response_description="Create a new book", status_code=status.HTTP_201_CREATED, response_model=Book)
 # def create_book(request: Request, book: Book = Body(...)):
 #     """Insert a new book into the database"""

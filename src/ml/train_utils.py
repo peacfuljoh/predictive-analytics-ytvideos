@@ -286,6 +286,7 @@ def plot_predictions(data: Dict[str, pd.DataFrame],
                 # predict with model
                 df_pred = [model.predict(df_) for df_ in df_test]
             else: # incremental prediction from a starting time
+                # TODO: move the incremental prediction block to its own function (to within lin reg class?)
                 df_pred = []
 
                 # create test sets anchored on a few src times

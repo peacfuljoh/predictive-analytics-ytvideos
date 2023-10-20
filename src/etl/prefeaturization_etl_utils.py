@@ -15,7 +15,7 @@ from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine
 from src.crawler.crawler.utils.misc_utils import (is_datetime_formatted_str,
                                                   df_generator_wrapper, is_list_of_strings,
-                                                  is_list_of_list_of_time_range_strings)
+                                                  is_list_of_list_of_time_range_strings, make_sql_query_where_one)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
                                            PREFEATURES_USERNAME_COL, PREFEATURES_TIMESTAMP_COL,
@@ -84,7 +84,6 @@ class ETLRequestPrefeatures(ETLRequest):
 
 
 
-
 """ ETL Extract """
 def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFrame, None, None], dict]:
     """Extract tabular raw_data according to request"""
@@ -107,23 +106,25 @@ def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFr
     # where clause
     where_clause = None
 
-    if len(req.get_extract()['filters']) > 0:
+    filters = req.get_extract()['filters']
+    if len(filters) > 0:
         where_clauses = []
-        for key, val in req.get_extract()['filters'].items():
+        for key, val in filters.items():
             # identify table that this condition applies to
             tablename_ = [tname for tname, colnames_ in cols_all.items() if key in colnames_]
             assert len(tablename_) == 1
             tablename_ = tablename_[0]
 
             # add where clause
-            if isinstance(val, str):  # equality
-                where_clauses.append(f" {tablename_}.{key} = '{val}'")
-            elif isinstance(val, list): # range or subset
-                if isinstance(val[0], list): # range
-                    where_clauses.append(f" {tablename_}.{key} BETWEEN '{val[0][0]}' AND '{val[0][1]}'")
-                else: # subset
-                    val_strs = [f"'{s}'" for s in val] # add apostrophes for SQL query with strings
-                    where_clauses.append(f" {tablename_}.{key} IN ({','.join(val_strs)})")
+            where_clauses.append(make_sql_query_where_one(tablename_, key, val))
+            # if isinstance(val, str):  # equality
+            #     where_clauses.append(f" {tablename_}.{key} = '{val}'")
+            # elif isinstance(val, list): # range or subset
+            #     if isinstance(val[0], list): # range
+            #         where_clauses.append(f" {tablename_}.{key} BETWEEN '{val[0][0]}' AND '{val[0][1]}'")
+            #     else: # subset
+            #         val_strs = [f"'{s}'" for s in val] # add apostrophes for SQL query with strings
+            #         where_clauses.append(f" {tablename_}.{key} IN ({','.join(val_strs)})")
 
         # join sub-clauses
         where_clause = ' AND '.join(where_clauses)
