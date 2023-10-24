@@ -15,7 +15,7 @@ from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine, perform_join_mysql_query
 from src.crawler.crawler.utils.misc_utils import (is_datetime_formatted_str,
                                                   df_generator_wrapper, is_list_of_strings,
-                                                  is_list_of_list_of_time_range_strings, make_sql_query_where_one,
+                                                  is_list_of_list_of_time_range_strings,
                                                   get_duplicate_idxs, remove_trailing_chars)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
@@ -444,30 +444,38 @@ def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
 
 
 """ ETL Load """
+def validate_prefeature_records_schema(recs: List[dict]) -> bool:
+    """Validate that records follow the excepted schema, e.g. before writing records to a MongoDB collection."""
+    MONGO_REC_SCHEMA_INFO = {
+        '_id': dict(type=str),
+        PREFEATURES_USERNAME_COL: dict(type=str),
+        PREFEATURES_TIMESTAMP_COL: dict(type=str),
+        PREFEATURES_VIDEO_ID_COL: dict(type=str),
+        PREFEATURES_ETL_CONFIG_COL: dict(type=str),
+        'like_count': dict(type=int),
+        'comment_count': dict(type=int),
+        'subscriber_count': dict(type=int),
+        'view_count': dict(type=int),
+        PREFEATURES_TOKENS_COL: dict(type=str)
+    }
+    for rec in recs:
+        assert set(rec) == set(MONGO_REC_SCHEMA_INFO)
+        for key, field_info in MONGO_REC_SCHEMA_INFO.items():
+            assert isinstance(rec[key], field_info['type'])
+    return True
+
 def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
                                             req: ETLRequestPrefeatures) \
         -> List[dict]:
     """
     Convert DataFrame with prefeatures info into dict for MongoDB insertion.
-
-    Format for each document:
-    {
-        '_id': ...,
-        'username': ...,
-        'timestamp_accessed': ...,
-        'video_id': ...,
-        'etl_config': ...,
-        'raw_data': ...
-    }
     """
     cols_exclude = ['username', 'video_id']
-    cols_include = None
 
     records_all: List[dict] = [] # update cmds
     for video_id, df_ in df.groupby('video_id'):
         # get info for DB update
-        if cols_include is None:
-            cols_include = [col for col in df_.columns if col not in cols_exclude]
+        cols_include = [col for col in df_.columns if col not in cols_exclude]
         username = df_.iloc[0]['username'] # should be only one username
         d_records = df_.loc[:, cols_include].set_index('timestamp_accessed').to_dict('index') # re-index by timestamp
 
@@ -480,12 +488,14 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
             record_to_insert = {
                 '_id': f'{video_id}_{ts_str_id}_{req.name}', # required to avoid duplication
                 PREFEATURES_USERNAME_COL: username,
-                PREFEATURES_TIMESTAMP_COL: ts_str,
                 PREFEATURES_VIDEO_ID_COL: video_id,
+                PREFEATURES_TIMESTAMP_COL: ts_str,
                 PREFEATURES_ETL_CONFIG_COL: req.name,
                 **rec
             }
             records_all.append(record_to_insert)
+
+    assert validate_prefeature_records_schema(records_all)
 
     return records_all
 

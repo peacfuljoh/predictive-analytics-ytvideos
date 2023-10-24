@@ -21,7 +21,7 @@ ETL_CONFIG_OPTIONS = {
             'timestamp_accessed': [['2023-10-10 00:00:00.000', '2023-10-15 00:00:00.000']],
             'username': ["FoxNews", "NBCNews"]
         },
-        'limit': 1510
+        'limit': 7217
     }
 }
 ETL_CONFIG_OPTIONS_STR = json.dumps(ETL_CONFIG_OPTIONS)
@@ -56,5 +56,5 @@ async def stream_meta_stats_join():
                 break
 
 
-asyncio.get_event_loop().run_until_complete(stream_meta_stats_join())
-
+# asyncio.get_event_loop().run_until_complete(stream_meta_stats_join())
+asyncio.run(stream_meta_stats_join())

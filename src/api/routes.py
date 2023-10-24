@@ -21,15 +21,22 @@ router_rawdata = APIRouter()
 
 
 
-""" Setup """
+""" Helper methods """
 def get_mysql_engine_and_tablename(request: Request,
                                    key: str) \
         -> Tuple[MySQLEngine, str]:
     """Get MySQL engine and tablename"""
     engine = request.app.mysql_engine
     tablename = DB_VIDEOS_TABLES[key]
-
     return engine, tablename
+
+def setup_prefeatures_df_gen(etl_config_name: str, extract_options: dict) \
+        -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
+    """Setup DataFrame generator for MySQL queries."""
+    etl_config = dict(extract=extract_options)
+    etl_request = get_etl_req_prefeats(etl_config_name, etl_config)
+    df_gen, info_tabular_extract, engine = etl_extract_tabular(etl_request)
+    return df_gen, info_tabular_extract, engine
 
 
 
@@ -37,7 +44,7 @@ def get_mysql_engine_and_tablename(request: Request,
 @router_root.get("/", response_description="Test for liveness", response_model=str)
 def get_usernames(request: Request):
     """Test for liveness"""
-    return "The app is running"
+    return "Hi there. The YT Analytics API is available."
 
 
 
@@ -74,17 +81,7 @@ async def get_video_meta_stats_join(websocket: WebSocket):
     """Perform join query between meta and stats raw data tables and return a stream of records."""
     await websocket.accept()
     try:
-        df_gen = None
-        info_tabular_extract = None
-        engine = None
-
-        def setup_df_gen(etl_config_name: str, extract_options: dict) \
-                -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
-            """Setup for DataFrame generator."""
-            etl_config = dict(extract=extract_options)
-            etl_request = get_etl_req_prefeats(etl_config_name, etl_config)
-            df_gen, info_tabular_extract, engine = etl_extract_tabular(etl_request)
-            return df_gen, info_tabular_extract, engine
+        df_gen, info_tabular_extract, engine = None, None, None
 
         while True:
             # receive JSON data
@@ -93,7 +90,8 @@ async def get_video_meta_stats_join(websocket: WebSocket):
             # initialize DataFrame generator
             if df_gen is None:
                 assert is_subset(['name', 'extract'], data_recv)
-                df_gen, info_tabular_extract, engine = setup_df_gen(data_recv['name'], data_recv['extract'])
+                df_gen, info_tabular_extract, engine = \
+                    setup_prefeatures_df_gen(data_recv['name'], data_recv['extract'])
 
             # check for next DataFrame and exit stream if finished
             df = next(df_gen)
@@ -117,4 +115,7 @@ async def get_video_meta_stats_join(websocket: WebSocket):
         print(e)
         # manager.disconnect(websocket)
         # await manager.broadcast(f"Client #{client_id} left the chat")
+
+""" ... """
+
 

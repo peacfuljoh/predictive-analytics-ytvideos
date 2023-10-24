@@ -11,7 +11,7 @@ import numpy as np
 from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames, get_ts_now_str, is_subset
 from .mysql_engine import MySQLEngine
 from ..config import DB_CONFIG, DB_INFO
-from ..constants import (MOST_RECENT_VID_LIMIT, VIDEO_URL_COL_NAME, DB_KEY_TIMESTAMP_FIRST_SEEN,
+from ..constants import (MOST_RECENT_VID_LIMIT, COL_VIDEO_URL, COL_TIMESTAMP_FIRST_SEEN,
                          VIDEO_STATS_CAPTURE_WINDOW_DAYS)
 
 
@@ -62,7 +62,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
         # get DataFrame for non-null records, randomly sampling up to a max number of videos from the last X days
         ts_start = get_ts_now_str("ms", offset=datetime.timedelta(days=-VIDEO_STATS_CAPTURE_WINDOW_DAYS))
         query = (f'SELECT {cols_str} FROM {tablename} WHERE username = "{username}" AND upload_date IS NOT NULL'
-                 f" AND {DB_KEY_TIMESTAMP_FIRST_SEEN} > '{ts_start}'")
+                 f" AND {COL_TIMESTAMP_FIRST_SEEN} > '{ts_start}'")
                  #f' ORDER BY {DB_KEY_TIMESTAMP_FIRST_SEEN} DESC')
 
         if columns is None:
@@ -95,7 +95,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
         # add urls
         if not (df is None or df.empty):
             video_urls: List[str] = make_video_urls(list(df['video_id']))
-            s_video_urls = pd.Series(video_urls, name=VIDEO_URL_COL_NAME)
+            s_video_urls = pd.Series(video_urls, name=COL_VIDEO_URL)
             df = pd.concat((df, s_video_urls), axis=1)
 
         # save it

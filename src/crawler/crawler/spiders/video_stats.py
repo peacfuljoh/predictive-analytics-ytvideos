@@ -12,7 +12,7 @@ from ..utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
 from ..utils.mysql_engine import insert_records_from_dict, update_records_from_dict
 from ..utils.mongodb_utils_ytvideos import fetch_url_and_save_image
 from ..config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
-from ..constants import (VIDEO_URL_COL_NAME, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
+from ..constants import (COL_VIDEO_URL, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
                          MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD)
 
 
@@ -131,7 +131,7 @@ class YouTubeVideoStats(scrapy.Spider):
         self.df_videos: pd.DataFrame = get_video_info_for_stats_spider(columns=['username', 'video_id', 'title'])  # 'video_url' appended
         print_df_full(self.df_videos)
         # self.df_videos = df_videos[df_videos['title'].isnull()]
-        self.start_urls = list(self.df_videos[VIDEO_URL_COL_NAME]) if self.df_videos is not None else []
+        self.start_urls = list(self.df_videos[COL_VIDEO_URL]) if self.df_videos is not None else []
         self.url_count = 0
         # self.start_urls = start_urls[:1] # for testing
 
@@ -145,7 +145,7 @@ class YouTubeVideoStats(scrapy.Spider):
         ### Get stats info ###
         # get vid info from response body
         vid_info = extract_video_stats_from_response_body(response, fmt='sql')
-        df_row = self.df_videos.loc[self.df_videos[VIDEO_URL_COL_NAME] == response.url]
+        df_row = self.df_videos.loc[self.df_videos[COL_VIDEO_URL] == response.url]
         vid_info['video_id'] = df_row['video_id'].iloc[0]
         vid_info['username'] = df_row['username'].iloc[0]
         ts_now_str = get_ts_now_str(mode='ms')

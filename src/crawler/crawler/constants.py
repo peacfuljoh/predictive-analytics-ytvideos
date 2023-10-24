@@ -2,9 +2,6 @@
 
 # settings during request to video stats table
 MOST_RECENT_VID_LIMIT: int = 30
-DB_KEY_UPLOAD_DATE: str = 'upload_date'
-DB_KEY_TIMESTAMP_FIRST_SEEN: str = 'timestamp_first_seen'
-VIDEO_URL_COL_NAME: str = 'video_url'
 MAX_LEN_DESCRIPTION = 500
 MAX_NUM_TAGS = 20
 MAX_LEN_TAG = 25
@@ -13,24 +10,43 @@ MAX_LEN_KEYWORD = 40
 
 VIDEO_STATS_CAPTURE_WINDOW_DAYS = 5 # number of days into the past to consider current videos
 
+# all column name macros
+COL_VIDEO_URL = 'video_url'
+COL_UPLOAD_DATE = 'upload_date'
+COL_TIMESTAMP_FIRST_SEEN = 'timestamp_first_seen'
+COL_DURATION = 'duration'
+COL_VIDEO_ID = 'video_id'
+COL_USERNAME = 'username'
+COL_LIKE_COUNT = 'like_count'
+COL_COMMENT_COUNT = 'comment_count'
+COL_SUBSCRIBER_COUNT = 'subscriber_count'
+COL_VIEW_COUNT = 'view_count'
+COL_TIMESTAMP_ACCESSED = 'timestamp_accessed'
+COL_COMMENT = 'comment'
+COL_TITLE = 'title'
+COL_KEYWORDS = 'keywords'
+COL_DESCRIPTION = 'description'
+COL_TAGS = 'tags'
+COL_THUMBNAIL_URL = 'thumbnail_url'
+
 # Column names for 'stats' table
-STATS_NUMERICAL_COLS = ['like_count', 'comment_count', 'subscriber_count', 'view_count']
-STATS_DATETIME_COLS = ['timestamp_accessed']
-STATS_TEXT_COLS = ['video_id', 'comment']
+STATS_NUMERICAL_COLS = [COL_LIKE_COUNT, COL_COMMENT_COUNT, COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT]
+STATS_DATETIME_COLS = [COL_TIMESTAMP_ACCESSED]
+STATS_TEXT_COLS = [COL_VIDEO_ID, COL_COMMENT]
 STATS_ALL_COLS = STATS_NUMERICAL_COLS + STATS_DATETIME_COLS + STATS_TEXT_COLS
 
 # column names for 'meta' table
-META_NUMERICAL_COLS = ['duration']
-META_DATETIME_COLS = [DB_KEY_UPLOAD_DATE, DB_KEY_TIMESTAMP_FIRST_SEEN]
-META_TEXT_COLS = ['video_id', 'username', 'title', 'keywords', 'description', 'tags']
+META_NUMERICAL_COLS = [COL_DURATION]
+META_DATETIME_COLS = [COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN]
+META_TEXT_COLS = [COL_VIDEO_ID, COL_USERNAME, COL_TITLE, COL_KEYWORDS, COL_DESCRIPTION, COL_TAGS]
 META_ALL_COLS_NO_URL = META_NUMERICAL_COLS + META_DATETIME_COLS + META_TEXT_COLS
-META_URL_COLS = ['thumbnail_url']
+META_URL_COLS = [COL_THUMBNAIL_URL]
 META_ALL_COLS = META_ALL_COLS_NO_URL + META_URL_COLS
 
 # column names for 'prefeatures' collection
-PREFEATURES_USERNAME_COL = 'username'
-PREFEATURES_TIMESTAMP_COL = 'timestamp_accessed'
-PREFEATURES_VIDEO_ID_COL = 'video_id'
+PREFEATURES_USERNAME_COL = COL_USERNAME
+PREFEATURES_TIMESTAMP_COL = COL_TIMESTAMP_ACCESSED
+PREFEATURES_VIDEO_ID_COL = COL_VIDEO_ID
 PREFEATURES_ETL_CONFIG_COL = 'etl_config_prefeatures'
 PREFEATURES_TOKENS_COL = 'tokens'
 
@@ -72,9 +88,9 @@ SPLIT_TRAIN_BY_USERNAME = 'split_train_by_username'
 ML_CONFIG_KEYS = [ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS]
 ML_MODEL_TYPES = [ML_MODEL_TYPE_LIN_PROJ_RAND, ML_MODEL_TYPE_GAM_TOPIC]
 TRAIN_TEST_SPLIT = 'tt_split'
-KEYS_TRAIN_ID = ['username', 'video_id']
-KEYS_TRAIN_NUM = ['comment_count', 'like_count', 'view_count', 'subscriber_count']
-KEYS_TRAIN_NUM_TGT = [key for key in KEYS_TRAIN_NUM if key != 'subscriber_count']
+KEYS_TRAIN_ID = [COL_USERNAME, COL_VIDEO_ID]
+KEYS_TRAIN_NUM = [COL_COMMENT_COUNT, COL_LIKE_COUNT, COL_VIEW_COUNT, COL_SUBSCRIBER_COUNT]
+KEYS_TRAIN_NUM_TGT = [key for key in KEYS_TRAIN_NUM if key != COL_SUBSCRIBER_COUNT]
 KEY_TRAIN_TIME_DIFF = 'time_after_upload' # seconds
 
 KEYS_FOR_FIT_NONBOW_SRC = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]
