@@ -10,15 +10,19 @@ from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, Mo
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL,
-                                           PREFEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
+                                           TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
                                            NUM_INTVLS_PER_VIDEO, ML_MODEL_TYPE, ML_MODEL_TYPE_LIN_PROJ_RAND, TRAIN_TEST_SPLIT,
                                            KEYS_TRAIN_ID, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT,
-                                           KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME, KEYS_FOR_PRED_NONBOW_ID)
+                                           KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME, KEYS_FOR_PRED_NONBOW_ID,
+                                           COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED,
+                                           MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import (load_config_timestamp_sets_for_features,
                                                               convert_ts_fmt_for_mongo_id)
 from src.crawler.crawler.utils.misc_utils import is_dict_of_instances, get_ts_now_str, is_subset
 from src.ml.ml_request import MLRequest
 from src.ml.ml_models import MLModelLinProjRandom, MLModelRegressionSimple
+from src.schemas.schema_validation import validate_mongodb_records_schema
+from src.schemas.schemas import SCHEMAS_MONGODB
 
 
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
@@ -92,7 +96,7 @@ def stream_all_features_into_ram(df_gen: Generator[pd.DataFrame, None, None],
     data_all: List[pd.DataFrame] = []
 
     while not (df := next(df_gen)).empty:
-        df[PREFEATURES_TIMESTAMP_COL] = pd.to_datetime(df[PREFEATURES_TIMESTAMP_COL], format=TIMESTAMP_FMT)
+        df[COL_TIMESTAMP_ACCESSED] = pd.to_datetime(df[COL_TIMESTAMP_ACCESSED], format=TIMESTAMP_FMT)
         if keys_extract is not None:
             df = df[keys_extract]
         data_all.append(df)
@@ -133,12 +137,12 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
 
     for ids, df in df_data.groupby(KEYS_TRAIN_ID): # one group per video
         # sort by timestamp (index pairing assumes time-ordering)
-        df = df.sort_values(by=[PREFEATURES_TIMESTAMP_COL])
+        df = df.sort_values(by=[COL_TIMESTAMP_ACCESSED])
 
         # add time elapsed since first timestamp
-        diffs_ = df[PREFEATURES_TIMESTAMP_COL] - df[PREFEATURES_TIMESTAMP_COL].min()
+        diffs_ = df[COL_TIMESTAMP_ACCESSED] - df[COL_TIMESTAMP_ACCESSED].min()
         df[KEY_TRAIN_TIME_DIFF] = diffs_.dt.total_seconds()
-        df = df.drop(columns=[PREFEATURES_TIMESTAMP_COL])  # drop timestamp
+        df = df.drop(columns=[COL_TIMESTAMP_ACCESSED])  # drop timestamp
 
         # generate raw_data samples by causal temporal pairs
         idxs_src, idxs_tgt = make_causal_index_pairs(len(df), NUM_INTVLS_PER_VIDEO)
@@ -166,7 +170,7 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
 
     # setup
-    keys_extract = KEYS_TRAIN_ID + [FEATURES_VECTOR_COL, PREFEATURES_TIMESTAMP_COL] + KEYS_TRAIN_NUM  # define cols to keep
+    keys_extract = KEYS_TRAIN_ID + [FEATURES_VECTOR_COL, COL_TIMESTAMP_ACCESSED] + KEYS_TRAIN_NUM  # define cols to keep
     keys_feat_src = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]  # columns of interest for output vectors
     keys_feat_tgt = KEYS_TRAIN_NUM_TGT + [KEY_TRAIN_TIME_DIFF] # columns of interest for output vectors
 
@@ -212,13 +216,13 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
         model = MLModelRegressionSimple(ml_request, verbose=True)
         model.fit(data['nonbow_train'], data['bow'])
     else:
-        usernames = data['nonbow_train']['username'].drop_duplicates()
+        usernames = data['nonbow_train'][COL_USERNAME].drop_duplicates()
         model = {uname: MLModelRegressionSimple(ml_request, verbose=True) for uname in usernames}
         for uname, model_ in model.items():
             df_nonbow = data['nonbow_train']
-            df_nonbow = df_nonbow[df_nonbow['username'] == uname]
+            df_nonbow = df_nonbow[df_nonbow[COL_USERNAME] == uname]
             df_bow = data['bow']
-            df_bow = df_bow[df_bow['username'] == uname]
+            df_bow = df_bow[df_bow[COL_USERNAME] == uname]
             model_.fit(df_nonbow, df_bow)
 
         if 1:
@@ -231,7 +235,7 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
                 model[uname] = MLModelRegressionSimple(verbose=True, model_dict=model_dicts[uname])
 
     # see predictions
-    if 1:
+    if 0:
         import matplotlib.pyplot as plt
 
         if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
@@ -239,7 +243,7 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
         else:
             for uname, model_ in model.items():
                 df_nonbow = data['nonbow_test']
-                data_ = dict(nonbow_test=df_nonbow[df_nonbow['username'] == uname])
+                data_ = dict(nonbow_test=df_nonbow[df_nonbow[COL_USERNAME] == uname])
                 plot_predictions(data_, model_)
 
         plt.show()
@@ -263,11 +267,11 @@ def plot_predictions(data: Dict[str, pd.DataFrame],
     for i, (_, row) in enumerate(data_ids_shuffle.iterrows()):
         if i < n_plots:
             # get raw_data for this video
-            username = row['username']
-            video_id = row['video_id']
+            username = row[COL_USERNAME]
+            video_id = row[COL_VIDEO_ID]
 
             df_i = data['nonbow_test']
-            df_i = df_i[(df_i['username'] == username) * (df_i['video_id'] == video_id)]
+            df_i = df_i[(df_i[COL_USERNAME] == username) * (df_i[COL_VIDEO_ID] == video_id)]
             df_i = df_i.sort_values(by=[t0_col])
             N = len(df_i)
 
@@ -331,11 +335,11 @@ def make_model_obj(model_,
                    _id: str,
                    uname_: Optional[str] = '') \
         -> dict:
-    return dict(
-        model=model_.encode(),
-        meta_id=_id,
-        name=uname_
-    )
+    return {
+        MODEL_MODEL_OBJ: model_.encode(),
+        MODEL_META_ID: _id,
+        MODEL_SPLIT_NAME: uname_
+    }
 
 def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]],
                    ml_request: MLRequest,
@@ -355,7 +359,7 @@ def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRe
     # prepare object
     obj = dict(_id=_id, meta={}, config={})
     if is_lrs_model:
-        obj['meta']['model_type'] = ML_MODEL_TYPE_LIN_PROJ_RAND
+        obj['meta'][ML_MODEL_TYPE] = ML_MODEL_TYPE_LIN_PROJ_RAND
     else:
         raise Exception('Model type not recognized.')
     obj['config']['load'] = config_load
@@ -363,7 +367,7 @@ def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRe
 
     # validate obj
     assert set(obj) == {'_id', 'meta', 'config'}
-    assert is_subset(['model_type'], obj['meta'])
+    assert set([ML_MODEL_TYPE]) == set(obj['meta'])
     assert set(obj['config']) == {'load', 'ml'}
 
     # write to model store
@@ -380,9 +384,13 @@ def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRe
     if isinstance(model_reg, dict): # multiple models
         for uname, model in model_reg.items():
             obj_ = make_model_obj(model, _id, uname)
+            assert validate_mongodb_records_schema(obj_, SCHEMAS_MONGODB['models'])
+            assert validate_mongodb_records_schema(obj_[MODEL_MODEL_OBJ], SCHEMAS_MONGODB['models_params'])
             engine.insert_one(obj_)
     else:
         obj_ = make_model_obj(model_reg, _id)
+        assert validate_mongodb_records_schema(obj_, SCHEMAS_MONGODB['models'])
+        assert validate_mongodb_records_schema(obj_[MODEL_MODEL_OBJ], SCHEMAS_MONGODB['models_params'])
         engine.insert_one(obj_)
 
 

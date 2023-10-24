@@ -8,6 +8,7 @@ from src.crawler.crawler.utils.mysql_utils_ytvideos import (get_video_info_for_s
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine, insert_records_from_dict, update_records_from_dict
 from src.crawler.crawler.utils.misc_utils import get_ts_now_str, print_df_full
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
+from src.crawler.crawler.constants import COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED, COL_TITLE
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
@@ -48,7 +49,7 @@ def inject_toy_data():
         thumbnail_url=['url.html', 'url2.jpeg'],
         tags=["['blahasdfa', 'mehadsfsa']", "['cddddcc', 'asfdfdff']"]
     )
-    keys_pre = ['video_id', 'username']
+    keys_pre = [COL_VIDEO_ID, COL_USERNAME]
     d1_pre = {key: val for key, val in d1.items() if key in keys_pre}  # new record init
     d2_pre = {key: val for key, val in d2.items() if key in keys_pre}
 
@@ -108,9 +109,9 @@ def inspect_videos_db(inject_data: bool = False):
         df = engine.select_records(DB_VIDEOS_DATABASE, f"SELECT * FROM {tablename}",
                                    mode='pandas', tablename=tablename)
         print('')
-        # print_df_full(df['upload_date'].drop_duplicates())
-        # print_df_full(df[['video_id', 'title', 'username', 'upload_date']].drop_duplicates())
-        print_df_full(df[df['username'] == 'CNN'])
+        # print_df_full(df[COL_UPLOAD_DATE].drop_duplicates())
+        # print_df_full(df[[COL_VIDEO_ID, COL_TITLE, COL_USERNAME, COL_UPLOAD_DATE]].drop_duplicates())
+        print_df_full(df[df[COL_USERNAME] == 'CNN'])
         # print_df_full(df)
 
     # see video info for stats spider
@@ -150,12 +151,12 @@ def inspect_videos_db(inject_data: bool = False):
 
         dts: Dict[str, List[datetime]] = {} # video_id: min and max timestamp_accessed
         while not (df := next(df_gen)).empty:
-            gb = df[['video_id', 'timestamp_accessed']].groupby(['video_id'])
+            gb = df[[COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED]].groupby([COL_VIDEO_ID])
             gb_min = gb.min()
             gb_max = gb.max()
             for key in gb_min.index:
-                min_ = gb_min.loc[key, 'timestamp_accessed']
-                max_ = gb_max.loc[key, 'timestamp_accessed']
+                min_ = gb_min.loc[key, COL_TIMESTAMP_ACCESSED]
+                max_ = gb_max.loc[key, COL_TIMESTAMP_ACCESSED]
                 if key not in dts:
                     dts[key] = [min_, max_]
                 else:

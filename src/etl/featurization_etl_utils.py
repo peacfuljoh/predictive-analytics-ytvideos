@@ -1,20 +1,22 @@
 """Featurization ETL utils"""
 
-from typing import Generator, Optional, List, Union, Dict
+from typing import Generator, Optional, List, Union
 import tempfile
 
 import pandas as pd
 import gensim as gs
 from gensim.corpora import Dictionary
 
-from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
+from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL,
                                            VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL,
-                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL)
+                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, COL_USERNAME)
 from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, MongoDBEngine
 from src.crawler.crawler.utils.misc_utils import get_ts_now_str, is_list_of_strings, df_generator_wrapper
 from src.etl.etl_request import ETLRequest, req_to_etl_config_record
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
+from src.schemas.schema_validation import validate_mongodb_records_schema
+from src.schemas.schemas import SCHEMAS_MONGODB
 
 
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
@@ -37,7 +39,7 @@ class ETLRequestVocabulary(ETLRequest):
 
         # validate extract filters
         for key, val in config_['filters'].items():
-            if key == 'username':
+            if key == COL_USERNAME:
                 assert isinstance(val, str) or is_list_of_strings(val)
             else:
                 raise NotImplementedError(f'Extract condition {key} is not available.')
@@ -66,7 +68,7 @@ class ETLRequestFeatures(ETLRequest):
 
         # validate extract filters
         for key, val in config_['filters'].items():
-            if key == 'username':
+            if key == COL_USERNAME:
                 assert isinstance(val, str) or is_list_of_strings(val)
             elif key == PREFEATURES_ETL_CONFIG_COL:
                 assert isinstance(val, str)
@@ -145,7 +147,7 @@ def etl_create_vocab(df_gen: Generator[pd.DataFrame, None, None],
 
     return dictionary
 
-def convert_gs_dictionary_to_string(dictionary: Dictionary) -> str:
+def convert_gs_dictionary_to_string(dictionary: Dictionary) -> bytes:
     """Convert corpora to string"""
     with tempfile.NamedTemporaryFile() as fp:
         dictionary.save_as_text(fp.file.name) # , sort_by_word=True) # save to text
@@ -169,7 +171,7 @@ def etl_load_vocab_to_db(dictionary: Dictionary,
     engine.insert_one(d_req)
 
     # convert Gensim corpus to string
-    vocab_txt: str = convert_gs_dictionary_to_string(dictionary)
+    vocab_txt: bytes = convert_gs_dictionary_to_string(dictionary)
 
     # save vocab
     rec_vocab = {
@@ -177,6 +179,7 @@ def etl_load_vocab_to_db(dictionary: Dictionary,
         VOCAB_TIMESTAMP_COL: get_ts_now_str('ms'),
         VOCAB_ETL_CONFIG_COL: req.name
     }
+    assert validate_mongodb_records_schema(rec_vocab, SCHEMAS_MONGODB['vocabulary'])
 
     engine = MongoDBEngine(DB_MONGO_CONFIG,
                            database=DB_FEATURES_NOSQL_DATABASE,
@@ -215,8 +218,8 @@ def etl_load_vocab_from_db(req: ETLRequestFeatures,
     rec = rec.iloc[0].to_dict()
 
     # convert vocab string to Dictionary object
-    assert 'vocabulary' in rec
-    rec['vocabulary'] = convert_string_to_gs_dictionary(rec['vocabulary'])
+    assert VOCAB_VOCABULARY_COL in rec
+    rec[VOCAB_VOCABULARY_COL] = convert_string_to_gs_dictionary(rec[VOCAB_VOCABULARY_COL])
 
     return rec
 
@@ -254,6 +257,9 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
         rec[FEATURES_ETL_CONFIG_COL] = req.name
         rec[FEATURES_TIMESTAMP_COL] = ts_feat
         rec['_id'] += '_' + convert_ts_fmt_for_mongo_id(ts_feat)[1]
+
+    assert validate_mongodb_records_schema(records_all, SCHEMAS_MONGODB['features'])
+
     return records_all
 
 def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],

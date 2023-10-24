@@ -7,6 +7,9 @@ import pandas as pd
 from dash import Dash, dcc, html, Input, Output, State
 import plotly.graph_objects as go
 
+from src.crawler.crawler.constants import (COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN, COL_VIDEO_ID, COL_USERNAME,
+                                           COL_TIMESTAMP_ACCESSED, COL_TITLE)
+
 
 STATS_DROPDOWN_OPTIONS: List[Dict[str, str]] = [
     {'label': 'Views', 'value': 'view_count'},
@@ -18,9 +21,9 @@ STATS_DROPDOWN_OPTIONS: List[Dict[str, str]] = [
 
 class Dashboard():
     def __init__(self, df: pd.DataFrame):
-        self._df = df.sort_values(by=['video_id', 'timestamp_accessed'])
+        self._df = df.sort_values(by=[COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED])
 
-        usernames: List[str] = list(df['username'].unique())
+        usernames: List[str] = list(df[COL_USERNAME].unique())
 
         self._app = Dash(__name__)
 
@@ -64,13 +67,14 @@ class Dashboard():
             )
 
             for username in usernames_:
-                cols_ = ['timestamp_accessed', stat_option_value, 'video_id', 'title', 'upload_date', 'timestamp_first_seen']
-                df_user = self._df.loc[self._df['username'] == username, cols_]
+                cols_ = [COL_TIMESTAMP_ACCESSED, stat_option_value, COL_VIDEO_ID, COL_TITLE, COL_UPLOAD_DATE,
+                         COL_TIMESTAMP_FIRST_SEEN]
+                df_user = self._df.loc[self._df[COL_USERNAME] == username, cols_]
                 # print(df_user)
-                for _, (video_id, title) in df_user[['video_id', 'title']].drop_duplicates().iterrows():
-                    df_vid = df_user[df_user['video_id'] == video_id]
+                for _, (video_id, title) in df_user[[COL_VIDEO_ID, COL_TITLE]].drop_duplicates().iterrows():
+                    df_vid = df_user[df_user[COL_VIDEO_ID] == video_id]
                     fig.add_trace(go.Scatter(
-                            x=df_vid['timestamp_accessed'],
+                            x=df_vid[COL_TIMESTAMP_ACCESSED],
                             y=df_vid[stat_option_value],
                             mode='lines+markers',
                             name=video_id,
@@ -106,11 +110,11 @@ class Dashboard():
                 )
             )
 
-            cols_ = ['video_id', 'username', 'title', 'upload_date']
+            cols_ = [COL_VIDEO_ID, COL_USERNAME, COL_TITLE, COL_UPLOAD_DATE]
             for username in usernames_:
-                df_user = self._df.loc[self._df['username'] == username, cols_].drop_duplicates()
+                df_user = self._df.loc[self._df[COL_USERNAME] == username, cols_].drop_duplicates()
                 fig.add_trace(go.Scatter(
-                    x=df_user['upload_date'],
+                    x=df_user[COL_UPLOAD_DATE],
                     y=[username_ids[username]] * len(df_user),
                     mode='lines+markers',
                     name=username,

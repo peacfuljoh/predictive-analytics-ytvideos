@@ -10,7 +10,7 @@ MAX_LEN_KEYWORD = 40
 
 VIDEO_STATS_CAPTURE_WINDOW_DAYS = 5 # number of days into the past to consider current videos
 
-# all column name macros
+# column name macros in raw data
 COL_VIDEO_URL = 'video_url'
 COL_UPLOAD_DATE = 'upload_date'
 COL_TIMESTAMP_FIRST_SEEN = 'timestamp_first_seen'
@@ -43,10 +43,7 @@ META_ALL_COLS_NO_URL = META_NUMERICAL_COLS + META_DATETIME_COLS + META_TEXT_COLS
 META_URL_COLS = [COL_THUMBNAIL_URL]
 META_ALL_COLS = META_ALL_COLS_NO_URL + META_URL_COLS
 
-# column names for 'prefeatures' collection
-PREFEATURES_USERNAME_COL = COL_USERNAME
-PREFEATURES_TIMESTAMP_COL = COL_TIMESTAMP_ACCESSED
-PREFEATURES_VIDEO_ID_COL = COL_VIDEO_ID
+# column names for 'prefeatures' collection (apart from raw data cols)
 PREFEATURES_ETL_CONFIG_COL = 'etl_config_prefeatures'
 PREFEATURES_TOKENS_COL = 'tokens'
 
@@ -59,6 +56,11 @@ VOCAB_ETL_CONFIG_COL = 'etl_config_vocabulary'
 FEATURES_VECTOR_COL = 'vec'
 FEATURES_TIMESTAMP_COL = 'timestamp_features'
 FEATURES_ETL_CONFIG_COL = 'etl_config_features'
+
+# column names for 'model' collection
+MODEL_MODEL_OBJ = 'model'
+MODEL_META_ID = 'meta_id'
+MODEL_SPLIT_NAME = 'name'
 
 # timestamps
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
@@ -93,6 +95,13 @@ KEYS_TRAIN_NUM = [COL_COMMENT_COUNT, COL_LIKE_COUNT, COL_VIEW_COUNT, COL_SUBSCRI
 KEYS_TRAIN_NUM_TGT = [key for key in KEYS_TRAIN_NUM if key != COL_SUBSCRIBER_COUNT]
 KEY_TRAIN_TIME_DIFF = 'time_after_upload' # seconds
 
+# dict key names for encoded model
+MODEL_DICT_PREPROCESSOR = 'preprocessor'
+MODEL_DICT_DATA_BOW = 'data_bow'
+MODEL_DICT_MODEL = 'model'
+MODEL_DICT_CONFIG = 'config'
+
+# col names for DataFrames in LR model
 KEYS_FOR_FIT_NONBOW_SRC = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]
 KEYS_FOR_FIT_NONBOW_SRC = [key + '_src' for key in KEYS_FOR_FIT_NONBOW_SRC] + [KEY_TRAIN_TIME_DIFF + '_tgt']
 KEYS_FOR_FIT_NONBOW_TGT = KEYS_TRAIN_NUM_TGT
@@ -114,7 +123,7 @@ ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES = dict(
     preconfig=[]
 )
 ETL_CONFIG_VALID_KEYS_VOCAB = dict(
-    extract=['filters', 'etl_config_prefeatures'],
+    extract=['filters', PREFEATURES_ETL_CONFIG_COL],
     transform=[],
     load=[],
     preconfig=[PREFEATURES_ETL_CONFIG_COL]
@@ -125,8 +134,9 @@ ETL_CONFIG_EXCLUDE_KEYS_VOCAB = dict(
     load=[],
     preconfig=[]
 )
+# VOCAB_ETL_
 ETL_CONFIG_VALID_KEYS_FEATURES = dict(
-    extract=['filters', 'etl_config_prefeatures', 'etl_config_vocab_name'],
+    extract=['filters', PREFEATURES_ETL_CONFIG_COL],
     transform=[],
     load=[],
     preconfig=[PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL]

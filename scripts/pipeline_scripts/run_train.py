@@ -19,8 +19,8 @@ from src.ml.ml_request import MLRequest
 # specify which version of the feature store to use
 config_load = {
     PREFEATURES_ETL_CONFIG_COL: 'test3',
-    VOCAB_ETL_CONFIG_COL: 'test007',
-    FEATURES_ETL_CONFIG_COL: 'test007',
+    VOCAB_ETL_CONFIG_COL: 'test21715',
+    FEATURES_ETL_CONFIG_COL: 'test21715',
     # FEATURES_TIMESTAMP_COL: '2023-10-05 17:13:16.668'
 }
 
@@ -39,7 +39,7 @@ config_ml = {
         ML_HYPERPARAM_RLP_DENSITY: rlp_density,
         ML_HYPERPARAM_SR_ALPHAS: sr_alphas,
         ML_HYPERPARAM_SR_CV_SPLIT: cv_split,
-        ML_HYPERPARAM_SR_CV_COUNT: cv_count
+        ML_HYPERPARAM_SR_CV_COUNT: 1 #cv_count
     },
     TRAIN_TEST_SPLIT: train_test_split_fract,
     SPLIT_TRAIN_BY_USERNAME: split_train_by_username
@@ -58,6 +58,7 @@ if 1:
 
     # preprocess feature records
     data_all, model_embed = prepare_feature_records(df_gen, ml_request)
+    del df_gen
 
     # split into train and test
     train_test_split(data_all, ml_request)  # in-place
@@ -66,5 +67,5 @@ if 1:
     model_reg = train_regression_model_simple(data_all, ml_request)
 
 # store model
-if 0:
+if 1:
     save_reg_model(model_reg, ml_request, config_load)

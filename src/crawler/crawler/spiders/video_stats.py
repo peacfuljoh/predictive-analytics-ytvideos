@@ -13,7 +13,10 @@ from ..utils.mysql_engine import insert_records_from_dict, update_records_from_d
 from ..utils.mongodb_utils_ytvideos import fetch_url_and_save_image
 from ..config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from ..constants import (COL_VIDEO_URL, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
-                         MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD)
+                         MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD, COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN,
+                         COL_DURATION, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT, COL_COMMENT_COUNT,
+                         COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT, COL_TIMESTAMP_ACCESSED, COL_COMMENT, COL_TITLE,
+                         COL_KEYWORDS, COL_DESCRIPTION, COL_TAGS, COL_THUMBNAIL_URL)
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -33,45 +36,45 @@ def extract_individual_stats(d: dict,
     """Extract individual stats with their own regexes."""
     # like count
     regex = '"defaultText":{"accessibility":{"accessibilityData":{"label":"(.*?) likes"}}'
-    d['like_count'] = apply_regex(s, regex, dtype='int')
+    d[COL_LIKE_COUNT] = apply_regex(s, regex, dtype='int')
 
     # comment count
     regex = '"commentCount":{"simpleText":"(.*?)"},"contentRenderer"'
-    d['comment_count'] = apply_regex(s, regex, dtype='int')
+    d[COL_COMMENT_COUNT] = apply_regex(s, regex, dtype='int')
 
     # comment text (only captures most recent comment, no other comments are visible in response body)
     regex = '"teaserContent":{"simpleText":"(.*?)"},"trackingParams":"'
-    d['comment'] = apply_regex(s, regex)
+    d[COL_COMMENT] = apply_regex(s, regex)
 
     # date posted
     regex = '"uploadDate":"(.*?)"'
-    d['upload_date'] = apply_regex(s, regex)
+    d[COL_UPLOAD_DATE] = apply_regex(s, regex)
 
     # subscriber count
     regex = 'subscribers"}},"simpleText":"(.*?) subscribers"}'
-    d['subscriber_count'] = apply_regex(s, regex, dtype='int')
+    d[COL_SUBSCRIBER_COUNT] = apply_regex(s, regex, dtype='int')
 
 def parse_video_details(d: dict,
                         res: dict):
     """Parse VideoDetails dict extracted from response body and fill relevant fields in video info dict."""
-    d['title']: str = res['title']
+    d[COL_TITLE]: str = res['title']
 
-    d['duration']: int = convert_num_str_to_int(res['lengthSeconds'])
+    d[COL_DURATION]: int = convert_num_str_to_int(res['lengthSeconds'])
 
     if 'keywords' in res:
-        d['keywords']: List[str] = [kw[:MAX_LEN_KEYWORD] for kw in res['keywords'][:MAX_NUM_KEYWORDS]]
+        d[COL_KEYWORDS]: List[str] = [kw[:MAX_LEN_KEYWORD] for kw in res['keywords'][:MAX_NUM_KEYWORDS]]
     else:
-        d['keywords']: List[str] = []
+        d[COL_KEYWORDS]: List[str] = []
 
     shortDescription_: List[str] = res['shortDescription'].split('#')  # (description, hashtags)
-    d['description']: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
-    d['description'] = d['description'][:MAX_LEN_DESCRIPTION]
-    d['tags']: List[str] = [t[:MAX_LEN_TAG] for t in shortDescription_[1:MAX_NUM_TAGS + 1]]
+    d[COL_DESCRIPTION]: str = shortDescription_[0].replace('\\"', '"').replace('\\n', '')
+    d[COL_DESCRIPTION] = d[COL_DESCRIPTION][:MAX_LEN_DESCRIPTION]
+    d[COL_TAGS]: List[str] = [t[:MAX_LEN_TAG] for t in shortDescription_[1:MAX_NUM_TAGS + 1]]
 
     thumbnail_largest: Dict[str, Union[str, int]] = res['thumbnail']['thumbnails'][-1]  # list of dicts (get largest image)
-    d['thumbnail_url']: str = thumbnail_largest['url']
+    d[COL_THUMBNAIL_URL]: str = thumbnail_largest['url']
 
-    d['view_count']: int = convert_num_str_to_int(res['viewCount'])  # int
+    d[COL_VIEW_COUNT]: int = convert_num_str_to_int(res['viewCount'])  # int
 
 def extract_stats_from_video_details(d: dict,
                                      s: str,
@@ -85,8 +88,8 @@ def extract_stats_from_video_details(d: dict,
 
     # transform for output if necessary
     if fmt == 'sql':
-        d['keywords'] = json.dumps(d['keywords'])
-        d['tags'] = json.dumps(d['tags'])
+        d[COL_KEYWORDS] = json.dumps(d[COL_KEYWORDS])
+        d[COL_TAGS] = json.dumps(d[COL_TAGS])
 
 def extract_video_stats_from_response_body(response,
                                            fmt: str = 'nosql') \
@@ -128,9 +131,9 @@ class YouTubeVideoStats(scrapy.Spider):
         self.reset_start_urls()
 
     def reset_start_urls(self):
-        self.df_videos: pd.DataFrame = get_video_info_for_stats_spider(columns=['username', 'video_id', 'title'])  # 'video_url' appended
+        self.df_videos: pd.DataFrame = get_video_info_for_stats_spider(columns=[COL_USERNAME, COL_VIDEO_ID, COL_TITLE])  # 'video_url' appended
         print_df_full(self.df_videos)
-        # self.df_videos = df_videos[df_videos['title'].isnull()]
+        # self.df_videos = df_videos[df_videos[COL_TITLE].isnull()]
         self.start_urls = list(self.df_videos[COL_VIDEO_URL]) if self.df_videos is not None else []
         self.url_count = 0
         # self.start_urls = start_urls[:1] # for testing
@@ -146,11 +149,11 @@ class YouTubeVideoStats(scrapy.Spider):
         # get vid info from response body
         vid_info = extract_video_stats_from_response_body(response, fmt='sql')
         df_row = self.df_videos.loc[self.df_videos[COL_VIDEO_URL] == response.url]
-        vid_info['video_id'] = df_row['video_id'].iloc[0]
-        vid_info['username'] = df_row['username'].iloc[0]
+        vid_info[COL_VIDEO_ID] = df_row[COL_VIDEO_ID].iloc[0]
+        vid_info[COL_USERNAME] = df_row[COL_USERNAME].iloc[0]
         ts_now_str = get_ts_now_str(mode='ms')
-        vid_info['timestamp_accessed'] = ts_now_str
-        vid_info['timestamp_first_seen'] = ts_now_str
+        vid_info[COL_TIMESTAMP_ACCESSED] = ts_now_str
+        vid_info[COL_TIMESTAMP_FIRST_SEEN] = ts_now_str
 
         ### Insert stats info to MySQL database ###
         if self.debug_info:
@@ -162,11 +165,11 @@ class YouTubeVideoStats(scrapy.Spider):
         insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['stats'], vid_info, DB_CONFIG)
 
         ### Fetch and save thumbnail to MongoDB database ###
-        key_ = 'thumbnail_url'
+        key_ = COL_THUMBNAIL_URL
         if len(url := vid_info[key_]) > 0:
             try:
                 fetch_url_and_save_image(DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'], DB_MONGO_CONFIG,
-                                         vid_info['video_id'], url, verbose=True)
+                                         vid_info[COL_VIDEO_ID], url, verbose=True)
             except:
                 print(f'Exception during MongoDB database injection for {key_}.')
 

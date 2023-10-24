@@ -19,11 +19,16 @@ from src.crawler.crawler.utils.misc_utils import (is_datetime_formatted_str,
                                                   get_duplicate_idxs, remove_trailing_chars)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
-                                           PREFEATURES_USERNAME_COL, PREFEATURES_TIMESTAMP_COL,
-                                           PREFEATURES_VIDEO_ID_COL, PREFEATURES_ETL_CONFIG_COL,
+                                           PREFEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_TOKENS_COL, TIMESTAMP_FMT, DATE_FMT,
-                                           ETL_CONFIG_VALID_KEYS_PREFEATURES, ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES)
+                                           ETL_CONFIG_VALID_KEYS_PREFEATURES, ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES,
+                                           COL_UPLOAD_DATE, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT,
+                                           COL_COMMENT_COUNT, COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT,
+                                           COL_TIMESTAMP_ACCESSED, COL_COMMENT, COL_TITLE, COL_KEYWORDS,
+                                           COL_DESCRIPTION, COL_TAGS)
 from src.etl.etl_request import ETLRequest, req_to_etl_config_record, validate_etl_config
+from src.schemas.schema_validation import validate_mongodb_records_schema
+from src.schemas.schemas import SCHEMAS_MONGODB
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
@@ -40,6 +45,8 @@ CHARSETS = {
 MIN_DESCRIPTION_LEN_0 = 20
 MIN_DESCRIPTION_LEN_1 = 20
 
+
+
 """ ETL request class for prefeatures processing """
 class ETLRequestPrefeatures(ETLRequest):
     """
@@ -51,15 +58,15 @@ class ETLRequestPrefeatures(ETLRequest):
 
         # validate extract filters
         for key, val in config_['filters'].items():
-            if key == 'video_id':
+            if key == COL_VIDEO_ID:
                 assert isinstance(val, str) or is_list_of_strings(val)
-            elif key == 'username':
+            elif key == COL_USERNAME:
                 assert isinstance(val, str) or is_list_of_strings(val)
-            elif key == 'upload_date':
+            elif key == COL_UPLOAD_DATE:
                 fmt = DATE_FMT
                 func = lambda s: is_datetime_formatted_str(s, fmt)
                 assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
-            elif key == 'timestamp_accessed':
+            elif key == COL_TIMESTAMP_ACCESSED:
                 fmt = TIMESTAMP_FMT
                 func = lambda s: is_datetime_formatted_str(s, fmt)
                 assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
@@ -110,7 +117,7 @@ def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFr
     join_condition = f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id'
     cols_all = {
         table_pseudoname_primary: STATS_ALL_COLS,
-        table_pseudoname_secondary: [col for col in META_ALL_COLS_NO_URL if col != 'video_id']
+        table_pseudoname_secondary: [col for col in META_ALL_COLS_NO_URL if col != COL_VIDEO_ID]
     }
     extract_ = req.get_extract()
     filters = extract_.get('filters')
@@ -146,7 +153,7 @@ def etl_extract_nontabular(df: pd.DataFrame,
     """Non-tabular raw_data"""
     # TODO: replace call to get_mongodb_records() with call to get_mongodb_records_gen() and iter through gen
     pass
-    # video_ids: List[str] = list(df['video_id'].unique())  # get unique video IDs
+    # video_ids: List[str] = list(df[COL_VIDEO_ID].unique())  # get unique video IDs
     # records_lst: List[Dict[str, Union[str, bytes]]] = get_mongodb_records(
     #     DB_VIDEOS_NOSQL_DATABASE,
     #     DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'],
@@ -164,7 +171,7 @@ def etl_process_title_and_comment(df: pd.DataFrame,
                                   charset: Optional[str] = None):
     """
     To print one comment per line:
-        for val in df['comment'].unique():
+        for val in df[COL_COMMENT].unique():
             print(val)
     """
     assert isinstance(df, pd.DataFrame)
@@ -198,7 +205,7 @@ def etl_process_keywords(df: pd.DataFrame):
     """Process raw keywords"""
     assert isinstance(df, pd.DataFrame)
 
-    colname = 'keywords'
+    colname = COL_KEYWORDS
 
     str_repl = OrderedDict()
     str_repl['#'] = ''
@@ -239,7 +246,7 @@ def etl_process_tags(df: pd.DataFrame):
     """Process raw tags"""
     assert isinstance(df, pd.DataFrame)
 
-    colname = 'tags'
+    colname = COL_TAGS
 
     str_repl = OrderedDict()
     str_repl[' '] = ''
@@ -284,7 +291,7 @@ def etl_process_description(df: pd.DataFrame):
     """Process raw description"""
     assert isinstance(df, pd.DataFrame)
 
-    colname = 'description'
+    colname = COL_DESCRIPTION
 
     str_repl = OrderedDict()
     str_repl['...'] = ' '
@@ -334,14 +341,14 @@ def etl_clean_raw_data_one_df(df: pd.DataFrame):
     """Clean one raw dataframe"""
     # interpolate and extrapolate missing values (zeroes and NaNs)
     if 0:
-        username_video_id_pairs = df[['username', 'video_id']].drop_duplicates()
+        username_video_id_pairs = df[[COL_USERNAME, COL_VIDEO_ID]].drop_duplicates()
         for _, (username, video_id) in username_video_id_pairs.iterrows():
-            mask = (df['username'] == username) * (df['video_id'] == video_id)
+            mask = (df[COL_USERNAME] == username) * (df[COL_VIDEO_ID] == video_id)
             df[mask] = df[mask].replace(0, np.nan).interpolate(method='linear', axis=0, limit_direction='both')
 
-    # filter text fields: 'comment', 'title', 'keywords', 'description', 'tags'
-    etl_process_title_and_comment(df, 'comment', charset='LNP')
-    etl_process_title_and_comment(df, 'title', charset='LNP')
+    # filter text fields: COL_COMMENT, COL_TITLE, COL_KEYWORDS, COL_DESCRIPTION, COL_TAGS
+    etl_process_title_and_comment(df, COL_COMMENT, charset='LNP')
+    etl_process_title_and_comment(df, COL_TITLE, charset='LNP')
     etl_process_keywords(df)
     etl_process_tags(df)
     etl_process_description(df)
@@ -355,7 +362,7 @@ def etl_clean_raw_data_one_df(df: pd.DataFrame):
             err_msg = f'\netl_clean_raw_data_one_df() -> Some numerical raw_data entries are invalid. Total count is {len(df)}; ' + \
                       ', '.join([f'{key}: {val}' for key, val in err_mask_sum.items()])
             print(err_msg)
-            # print_df_full(df.loc[df_err.any(axis=1), keys_num + ['video_id', 'username']])
+            # print_df_full(df.loc[df_err.any(axis=1), keys_num + [COL_VIDEO_ID, COL_USERNAME]])
             print(f'Dropping {df_err.any(axis=1).sum()} record(s).')
 
     return df
@@ -377,13 +384,13 @@ def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[s
     """
     words = {}
     counts = {}
-    for k in ['video_id', 'username']:
+    for k in [COL_VIDEO_ID, COL_USERNAME]:
         words[k] = list(df[k].unique())
         counts[k] = len(words[k])
-    for k in ['title', 'description']:
+    for k in [COL_TITLE, COL_DESCRIPTION]:
         words[k] = list(np.unique([w for e in df[k] if e is not None for w in e.split(' ')]))
         counts[k] = len(words[k])
-    for k in ['keywords', 'tags']:
+    for k in [COL_KEYWORDS, COL_TAGS]:
         words[k] = list(np.unique([w for e in df[k] if e is not None for w in json.loads(e)]))
         counts[k] = len(words[k])
 
@@ -398,9 +405,9 @@ def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None],
     Text is space-separated word lists.
     """
     # all keys; final key list contains num + meta + tokens + other
-    keys_text = ['title', 'keywords', 'tags']
-    keys_num = ['subscriber_count', 'comment_count', 'like_count', 'view_count']
-    keys_meta = ['username', 'video_id', 'timestamp_accessed']
+    keys_text = [COL_TITLE, COL_KEYWORDS, COL_TAGS]
+    keys_num = [COL_SUBSCRIBER_COUNT, COL_COMMENT_COUNT, COL_LIKE_COUNT, COL_VIEW_COUNT]
+    keys_meta = [COL_USERNAME, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED]
     keys_other = req.get_transform()['include_additional_keys'] if 'include_additional_keys' in req.get_transform() else []
 
     df = next(df_gen)
@@ -427,11 +434,11 @@ def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
 
         pprint(wc[1])
 
-        colname = 'title'
+        colname = COL_TITLE
         idxs = get_duplicate_idxs(df, colname)
         for i, idxs_ in idxs.items():
             row: pd.Series = df.loc[i]
-            print(', '.join([row[key] for key in ['title', 'keywords', 'tags']]))
+            print(', '.join([row[key] for key in [COL_TITLE, COL_KEYWORDS, COL_TAGS]]))
 
     # featurize text via embedding into Vector Space Model (VSM)
     raw_features = etl_featurize_make_raw_features(data['stats'], req)
@@ -444,40 +451,20 @@ def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
 
 
 """ ETL Load """
-def validate_prefeature_records_schema(recs: List[dict]) -> bool:
-    """Validate that records follow the excepted schema, e.g. before writing records to a MongoDB collection."""
-    MONGO_REC_SCHEMA_INFO = {
-        '_id': dict(type=str),
-        PREFEATURES_USERNAME_COL: dict(type=str),
-        PREFEATURES_TIMESTAMP_COL: dict(type=str),
-        PREFEATURES_VIDEO_ID_COL: dict(type=str),
-        PREFEATURES_ETL_CONFIG_COL: dict(type=str),
-        'like_count': dict(type=int),
-        'comment_count': dict(type=int),
-        'subscriber_count': dict(type=int),
-        'view_count': dict(type=int),
-        PREFEATURES_TOKENS_COL: dict(type=str)
-    }
-    for rec in recs:
-        assert set(rec) == set(MONGO_REC_SCHEMA_INFO)
-        for key, field_info in MONGO_REC_SCHEMA_INFO.items():
-            assert isinstance(rec[key], field_info['type'])
-    return True
-
 def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
                                             req: ETLRequestPrefeatures) \
         -> List[dict]:
     """
     Convert DataFrame with prefeatures info into dict for MongoDB insertion.
     """
-    cols_exclude = ['username', 'video_id']
+    cols_exclude = [COL_USERNAME, COL_VIDEO_ID]
 
     records_all: List[dict] = [] # update cmds
-    for video_id, df_ in df.groupby('video_id'):
+    for video_id, df_ in df.groupby(COL_VIDEO_ID):
         # get info for DB update
         cols_include = [col for col in df_.columns if col not in cols_exclude]
-        username = df_.iloc[0]['username'] # should be only one username
-        d_records = df_.loc[:, cols_include].set_index('timestamp_accessed').to_dict('index') # re-index by timestamp
+        username = df_.iloc[0][COL_USERNAME] # should be only one username
+        d_records = df_.loc[:, cols_include].set_index(COL_TIMESTAMP_ACCESSED).to_dict('index') # re-index by timestamp
 
         # set update info
         for ts, rec in d_records.items():
@@ -487,15 +474,15 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
             # define record for insertion
             record_to_insert = {
                 '_id': f'{video_id}_{ts_str_id}_{req.name}', # required to avoid duplication
-                PREFEATURES_USERNAME_COL: username,
-                PREFEATURES_VIDEO_ID_COL: video_id,
-                PREFEATURES_TIMESTAMP_COL: ts_str,
+                COL_USERNAME: username,
+                COL_VIDEO_ID: video_id,
+                COL_TIMESTAMP_ACCESSED: ts_str,
                 PREFEATURES_ETL_CONFIG_COL: req.name,
                 **rec
             }
             records_all.append(record_to_insert)
 
-    assert validate_prefeature_records_schema(records_all)
+    assert validate_mongodb_records_schema(records_all, SCHEMAS_MONGODB['prefeatures'])
 
     return records_all
 

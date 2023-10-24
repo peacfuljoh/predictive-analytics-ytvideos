@@ -12,7 +12,7 @@ from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames, g
 from .mysql_engine import MySQLEngine
 from ..config import DB_CONFIG, DB_INFO
 from ..constants import (MOST_RECENT_VID_LIMIT, COL_VIDEO_URL, COL_TIMESTAMP_FIRST_SEEN,
-                         VIDEO_STATS_CAPTURE_WINDOW_DAYS)
+                         VIDEO_STATS_CAPTURE_WINDOW_DAYS, COL_VIDEO_ID)
 
 
 
@@ -94,7 +94,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
 
         # add urls
         if not (df is None or df.empty):
-            video_urls: List[str] = make_video_urls(list(df['video_id']))
+            video_urls: List[str] = make_video_urls(list(df[COL_VIDEO_ID]))
             s_video_urls = pd.Series(video_urls, name=COL_VIDEO_URL)
             df = pd.concat((df, s_video_urls), axis=1)
 

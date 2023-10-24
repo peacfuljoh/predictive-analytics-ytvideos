@@ -8,7 +8,8 @@ import websockets
 import pandas as pd
 
 from src.crawler.crawler.utils.misc_utils import df_dt_codec
-from src.crawler.crawler.constants import TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG
+from src.crawler.crawler.constants import (TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG, COL_USERNAME,
+                                           COL_TIMESTAMP_ACCESSED)
 from src.crawler.crawler.config import API_CONFIG
 
 
@@ -18,8 +19,8 @@ ETL_CONFIG_OPTIONS = {
     'name': 'test', # not used when loading raw data as in prefeatures ETL pipeline
     'extract': {
         'filters': {
-            'timestamp_accessed': [['2023-10-10 00:00:00.000', '2023-10-15 00:00:00.000']],
-            'username': ["FoxNews", "NBCNews"]
+            COL_TIMESTAMP_ACCESSED: [['2023-10-10 00:00:00.000', '2023-10-15 00:00:00.000']],
+            COL_USERNAME: ["FoxNews", "NBCNews"]
         },
         'limit': 7217
     }
@@ -44,8 +45,8 @@ async def stream_meta_stats_join():
                         df = pd.DataFrame.from_dict(data_recv)
                         count += len(df)
                         df_dt_codec(df, TIMESTAMP_CONVERSION_FMTS, 'decode')
-                        # print(df['timestamp_accessed'].iloc[0])
-                        # print(df['upload_date'].iloc[0])
+                        # print(df[COL_TIMESTAMP_ACCESSED].iloc[0])
+                        # print(df[COL_UPLOAD_DATE].iloc[0])
                     else:
                         break
 

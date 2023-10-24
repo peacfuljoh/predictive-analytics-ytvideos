@@ -5,6 +5,8 @@ import pandas as pd
 from src.etl.prefeaturization_etl import etl_prefeatures_main
 from src.etl.prefeaturization_etl_utils import get_etl_req_prefeats
 from src.visualization.dashboard import Dashboard
+from src.crawler.crawler.constants import (COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN, COL_USERNAME,
+                                           COL_TIMESTAMP_ACCESSED, COL_TITLE)
 
 
 # setup config
@@ -15,8 +17,8 @@ if etl_config_name == 'test3':
     etl_config = {
         'extract': {
             'filters': {
-                # 'timestamp_accessed': [['2023-09-10 00:00:00.000', '2024-01-01 00:00:00.000']],
-                'username': ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
+                # COL_TIMESTAMP_ACCESSED: [['2023-09-10 00:00:00.000', '2024-01-01 00:00:00.000']],
+                COL_USERNAME: ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
             },
             # 'limit': 1000
         }
@@ -25,13 +27,13 @@ if etl_config_name == 'dashboard':
     etl_config = {
         'extract': {
             'filters': {
-                # 'timestamp_accessed': [['2023-09-10 00:00:00.000', '2024-01-01 00:00:00.000']],
-                'username': ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
+                # COL_TIMESTAMP_ACCESSED: [['2023-09-10 00:00:00.000', '2024-01-01 00:00:00.000']],
+                COL_USERNAME: ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
             },
             # 'limit': 1000
         },
         'transform': {
-            'include_additional_keys': ['title', 'upload_date', 'timestamp_first_seen']
+            'include_additional_keys': [COL_TITLE, COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN]
         }
     }
 

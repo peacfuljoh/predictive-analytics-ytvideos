@@ -6,16 +6,16 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import csr_array
 from sklearn.random_projection import SparseRandomProjection
-from sklearn.linear_model import SGDRegressor, LinearRegression, Ridge
+# from sklearn.linear_model import SGDRegressor, LinearRegression, Ridge
 from sklearn.preprocessing import StandardScaler
 
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
                                            ML_MODEL_TYPE_LIN_PROJ_RAND, ML_HYPERPARAM_EMBED_DIM,
-                                           ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_SR_ALPHAS,
-                                           KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT, KEY_TRAIN_TIME_DIFF, KEYS_TRAIN_ID,
+                                           ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_SR_ALPHAS, KEYS_TRAIN_ID,
                                            ML_HYPERPARAM_SR_CV_COUNT, ML_HYPERPARAM_SR_CV_SPLIT,
                                            KEYS_FOR_FIT_NONBOW_SRC, KEYS_FOR_FIT_NONBOW_TGT, KEYS_FOR_PRED_NONBOW_ID,
-                                           KEYS_FOR_PRED_NONBOW_TGT)
+                                           KEYS_FOR_PRED_NONBOW_TGT, MODEL_DICT_PREPROCESSOR, MODEL_DICT_DATA_BOW,
+                                           MODEL_DICT_MODEL, MODEL_DICT_CONFIG)
 from src.crawler.crawler.utils.misc_utils import is_list_of_sequences, join_on_dfs, convert_mixed_df_to_array
 from src.ml.ml_request import MLRequest
 
@@ -301,9 +301,9 @@ class MLModelRegressionSimple():
     def encode(self) -> dict:
         """Convert model info to storage dict."""
         d = {}
-        d['config'] = self._config
-        d['data_bow'] = self._data_bow.to_dict('records') # drops record indices
-        d['preprocessor'] = dict(
+        d[MODEL_DICT_CONFIG] = self._config
+        d[MODEL_DICT_DATA_BOW] = self._data_bow.to_dict('records') # drops record indices
+        d[MODEL_DICT_PREPROCESSOR] = dict(
             name='StandardScaler',
             params=dict(
                 scale_ = list(self._preprocessor.scale_),
@@ -311,7 +311,7 @@ class MLModelRegressionSimple():
                 var_ = list(self._preprocessor.var_)
             )
         )
-        d['model'] = dict(
+        d[MODEL_DICT_MODEL] = dict(
             name='LinearRegressionCustom',
             params=self._model.get_params_dict()
         )
@@ -320,17 +320,17 @@ class MLModelRegressionSimple():
 
     def decode(self, model_dict: dict):
         """Load model from storage dict."""
-        self._config = model_dict['config']
-        self._data_bow = pd.DataFrame.from_dict(model_dict['data_bow'])
+        self._config = model_dict[MODEL_DICT_CONFIG]
+        self._data_bow = pd.DataFrame.from_dict(model_dict[MODEL_DICT_DATA_BOW])
 
-        pre = model_dict['preprocessor']
+        pre = model_dict[MODEL_DICT_PREPROCESSOR]
         assert pre['name'] == 'StandardScaler'
         par = pre['params']
         self._preprocessor.scale_ = np.array(par['scale_'])
         self._preprocessor.mean_ = np.array(par['mean_'])
         self._preprocessor.var_ = np.array(par['var_'])
 
-        mod = model_dict['model']
+        mod = model_dict[MODEL_DICT_MODEL]
         assert mod['name'] == 'LinearRegressionCustom'
         self._model.set_params_from_dict(mod['params'])
 
