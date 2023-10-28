@@ -1,6 +1,6 @@
 
 from src.crawler.crawler.utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
-from src.crawler.crawler.utils.misc_utils import print_df_full
+from ytpa_utils.misc_utils import print_df_full
 from src.crawler.crawler.constants import COL_TIMESTAMP_FIRST_SEEN, COL_VIDEO_ID, COL_USERNAME, COL_TITLE
 
 

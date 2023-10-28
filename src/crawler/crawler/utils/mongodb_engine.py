@@ -9,7 +9,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection, ObjectId
 from pymongo.errors import BulkWriteError
 
-from .misc_utils import is_list_of_strings
+from ytpa_utils.val_utils import is_list_of_strings
 
 
 FIND_MANY_GEN_MAX_COUNT = 1000
@@ -227,7 +227,10 @@ class MongoDBEngine():
                     if rec_ is None:
                         break
                     recs.append(rec_)
-                yield pd.DataFrame(recs) if len(recs) > 0 else pd.DataFrame()
+                if recs:
+                    yield pd.DataFrame(recs)
+                else:
+                    return
 
         return self._query_wrapper(func)
 
@@ -253,7 +256,10 @@ class MongoDBEngine():
                     if rec_ is None:
                         break
                     recs.append(rec_)
-                yield pd.DataFrame(recs) if len(recs) > 0 else pd.DataFrame()
+                if recs:
+                    yield pd.DataFrame(recs)
+                else:
+                    return
 
         return self._query_wrapper(func)
 
@@ -267,10 +273,8 @@ class MongoDBEngine():
         """
         def func():
             group = {"_id": "$" + field}
-            df_gen = self.find_with_group_gen(group, filter=filter)
-            while 1:
-                df = next(df_gen)
-                yield df.rename(columns={'_id': field}) if not df.empty else pd.DataFrame()
+            for df in self.find_with_group_gen(group, filter=filter):
+                yield df.rename(columns={'_id': field})
         return self._query_wrapper(func)
 
     def delete_many(self, ids: Optional[List[str]] = None):
@@ -278,10 +282,11 @@ class MongoDBEngine():
         assert isinstance(ids, list)
         def func():
             cn = self._get_collection()
-            if isinstance(ids, list):
-                filter = {"_id": {"$in": ids}}
-            else:
-                filter = {}
+            filter = {"_id": {"$in": ids}} if isinstance(ids, list) else {}
+            # if isinstance(ids, list):
+            #     filter = {"_id": {"$in": ids}}
+            # else:
+            #     filter = {}
             cn.delete_many(filter)
         return self._query_wrapper(func)
 
@@ -354,7 +359,4 @@ def load_all_recs_with_distinct(database: str,
         -> pd.DataFrame:
     distinct_ = dict(group=group, filter=filter)  # filter is applied first
     df_gen = get_mongodb_records_gen(database, collection, db_config, distinct=distinct_)
-    dfs = []
-    while not (df := next(df_gen)).empty:
-        dfs.append(df)
-    return pd.concat(dfs, axis=0, ignore_index=True)
+    return pd.concat([df for df in df_gen], axis=0, ignore_index=True)

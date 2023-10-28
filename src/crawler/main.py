@@ -2,8 +2,8 @@
 
 from datetime import timedelta
 
+from ytpa_utils.time_utils import TimeLock, get_dt_now
 from crawler.utils.spider_utils import run_crawler
-from crawler.utils.misc_utils import TimeLock, get_dt_now
 from crawler.config import AUTOCRAWL_CONFIG
 
 

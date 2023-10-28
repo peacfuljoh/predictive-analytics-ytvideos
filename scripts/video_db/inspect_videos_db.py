@@ -6,7 +6,8 @@ from typing import Dict, List
 
 from src.crawler.crawler.utils.mysql_utils_ytvideos import (get_video_info_for_stats_spider)
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine, insert_records_from_dict, update_records_from_dict
-from src.crawler.crawler.utils.misc_utils import get_ts_now_str, print_df_full
+from ytpa_utils.misc_utils import print_df_full
+from ytpa_utils.time_utils import get_ts_now_str
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
 from src.crawler.crawler.constants import COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED, COL_TITLE
 
@@ -150,7 +151,8 @@ def inspect_videos_db(inject_data: bool = False):
                                        mode='pandas', tablename=tablename, as_generator=True)
 
         dts: Dict[str, List[datetime]] = {} # video_id: min and max timestamp_accessed
-        while not (df := next(df_gen)).empty:
+        for df in df_gen:
+        # while not (df := next(df_gen)).empty:
             gb = df[[COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED]].groupby([COL_VIDEO_ID])
             gb_min = gb.min()
             gb_max = gb.max()

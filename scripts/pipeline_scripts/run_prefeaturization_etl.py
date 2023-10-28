@@ -45,9 +45,7 @@ data = etl_prefeatures_main(req, return_for_dashboard=etl_config_name == 'dashbo
 
 # run dashboard
 if etl_config_name == 'dashboard':
-    dfs = []
-    while not (df_ := next(data)).empty:
-        dfs.append(df_)
+    dfs = [df for df in data] # TODO: make this on-demand
     df = pd.concat(dfs, axis=0, ignore_index=True)
 
     dashboard = Dashboard(df)

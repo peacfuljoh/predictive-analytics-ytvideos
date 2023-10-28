@@ -16,7 +16,8 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, ML_MODEL_TYPE, M
                                            KEYS_FOR_FIT_NONBOW_SRC, KEYS_FOR_FIT_NONBOW_TGT, KEYS_FOR_PRED_NONBOW_ID,
                                            KEYS_FOR_PRED_NONBOW_TGT, MODEL_DICT_PREPROCESSOR, MODEL_DICT_DATA_BOW,
                                            MODEL_DICT_MODEL, MODEL_DICT_CONFIG)
-from src.crawler.crawler.utils.misc_utils import is_list_of_sequences, join_on_dfs, convert_mixed_df_to_array
+from ytpa_utils.val_utils import is_list_of_sequences
+from ytpa_utils.df_utils import join_on_dfs, convert_mixed_df_to_array
 from src.ml.ml_request import MLRequest
 
 

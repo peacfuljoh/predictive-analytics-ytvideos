@@ -65,11 +65,11 @@ MODEL_SPLIT_NAME = 'name'
 # timestamps
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 DATE_FMT = '%Y-%m-%d'
-TIMESTAMP_CONVERSION_FMTS = dict(
-    timestamp_accessed=TIMESTAMP_FMT,
-    timestamp_first_seen=TIMESTAMP_FMT,
-    upload_date=DATE_FMT
-)
+TIMESTAMP_CONVERSION_FMTS = {
+    COL_TIMESTAMP_ACCESSED: TIMESTAMP_FMT,
+    COL_TIMESTAMP_FIRST_SEEN: TIMESTAMP_FMT,
+    COL_UPLOAD_DATE: DATE_FMT
+}
 
 # ML model
 MIN_VID_SAMPS_FOR_DATASET = 10

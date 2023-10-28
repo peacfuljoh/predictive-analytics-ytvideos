@@ -7,7 +7,7 @@ from typing import List
 import websockets
 import pandas as pd
 
-from src.crawler.crawler.utils.misc_utils import df_dt_codec
+from ytpa_utils.df_utils import df_dt_codec
 from src.crawler.crawler.constants import (TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG, COL_USERNAME,
                                            COL_TIMESTAMP_ACCESSED)
 from src.crawler.crawler.config import API_CONFIG
@@ -44,7 +44,7 @@ async def stream_meta_stats_join():
                     if len(data_recv) > 0:
                         df = pd.DataFrame.from_dict(data_recv)
                         count += len(df)
-                        df_dt_codec(df, TIMESTAMP_CONVERSION_FMTS, 'decode')
+                        # df_dt_codec(df, TIMESTAMP_CONVERSION_FMTS, 'decode') # decoding not implemented in df_dt_codec
                         # print(df[COL_TIMESTAMP_ACCESSED].iloc[0])
                         # print(df[COL_UPLOAD_DATE].iloc[0])
                     else:

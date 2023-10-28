@@ -13,10 +13,9 @@ from PIL import Image
 from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine, perform_join_mysql_query
-from src.crawler.crawler.utils.misc_utils import (is_datetime_formatted_str,
-                                                  df_generator_wrapper, is_list_of_strings,
-                                                  is_list_of_list_of_time_range_strings,
-                                                  get_duplicate_idxs, remove_trailing_chars)
+from ytpa_utils.val_utils import is_datetime_formatted_str, is_list_of_strings, is_list_of_list_of_time_range_strings
+from ytpa_utils.df_utils import get_duplicate_idxs
+from ytpa_utils.misc_utils import remove_trailing_chars
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
                                            PREFEATURES_ETL_CONFIG_COL,
@@ -367,14 +366,12 @@ def etl_clean_raw_data_one_df(df: pd.DataFrame):
 
     return df
 
-
-@df_generator_wrapper
 def etl_clean_raw_data(data: dict,
                        req: ETLRequestPrefeatures) \
         -> Generator[pd.DataFrame, None, None]:
     """Clean the raw raw_data"""
-    df = etl_clean_raw_data_one_df(next(data['stats']))
-    return df
+    for df in data['stats']:
+        yield etl_clean_raw_data_one_df(df)
 
 def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[str, int]]:
     """
@@ -396,7 +393,6 @@ def get_words_and_counts(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[s
 
     return words, counts
 
-@df_generator_wrapper
 def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None],
                                     req: ETLRequestPrefeatures) \
         -> Generator[pd.DataFrame, None, None]:
@@ -410,11 +406,9 @@ def etl_featurize_make_raw_features(df_gen: Generator[pd.DataFrame, None, None],
     keys_meta = [COL_USERNAME, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED]
     keys_other = req.get_transform()['include_additional_keys'] if 'include_additional_keys' in req.get_transform() else []
 
-    df = next(df_gen)
-    if df.empty:
-        raise StopIteration
-    df[PREFEATURES_TOKENS_COL] = df[keys_text].agg(' '.join, axis=1)
-    return df[list(set([PREFEATURES_TOKENS_COL] + keys_num + keys_meta + keys_other))]
+    for df in df_gen:
+        df[PREFEATURES_TOKENS_COL] = df[keys_text].agg(' '.join, axis=1)
+        yield df[list(set([PREFEATURES_TOKENS_COL] + keys_num + keys_meta + keys_other))]
 
 def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dict[str, Image]]],
                   req: ETLRequestPrefeatures) \
@@ -502,6 +496,6 @@ def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
                            database=DB_FEATURES_NOSQL_DATABASE,
                            collection=DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
                            verbose=True)
-    while not (df := next(data['stats'])).empty:
+    for df in data['stats']:
         records = etl_load_prefeatures_prepare_for_insert(df, req)
         engine.insert_many(records)

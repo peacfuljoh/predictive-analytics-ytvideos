@@ -8,7 +8,8 @@ import datetime
 import pandas as pd
 import numpy as np
 
-from .misc_utils import make_video_urls, make_videos_page_urls_from_usernames, get_ts_now_str, is_subset
+from ytpa_utils.time_utils import get_ts_now_str
+from ytpa_utils.val_utils import is_subset
 from .mysql_engine import MySQLEngine
 from ..config import DB_CONFIG, DB_INFO
 from ..constants import (MOST_RECENT_VID_LIMIT, COL_VIDEO_URL, COL_TIMESTAMP_FIRST_SEEN,
@@ -114,3 +115,13 @@ def get_user_video_page_urls_from_db(usernames_desired: Optional[List[str]] = No
     usernames: List[str] = get_usernames_from_db(usernames_desired=usernames_desired)
     urls: List[str] = make_videos_page_urls_from_usernames(usernames)
     return urls
+
+
+def make_videos_page_urls_from_usernames(names: List[str]) -> List[str]:
+    """Make YouTube video page URLs for a list of usernames"""
+    return [f"https://www.youtube.com/@{name}/videos" for name in names]
+
+
+def make_video_urls(video_ids: List[str]) -> List[str]:
+    """Make YouTube video URLs from a list of video_id's."""
+    return [f"https://www.youtube.com/watch?v={video_id}" for video_id in video_ids]

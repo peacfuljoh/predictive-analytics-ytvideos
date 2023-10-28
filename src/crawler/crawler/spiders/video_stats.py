@@ -7,7 +7,8 @@ from pprint import pprint
 import pandas as pd
 import scrapy
 
-from ..utils.misc_utils import convert_num_str_to_int, apply_regex, get_ts_now_str, print_df_full
+from ytpa_utils.misc_utils import convert_num_str_to_int, apply_regex, print_df_full
+from ytpa_utils.time_utils import get_ts_now_str
 from ..utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
 from ..utils.mysql_engine import insert_records_from_dict, update_records_from_dict
 from ..utils.mongodb_utils_ytvideos import fetch_url_and_save_image
@@ -168,8 +169,8 @@ class YouTubeVideoStats(scrapy.Spider):
         key_ = COL_THUMBNAIL_URL
         if len(url := vid_info[key_]) > 0:
             try:
-                fetch_url_and_save_image(DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'], DB_MONGO_CONFIG,
-                                         vid_info[COL_VIDEO_ID], url, verbose=True)
+                fetch_url_and_save_image(DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'],
+                                         DB_MONGO_CONFIG, vid_info[COL_VIDEO_ID], url, verbose=True)
             except:
                 print(f'Exception during MongoDB database injection for {key_}.')
 

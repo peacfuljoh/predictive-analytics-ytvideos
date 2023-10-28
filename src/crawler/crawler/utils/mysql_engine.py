@@ -8,7 +8,8 @@ from typing import Dict, Optional, Callable, List, Union, Generator, Tuple
 import mysql.connector
 import pandas as pd
 
-from .misc_utils import is_subset, make_sql_query_where_one
+from ytpa_utils.val_utils import is_subset
+from ytpa_utils.sql_utils import make_sql_query_where_one
 
 
 SELECT_RECORDS_GEN_MAX_COUNT = 1000
@@ -190,6 +191,8 @@ class MySQLEngine():
                 with connection.cursor() as cursor:
                     cursor.execute(query)
                     while (records := cursor.fetchmany(SELECT_RECORDS_GEN_MAX_COUNT)) is not None:
+                        if not records:
+                            return
                         if mode == 'pandas':
                             yield pd.DataFrame(records, columns=cols)
                         else:

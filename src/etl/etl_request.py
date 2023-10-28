@@ -4,7 +4,7 @@ from typing import Union, Dict, List, Tuple
 import copy
 
 from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
-from src.crawler.crawler.utils.misc_utils import is_subset, is_list_of_list_of_strings
+from ytpa_utils.val_utils import is_subset, is_list_of_list_of_strings
 
 
 class ETLRequest():

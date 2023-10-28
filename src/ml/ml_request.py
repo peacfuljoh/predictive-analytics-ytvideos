@@ -6,7 +6,7 @@ from src.crawler.crawler.constants import (ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, 
                                            ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS, ML_MODEL_TYPES, TRAIN_TEST_SPLIT,
                                            TRAIN_TEST_SPLIT_DFLT, ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
                                            ML_HYPERPARAM_SR_CV_COUNT)
-from src.crawler.crawler.utils.misc_utils import is_list_of_floats
+from ytpa_utils.val_utils import is_list_of_floats
 
 
 class MLRequest():

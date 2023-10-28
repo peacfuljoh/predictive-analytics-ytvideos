@@ -18,7 +18,8 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import (load_config_timestamp_sets_for_features,
                                                               convert_ts_fmt_for_mongo_id)
-from src.crawler.crawler.utils.misc_utils import is_dict_of_instances, get_ts_now_str, is_subset
+from ytpa_utils.val_utils import is_dict_of_instances
+from ytpa_utils.time_utils import get_ts_now_str
 from src.ml.ml_request import MLRequest
 from src.ml.ml_models import MLModelLinProjRandom, MLModelRegressionSimple
 from src.schemas.schema_validation import validate_mongodb_records_schema
@@ -95,7 +96,8 @@ def stream_all_features_into_ram(df_gen: Generator[pd.DataFrame, None, None],
     """Stream all feature DataFrames into RAM"""
     data_all: List[pd.DataFrame] = []
 
-    while not (df := next(df_gen)).empty:
+    # while not (df := next(df_gen)).empty:
+    for df in df_gen:
         df[COL_TIMESTAMP_ACCESSED] = pd.to_datetime(df[COL_TIMESTAMP_ACCESSED], format=TIMESTAMP_FMT)
         if keys_extract is not None:
             df = df[keys_extract]

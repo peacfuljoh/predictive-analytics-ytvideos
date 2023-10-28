@@ -4,7 +4,8 @@ from typing import Optional, Union, Tuple
 
 import pandas as pd
 
-from .misc_utils import fetch_data_at_url, is_subset
+from ytpa_utils.misc_utils import fetch_data_at_url
+from ytpa_utils.val_utils import is_subset
 from .mongodb_engine import MongoDBEngine, get_mongodb_records_gen, load_all_recs_with_distinct
 from ..constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                          VOCAB_TIMESTAMP_COL, FEATURES_TIMESTAMP_COL, TIMESTAMP_FMT)
@@ -73,6 +74,7 @@ def load_config_timestamp_sets_for_features(configs: Optional[dict] = None) -> p
     cols_all = [PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                 VOCAB_TIMESTAMP_COL, FEATURES_TIMESTAMP_COL]
 
+    # ensure specified cols are valid
     if configs is not None:
         assert is_subset(configs, cols_all)
         cols_all = [col for col in cols_all if col not in configs] # remove specified names from search, maintain order
@@ -80,9 +82,9 @@ def load_config_timestamp_sets_for_features(configs: Optional[dict] = None) -> p
     # if unique record specified, find and return it
     if len(cols_all) == 0:
         df_gen = get_mongodb_records_gen(database, collection, db_config, filter=configs)
-        df = next(df_gen)
-        assert len(df) == 1 and next(df_gen).empty
-        return df
+        dfs = [df for df in df_gen]
+        assert len(dfs) == 1
+        return dfs[0]
 
     # breadth-first search on config/timestamp combinations
     # TODO: find way to query unique sets at once instead of iterating in a worst-case-exponential fashion

@@ -1,7 +1,5 @@
 """Script for testing train and test"""
 
-import math
-
 from src.ml.train_utils import (load_feature_records, train_test_split, prepare_feature_records,
                                 train_regression_model_simple, save_reg_model)
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import load_config_timestamp_sets_for_features
@@ -11,7 +9,7 @@ from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CO
                                            ML_MODEL_TYPE_LIN_PROJ_RAND, VEC_EMBED_DIMS, TRAIN_TEST_SPLIT,
                                            ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
                                            ML_HYPERPARAM_SR_CV_COUNT, SPLIT_TRAIN_BY_USERNAME)
-from src.crawler.crawler.utils.misc_utils import print_df_full
+from ytpa_utils.misc_utils import print_df_full
 from src.ml.ml_request import MLRequest
 
 
@@ -39,7 +37,7 @@ config_ml = {
         ML_HYPERPARAM_RLP_DENSITY: rlp_density,
         ML_HYPERPARAM_SR_ALPHAS: sr_alphas,
         ML_HYPERPARAM_SR_CV_SPLIT: cv_split,
-        ML_HYPERPARAM_SR_CV_COUNT: 1 #cv_count
+        ML_HYPERPARAM_SR_CV_COUNT: cv_count
     },
     TRAIN_TEST_SPLIT: train_test_split_fract,
     SPLIT_TRAIN_BY_USERNAME: split_train_by_username

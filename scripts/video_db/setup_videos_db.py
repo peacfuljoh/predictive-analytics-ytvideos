@@ -3,7 +3,7 @@
 from typing import List
 
 from src.crawler.crawler.utils.mysql_engine import MySQLEngine, insert_records_from_dict
-from src.crawler.crawler.utils.misc_utils import load_json
+from ytpa_utils.io_utils import load_json
 from src.crawler.crawler.paths import DB_VIDEO_SQL_FNAME, USERNAMES_JSON_PATH
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
 

@@ -12,7 +12,8 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY
                                            VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, COL_USERNAME)
 from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, MongoDBEngine
-from src.crawler.crawler.utils.misc_utils import get_ts_now_str, is_list_of_strings, df_generator_wrapper
+from ytpa_utils.val_utils import is_list_of_strings
+from ytpa_utils.time_utils import get_ts_now_str
 from src.etl.etl_request import ETLRequest, req_to_etl_config_record
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
 from src.schemas.schema_validation import validate_mongodb_records_schema
@@ -118,10 +119,9 @@ def gen_docs(df_gen: Generator[pd.DataFrame, None, None]):
     Generate docs one at a time from a DataFrame generator.
     Yields a list of strings one-by-one, then a StopIteration.
     """
-    while not (df := next(df_gen)).empty:
+    for df in df_gen:
         for doc in df[PREFEATURES_TOKENS_COL].values:
             yield doc.split(' ')
-    return StopIteration
 
 def etl_create_vocab(df_gen: Generator[pd.DataFrame, None, None],
                      req: ETLRequestVocabulary) \
@@ -209,9 +209,7 @@ def etl_load_vocab_from_db(req: ETLRequestFeatures,
     recs_all = engine.find_many_gen(filter=filter)
 
     # pick most recent
-    dfs = []
-    while not (df := next(recs_all)).empty:
-        dfs.append(df)
+    dfs = [df for df in recs_all]
     df = pd.concat(dfs, axis=0, ignore_index=True)
     rec: pd.DataFrame = df.loc[df[VOCAB_TIMESTAMP_COL] == df[VOCAB_TIMESTAMP_COL].max()] # argmax not allowed for strings
     assert len(rec) == 1
@@ -223,27 +221,23 @@ def etl_load_vocab_from_db(req: ETLRequestFeatures,
 
     return rec
 
-@df_generator_wrapper
 def etl_featurize_records_with_vocab(df_gen: Generator[pd.DataFrame, None, None],
                                      vocabulary: dict,
                                      req: ETLRequestFeatures) \
         -> Generator[pd.DataFrame, None, None]:
     """Featurize prefeature records using vocabulary"""
-    df = next(df_gen)
-    if df.empty:
-        raise StopIteration
+    for df in df_gen:
+        # map tokens to vectors in-place and rename col
+        df[PREFEATURES_TOKENS_COL] = {i: vocabulary[VOCAB_VOCABULARY_COL].doc2bow(rec[PREFEATURES_TOKENS_COL].split())
+                                      for i, rec in df.iterrows()}
+        df = df.rename(columns={PREFEATURES_TOKENS_COL: FEATURES_VECTOR_COL})
 
-    # map tokens to vectors in-place and rename col
-    df[PREFEATURES_TOKENS_COL] = {i: vocabulary[VOCAB_VOCABULARY_COL].doc2bow(rec[PREFEATURES_TOKENS_COL].split())
-                                  for i, rec in df.iterrows()}
-    df = df.rename(columns={PREFEATURES_TOKENS_COL: FEATURES_VECTOR_COL})
+        # add vocabulary metadata
+        df[VOCAB_ETL_CONFIG_COL] = req.get_preconfig()[VOCAB_ETL_CONFIG_COL]
+        df[VOCAB_TIMESTAMP_COL] = vocabulary[VOCAB_TIMESTAMP_COL]
 
-    # add vocabulary metadata
-    df[VOCAB_ETL_CONFIG_COL] = req.get_preconfig()[VOCAB_ETL_CONFIG_COL]
-    df[VOCAB_TIMESTAMP_COL] = vocabulary[VOCAB_TIMESTAMP_COL]
-
-    # Note: df only contains etl_config_prefeatures column at this point
-    return df
+        # Note: df only contains etl_config_prefeatures column at this point
+        yield df
 
 def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
                                             ts_feat: str,
@@ -279,6 +273,6 @@ def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],
                            database=DB_FEATURES_NOSQL_DATABASE,
                            collection=DB_FEATURES_NOSQL_COLLECTIONS['features'],
                            verbose=True)
-    while not (df := next(feat_gen)).empty:
+    for df in feat_gen:
         records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
         engine.insert_many(records)
