@@ -11,14 +11,17 @@ dt_start = get_dt_now().replace(minute=0, second=0, microsecond=0) + timedelta(h
 time_lock = TimeLock(dt_start, AUTOCRAWL_CONFIG["REPEAT_INTVL"], progress_dur=60 * 5, verbose=True)
 
 while 1:
-    print('\n' * 10)
-    time_lock.acquire()
+    try:
+        print('\n' * 10)
+        time_lock.acquire()
 
-    from crawler.spiders.video_ids import YouTubeLatestVideoIds
-    from crawler.spiders.video_stats import YouTubeVideoStats
+        from crawler.spiders.video_ids import YouTubeLatestVideoIds
+        from crawler.spiders.video_stats import YouTubeVideoStats
 
-    meta_spider_name = YouTubeLatestVideoIds.name
-    stats_spider_name = YouTubeVideoStats.name
-
-    run_crawler(meta_spider_name)
-    run_crawler(stats_spider_name)
+        run_crawler(YouTubeLatestVideoIds.name)
+        run_crawler(YouTubeVideoStats.name)
+    except KeyboardInterrupt:
+        exit()
+    except:
+        print('\n\nCannot establish connection (internet may be down). '
+              'Resetting TimeLock and waiting until next attempt.')
