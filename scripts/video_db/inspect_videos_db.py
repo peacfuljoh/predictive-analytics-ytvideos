@@ -9,7 +9,7 @@ from db_engines.mysql_engine import MySQLEngine
 from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from ytpa_utils.misc_utils import print_df_full
 from ytpa_utils.time_utils import get_ts_now_str
-from src.crawler.crawler.config import DB_CONFIG, DB_INFO
+from src.crawler.crawler.config import DB_MYSQL_CONFIG, DB_INFO
 from src.crawler.crawler.constants import COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED, COL_TITLE
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -23,9 +23,9 @@ def inject_toy_data():
     # users table
     tablename = DB_VIDEOS_TABLES['users']
     d = dict(username='user1')
-    insert_records_from_dict(database, tablename, d, DB_CONFIG)
+    insert_records_from_dict(database, tablename, d, DB_MYSQL_CONFIG)
     d = dict(username=['user2', 'user3'])
-    insert_records_from_dict(database, tablename, d, DB_CONFIG)
+    insert_records_from_dict(database, tablename, d, DB_MYSQL_CONFIG)
 
     # video_meta table
     tablename = DB_VIDEOS_TABLES['meta']
@@ -56,10 +56,10 @@ def inject_toy_data():
     d2_pre = {key: val for key, val in d2.items() if key in keys_pre}
 
     if 1:
-        insert_records_from_dict(database, tablename, d1_pre, DB_CONFIG, keys=keys_pre)  # insert with just two keys
-        insert_records_from_dict(database, tablename, d2_pre, DB_CONFIG, keys=keys_pre)
-        update_records_from_dict(database, tablename, d1, DB_CONFIG)  # update with rest of info
-        update_records_from_dict(database, tablename, d2, DB_CONFIG)
+        insert_records_from_dict(database, tablename, d1_pre, DB_MYSQL_CONFIG, keys=keys_pre)  # insert with just two keys
+        insert_records_from_dict(database, tablename, d2_pre, DB_MYSQL_CONFIG, keys=keys_pre)
+        update_records_from_dict(database, tablename, d1, DB_MYSQL_CONFIG)  # update with rest of info
+        update_records_from_dict(database, tablename, d2, DB_MYSQL_CONFIG)
 
     # video_stats table
     tablename = DB_VIDEOS_TABLES['stats']
@@ -82,8 +82,8 @@ def inject_toy_data():
         comment=["Blah blah comment.", "Another comment."]
     )
     if 1:
-        insert_records_from_dict(database, tablename, d1, DB_CONFIG)
-        insert_records_from_dict(database, tablename, d2, DB_CONFIG)
+        insert_records_from_dict(database, tablename, d1, DB_MYSQL_CONFIG)
+        insert_records_from_dict(database, tablename, d2, DB_MYSQL_CONFIG)
 
 
 def inspect_videos_db(inject_data: bool = False):
@@ -92,7 +92,7 @@ def inspect_videos_db(inject_data: bool = False):
         inject_toy_data()
 
     # initialize MySQL engine
-    engine = MySQLEngine(DB_CONFIG)
+    engine = MySQLEngine(DB_MYSQL_CONFIG)
 
     # see table schemas and contents
     for _, tablename in DB_VIDEOS_TABLES.items():

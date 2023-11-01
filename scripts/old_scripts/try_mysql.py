@@ -3,12 +3,12 @@ from try_mysql_data import insert_reviewers_query, reviewers_records, queries_cr
     insert_ratings_query, ratings_records, insert_movies_query
 
 from db_engines.mysql_engine import MySQLEngine
-from src.crawler.crawler.config import DB_CONFIG
+from src.crawler.crawler.config import DB_MYSQL_CONFIG
 
 
 
 
-engine = MySQLEngine(DB_CONFIG)
+engine = MySQLEngine(DB_MYSQL_CONFIG)
 
 
 

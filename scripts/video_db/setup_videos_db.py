@@ -6,7 +6,7 @@ from db_engines.mysql_engine import MySQLEngine
 from db_engines.mysql_utils import insert_records_from_dict
 from ytpa_utils.io_utils import load_json
 from src.crawler.crawler.paths import DB_VIDEO_SQL_FNAME, USERNAMES_JSON_PATH
-from src.crawler.crawler.config import DB_CONFIG, DB_INFO
+from src.crawler.crawler.config import DB_MYSQL_CONFIG, DB_INFO
 
 from inspect_videos_db import inspect_videos_db
 
@@ -17,7 +17,7 @@ DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
 
 
 # initialize MySQL engine
-engine = MySQLEngine(DB_CONFIG)
+engine = MySQLEngine(DB_MYSQL_CONFIG)
 
 # drop database
 if 0:

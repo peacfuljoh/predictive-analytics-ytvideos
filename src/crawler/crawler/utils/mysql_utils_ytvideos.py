@@ -11,7 +11,7 @@ import numpy as np
 from ytpa_utils.time_utils import get_ts_now_str
 from ytpa_utils.val_utils import is_subset
 from db_engines.mysql_engine import MySQLEngine
-from ..config import DB_CONFIG, DB_INFO
+from ..config import DB_MYSQL_CONFIG, DB_INFO
 from ..constants import (MOST_RECENT_VID_LIMIT, COL_VIDEO_URL, COL_TIMESTAMP_FIRST_SEEN,
                          VIDEO_STATS_CAPTURE_WINDOW_DAYS, COL_VIDEO_ID)
 
@@ -20,7 +20,7 @@ from ..constants import (MOST_RECENT_VID_LIMIT, COL_VIDEO_URL, COL_TIMESTAMP_FIR
 
 def get_usernames_from_db(usernames_desired: Optional[List[str]] = None) -> List[str]:
     """Get usernames from the users table"""
-    engine = MySQLEngine(DB_CONFIG)
+    engine = MySQLEngine(DB_MYSQL_CONFIG)
 
     tablename = DB_INFO["DB_VIDEOS_TABLES"]["users"]
     query = f'SELECT * FROM {tablename}'
@@ -48,7 +48,7 @@ def get_video_info_for_stats_spider(usernames_desired: Optional[List[str]] = Non
     assert len(usernames) > 0
     assert columns is None or (isinstance(columns, list) and len(columns) > 0)
 
-    engine = MySQLEngine(DB_CONFIG)
+    engine = MySQLEngine(DB_MYSQL_CONFIG)
 
     tablename: str = DB_INFO["DB_VIDEOS_TABLES"]["meta"]
 

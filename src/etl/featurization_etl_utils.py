@@ -7,7 +7,7 @@ import pandas as pd
 import gensim as gs
 from gensim.corpora import Dictionary
 
-from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
+# from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL,
                                            VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, COL_USERNAME)
@@ -21,8 +21,8 @@ from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
 
 
-DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
-DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
+# DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
+# DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
 
 
 STOPLIST = 'for a of the and to in on is this at as be it that by are was'
@@ -105,10 +105,15 @@ def etl_extract_prefeature_records(req: Union[ETLRequestVocabulary, ETLRequestFe
 
     filter = None if (distinct is not None) else req.get_extract()['filters']
 
+    db_ = req.get_db()
+
     return get_mongodb_records_gen(
-        DB_FEATURES_NOSQL_DATABASE,
-        DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
-        DB_MONGO_CONFIG,
+        # DB_FEATURES_NOSQL_DATABASE,
+        # DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
+        # DB_MONGO_CONFIG,
+        db_['db_info']['DB_FEATURES_NOSQL_DATABASE'],
+        db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['prefeatures'],
+        db_['db_mongo_config'],
         filter=filter,
         projection=projection,
         distinct=distinct
@@ -164,11 +169,14 @@ def convert_string_to_gs_dictionary(s: str) -> Dictionary:
 def etl_load_vocab_to_db(dictionary: Dictionary,
                          req: ETLRequestVocabulary):
     """Load vocabulary into vocab store"""
+    db_ = req.get_db()
+    mongo_config = db_['db_mongo_config']
+    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
+    collection_config = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_vocabulary']
+    collection_vocab = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['vocabulary']
+
     # save config
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['etl_config_vocabulary'],
-                           verbose=True)
+    engine = MongoDBEngine(mongo_config, database=database, collection=collection_config, verbose=True)
     d_req = req_to_etl_config_record(req, 'subset')
     engine.insert_one(d_req)
 
@@ -183,10 +191,7 @@ def etl_load_vocab_to_db(dictionary: Dictionary,
     }
     assert validate_mongodb_records_schema(rec_vocab, SCHEMAS_MONGODB['vocabulary'])
 
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['vocabulary'],
-                           verbose=True)
+    engine = MongoDBEngine(mongo_config, database=database, collection=collection_vocab, verbose=True)
     engine.insert_one(rec_vocab)
 
 
@@ -197,10 +202,12 @@ def etl_load_vocab_from_db(req: ETLRequestFeatures,
                            timestamp_vocab: Optional[str] = None) \
         -> dict:
     """Load vocabulary given specified options"""
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['vocabulary'],
-                           verbose=True)
+    db_ = req.get_db()
+    mongo_config = db_['db_mongo_config']
+    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
+    collection_vocab = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['vocabulary']
+
+    engine = MongoDBEngine(mongo_config, database=database, collection=collection_vocab, verbose=True)
 
     # TODO: replace with aggregation pipeline (first filter, then pick record with max timestamp_vocabulary)
     # get records
@@ -261,22 +268,24 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
 def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],
                             req: ETLRequestFeatures):
     """Save features config and feature records to database"""
+    db_ = req.get_db()
+    mongo_config = db_['db_mongo_config']
+    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
+    collection_config = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_features']
+    collection_features = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['features']
+
     # save config
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['etl_config_features'],
-                           verbose=True)
+    engine = MongoDBEngine(mongo_config, database=database, collection=collection_config, verbose=True)
     d_req = req_to_etl_config_record(req, 'subset')
     engine.insert_one(d_req)
 
     # save vocab
     ts_feat = get_ts_now_str('ms') # has to be same for all records in this run
-    collection = DB_FEATURES_NOSQL_COLLECTIONS['features']
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=collection,
-                           verbose=True)
+    engine = MongoDBEngine(mongo_config, database=database, collection=collection_features, verbose=True)
     for df in feat_gen:
         records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
-        print(f"Inserting {len(df)} records in collection {collection} of database {DB_FEATURES_NOSQL_DATABASE}")
+        print(f"Inserting {len(df)} records in collection {collection_features} of database {database}")
         engine.insert_many(records)
+
+
+

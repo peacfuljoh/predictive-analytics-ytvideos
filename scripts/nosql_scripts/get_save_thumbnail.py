@@ -5,7 +5,7 @@ from db_engines.mysql_engine import MySQLEngine
 from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from ytpa_utils.misc_utils import print_df_full
 from ytpa_utils.misc_utils import fetch_data_at_url, convert_bytes_to_image
-from src.crawler.crawler.config import DB_CONFIG, DB_INFO, DB_MONGO_CONFIG
+from src.crawler.crawler.config import DB_MYSQL_CONFIG, DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import COL_VIDEO_ID, COL_USERNAME, COL_TITLE, COL_THUMBNAIL_URL
 
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import fetch_url_and_save_image
@@ -18,7 +18,7 @@ DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
 
 
 
-engine = MySQLEngine(DB_CONFIG)
+engine = MySQLEngine(DB_MYSQL_CONFIG)
 
 tablename = DB_VIDEOS_TABLES['meta']
 

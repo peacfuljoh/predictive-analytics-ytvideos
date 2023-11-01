@@ -18,7 +18,7 @@ REPO_ROOT: str = config['REPO_ROOT']
 CRAWLER_ROOT: str = os.path.join(REPO_ROOT, 'src', 'crawler', 'crawler')
 
 # config info
-DB_CONFIG: Dict[str, str] = config['DB_CONFIG']
+DB_MYSQL_CONFIG: Dict[str, str] = config['DB_MYSQL_CONFIG']
 DB_MONGO_CONFIG: Dict[str, str] = config['DB_MONGO_CONFIG']
 AUTOCRAWL_CONFIG: dict = config['AUTOCRAWL_CONFIG']
 API_CONFIG: dict = config['API_CONFIG']

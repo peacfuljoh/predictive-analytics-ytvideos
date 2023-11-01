@@ -1,14 +1,12 @@
 """Train utils"""
 
 from typing import Generator, Tuple, Dict, List, Optional, Union
-import copy
 
 import pandas as pd
 import numpy as np
 
 from db_engines.mongodb_utils import get_mongodb_records_gen
 from db_engines.mongodb_engine import MongoDBEngine
-from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL,
                                            TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
@@ -27,17 +25,19 @@ from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
 
 
-DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
-DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
-
-DB_MODELS_NOSQL_DATABASE = DB_INFO['DB_MODELS_NOSQL_DATABASE']
-DB_MODELS_NOSQL_COLLECTIONS = DB_INFO['DB_MODELS_NOSQL_COLLECTIONS']
 
 
 
 """ Load """
-def load_feature_records(configs: dict) -> Tuple[Generator[pd.DataFrame, None, None], Dict[str, str]]:
+def load_feature_records(configs: dict,
+                         ml_request: MLRequest) \
+        -> Tuple[Generator[pd.DataFrame, None, None], Dict[str, str]]:
     """Get DataFrame generator for features"""
+    db_ = ml_request.get_db()
+    mongo_config = db_['db_mongo_config']
+    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
+    collection = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['features']
+
     assert PREFEATURES_ETL_CONFIG_COL in configs
     assert VOCAB_ETL_CONFIG_COL in configs
     assert FEATURES_ETL_CONFIG_COL in configs
@@ -51,12 +51,7 @@ def load_feature_records(configs: dict) -> Tuple[Generator[pd.DataFrame, None, N
     # print_df_full(config_chosen)
 
     # get a features DataFrame generator
-    df_gen = get_mongodb_records_gen(
-        DB_FEATURES_NOSQL_DATABASE,
-        DB_FEATURES_NOSQL_COLLECTIONS['features'],
-        DB_MONGO_CONFIG,
-        filter=config_chosen
-    )
+    df_gen = get_mongodb_records_gen(database, collection, mongo_config, filter=config_chosen)
 
     return df_gen, {**configs, **config_chosen}
 
@@ -348,6 +343,12 @@ def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRe
                    ml_request: MLRequest,
                    config_load: Dict[str, str]):
     """Save regression model(s) to the model store along with configs."""
+    db_ = ml_request.get_db()
+    mongo_config = db_['db_mongo_config']
+    database = db_['db_info']['DB_MODELS_NOSQL_DATABASE']
+    collection_meta = db_['db_info']['DB_MODELS_NOSQL_COLLECTIONS']['meta']
+    collection_models = db_['db_info']['DB_MODELS_NOSQL_COLLECTIONS']['models']
+
     # check that model is the right format/type
     is_lrs_model = (isinstance(model_reg, MLModelRegressionSimple) or
                     is_dict_of_instances(model_reg, MLModelRegressionSimple))
@@ -374,14 +375,11 @@ def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRe
     assert set(obj['config']) == {'load', 'ml'}
 
     # write to model store
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_MODELS_NOSQL_DATABASE,
-                           collection=DB_MODELS_NOSQL_COLLECTIONS['meta'],
-                           verbose=True)
+    engine = MongoDBEngine(mongo_config, database=database, collection=collection_meta, verbose=True)
     engine.insert_one(obj)
 
     ### models
-    engine.set_db_info(collection=DB_MODELS_NOSQL_COLLECTIONS['models'])
+    engine.set_db_info(collection=collection_models)
 
     # encode model(s) and write to store
     if isinstance(model_reg, dict): # multiple models

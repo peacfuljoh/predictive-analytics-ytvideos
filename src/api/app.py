@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from routes import router_root, router_rawdata
 
 from db_engines.mysql_engine import MySQLEngine
-from src.crawler.crawler.config import DB_CONFIG
+from src.crawler.crawler.config import DB_MYSQL_CONFIG
 
 
 
@@ -16,7 +16,7 @@ app.mysql_engine = None # set on startup
 @app.on_event("startup")
 def startup_db_client():
     # app.mongodb_engine = MongoDBEngine(DB_MONGO_CONFIG)
-    app.mysql_engine = MySQLEngine(DB_CONFIG)
+    app.mysql_engine = MySQLEngine(DB_MYSQL_CONFIG)
 
 @app.on_event("shutdown")
 def shutdown_db_client():

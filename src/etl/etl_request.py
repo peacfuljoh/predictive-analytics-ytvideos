@@ -24,8 +24,9 @@ class ETLRequest():
         self._transform: dict = None
         self._load: dict = None
         self._preconfig: dict = None
+        self._db: dict = None
         self._valid = False
-        self._config_keys = ['extract', 'transform', 'load', 'preconfig']
+        self._config_keys = ['extract', 'transform', 'load', 'preconfig', 'db']
 
         # set fields with validation
         config = self._validate_config(config)
@@ -33,6 +34,7 @@ class ETLRequest():
         self._transform = config['transform']
         self._load = config['load']
         self._preconfig = config['preconfig']
+        self._db = config['db']
 
     def _validate_key_dicts(self, dicts: List[dict]):
         """Check that key dicts are valid"""
@@ -48,6 +50,7 @@ class ETLRequest():
         self._validate_config_transform(config['transform'])
         self._validate_config_load(config['load'])
         self._validate_config_preconfig(config['preconfig'])
+        self._validate_config_db(config['db'])
         return config
 
     def _validate_config_extract(self, config: dict):
@@ -71,6 +74,11 @@ class ETLRequest():
     def _validate_config_preconfig(self, config: dict):
         """Validate preconfig"""
         self._validate_config_keys(config, 'preconfig')
+
+    def _validate_config_db(self, config: dict):
+        """Validate preconfig"""
+        pass
+        # self._validate_config_keys(config, 'db_info')
 
     def _check_if_valid(self):
         """Check if config is valid"""
@@ -131,6 +139,11 @@ class ETLRequest():
         """Get preconfig"""
         self._check_if_valid()
         return self._preconfig
+
+    def get_db(self) -> dict:
+        """Get preconfig"""
+        self._check_if_valid()
+        return self._db
 
     def set_valid(self, valid: bool):
         """Set config validity"""

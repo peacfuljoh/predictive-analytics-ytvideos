@@ -11,8 +11,7 @@ from ytpa_utils.val_utils import is_list_of_floats
 
 class MLRequest():
     """ML process request object. Facilitates config validation and handling."""
-    def __init__(self,
-                 config: dict):
+    def __init__(self, config: dict):
         self._valid = False
 
         self._config = self._validate_config(config)
@@ -66,6 +65,10 @@ class MLRequest():
     def get_config(self) -> dict:
         assert self.get_valid()
         return copy.deepcopy(self._config)
+
+    def get_db(self) -> dict:
+        assert self.get_valid()
+        return self.get_config()['db']
 
     def get_valid(self) -> bool:
         return self._valid

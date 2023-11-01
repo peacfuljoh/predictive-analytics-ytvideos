@@ -1,7 +1,7 @@
 
 import pandas as pd
 
-from src.crawler.crawler.config import DB_INFO, DB_CONFIG
+from src.crawler.crawler.config import DB_INFO, DB_MYSQL_CONFIG
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mysql_utils import update_records_from_dict
 from src.crawler.crawler.constants import COL_TIMESTAMP_FIRST_SEEN, COL_VIDEO_ID
@@ -10,7 +10,7 @@ DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
 
 
-engine = MySQLEngine(DB_CONFIG)
+engine = MySQLEngine(DB_MYSQL_CONFIG)
 
 
 # define queries

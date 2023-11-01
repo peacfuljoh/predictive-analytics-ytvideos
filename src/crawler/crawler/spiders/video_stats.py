@@ -12,7 +12,7 @@ from ytpa_utils.time_utils import get_ts_now_str
 from ..utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
 from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from ..utils.mongodb_utils_ytvideos import fetch_url_and_save_image
-from ..config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
+from ..config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
 from ..constants import (COL_VIDEO_URL, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
                          MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD, COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN,
                          COL_DURATION, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT, COL_COMMENT_COUNT,
@@ -161,9 +161,9 @@ class YouTubeVideoStats(scrapy.Spider):
             pprint(vid_info)
             print('=' * 50)
 
-        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['meta'], vid_info, DB_CONFIG,
+        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['meta'], vid_info, DB_MYSQL_CONFIG,
                                  another_condition='upload_date IS NULL') # to avoid overwriting timestamp_first_seen
-        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['stats'], vid_info, DB_CONFIG)
+        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['stats'], vid_info, DB_MYSQL_CONFIG)
 
         ### Fetch and save thumbnail to MongoDB database ###
         key_ = COL_THUMBNAIL_URL

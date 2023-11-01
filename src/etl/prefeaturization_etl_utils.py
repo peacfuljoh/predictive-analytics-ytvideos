@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from src.crawler.crawler.config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mysql_utils import perform_join_mysql_query
@@ -30,12 +29,6 @@ from src.etl.etl_request import ETLRequest, req_to_etl_config_record, validate_e
 from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
 
-DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE'] # tabular raw
-DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
-DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE'] # NoSQL thumbnails
-DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
-DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
-DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
 
 CHARSETS = {
     'LNP': 'abcdefghijklmnopqrstuvwxyz1234567890.?!$\ ',
@@ -91,6 +84,30 @@ class ETLRequestPrefeatures(ETLRequest):
             assert isinstance(config_['include_additional_keys'], list)
             assert is_list_of_strings(list(config_['include_additional_keys']))
 
+    def _validate_config_db(self, config: dict):
+        # config keys
+        assert set(config) == {'db_info', 'db_mysql_config', 'db_mongo_config'}
+
+        # db info (database/table/collection names, etc.)
+        info = config['db_info']
+        assert set(info) == {
+            'DB_VIDEOS_DATABASE', 'DB_VIDEOS_TABLES',
+            'DB_VIDEOS_NOSQL_DATABASE', 'DB_VIDEOS_NOSQL_COLLECTIONS',
+            'DB_FEATURES_NOSQL_DATABASE', 'DB_FEATURES_NOSQL_COLLECTIONS',
+            'DB_MODELS_NOSQL_DATABASE', 'DB_MODELS_NOSQL_COLLECTIONS'
+
+        }
+        assert set(info['DB_VIDEOS_TABLES']) == {'users', 'meta', 'stats'}
+        assert set(info['DB_VIDEOS_NOSQL_COLLECTIONS']) == {'thumbnails'}
+        assert set(info['DB_FEATURES_NOSQL_COLLECTIONS']) == {'prefeatures', 'features', 'vocabulary',
+                                                               'etl_config_prefeatures', 'etl_config_features',
+                                                               'etl_config_vocabulary'}
+        assert set(info['DB_MODELS_NOSQL_COLLECTIONS']) == {'models', 'meta'}
+
+        # db configs (server connection credentials)
+        assert set(config['db_mysql_config']) == {'host', 'user', 'password'}
+        assert set(config['db_mongo_config']) == {'host', 'port'}
+
 def get_etl_req_prefeats(etl_config_name: str,
                          etl_config: dict) \
         -> ETLRequestPrefeatures:
@@ -98,20 +115,23 @@ def get_etl_req_prefeats(etl_config_name: str,
                                 etl_config_name,
                                 ETL_CONFIG_VALID_KEYS_PREFEATURES,
                                 ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES)
+    db_ = req._db
     validate_etl_config(req,
-                        DB_MONGO_CONFIG,
-                        DB_FEATURES_NOSQL_DATABASE,
-                        DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
+                        db_['db_mongo_config'],
+                        db_['db_info']['DB_FEATURES_NOSQL_DATABASE'],
+                        db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_prefeatures'])
     return req
 
 
 """ ETL Extract """
 def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
     """Extract tabular raw_data according to request"""
+    db_ = req.get_db()
+
     # required inputs
-    database = DB_VIDEOS_DATABASE
-    tablename_primary = DB_VIDEOS_TABLES['stats']
-    tablename_secondary = DB_VIDEOS_TABLES['meta']
+    database = db_['db_info']['DB_VIDEOS_DATABASE']
+    tablename_primary = db_['db_info']['DB_VIDEOS_TABLES']['stats']
+    tablename_secondary = db_['db_info']['DB_VIDEOS_TABLES']['meta']
     table_pseudoname_primary = 'stats'
     table_pseudoname_secondary = 'meta'
     join_condition = f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id'
@@ -125,7 +145,7 @@ def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFr
 
     # perform query
     df, engine = perform_join_mysql_query(
-        DB_CONFIG,
+        db_['db_mysql_config'],
         database,
         tablename_primary,
         tablename_secondary,
@@ -484,18 +504,24 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
 def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
                          req: ETLRequestPrefeatures):
     """Load prefeatures to NoSQL database."""
+    db_ = req.get_db()
+    mongo_config = db_['db_mongo_config']
+    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
+    collection_config = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_prefeatures']
+    collection_prefeatures = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['prefeatures']
+
     # insert etl_config
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'],
+    engine = MongoDBEngine(mongo_config,
+                           database=database,
+                           collection=collection_config,
                            verbose=True)
     d_req = req_to_etl_config_record(req, 'subset')
     engine.insert_one(d_req)
 
     # insert records
-    engine = MongoDBEngine(DB_MONGO_CONFIG,
-                           database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
+    engine = MongoDBEngine(mongo_config,
+                           database=database,
+                           collection=collection_prefeatures,
                            verbose=True)
     for df in data['stats']:
         records = etl_load_prefeatures_prepare_for_insert(df, req)

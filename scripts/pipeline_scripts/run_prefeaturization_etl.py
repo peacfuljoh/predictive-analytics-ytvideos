@@ -7,11 +7,14 @@ from src.etl.prefeaturization_etl_utils import get_etl_req_prefeats
 from src.visualization.dashboard import Dashboard
 from src.crawler.crawler.constants import (COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN, COL_USERNAME,
                                            COL_TIMESTAMP_ACCESSED, COL_TITLE)
+from src.crawler.crawler.config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
 
 
 # setup config
 etl_config_name = 'test3'
 # etl_config_name = 'dashboard'
+
+db_ = {'db_info': DB_INFO, 'db_mysql_config': DB_MYSQL_CONFIG, 'db_mongo_config': DB_MONGO_CONFIG}
 
 if etl_config_name == 'test3':
     etl_config = {
@@ -21,7 +24,8 @@ if etl_config_name == 'test3':
                 COL_USERNAME: ['CNN', "TheYoungTurks", "FoxNews", "WashingtonPost", "msnbc", "NBCNews"]
             },
             # 'limit': 1000
-        }
+        },
+        'db': db_
     }
 if etl_config_name == 'dashboard':
     etl_config = {
@@ -34,7 +38,8 @@ if etl_config_name == 'dashboard':
         },
         'transform': {
             'include_additional_keys': [COL_TITLE, COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN]
-        }
+        },
+        'db': db_
     }
 
 # make ETL request object
