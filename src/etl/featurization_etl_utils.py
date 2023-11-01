@@ -1,6 +1,6 @@
 """Featurization ETL utils"""
 
-from typing import Generator, Optional, List, Union
+from typing import Generator, Optional, List, Union, Tuple
 import tempfile
 
 import pandas as pd
@@ -11,7 +11,8 @@ from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL,
                                            VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, COL_USERNAME)
-from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, MongoDBEngine
+from db_engines.mongodb_engine import MongoDBEngine
+from db_engines.mongodb_utils import get_mongodb_records_gen
 from ytpa_utils.val_utils import is_list_of_strings
 from ytpa_utils.time_utils import get_ts_now_str
 from src.etl.etl_request import ETLRequest, req_to_etl_config_record
@@ -98,6 +99,7 @@ def etl_extract_prefeature_records(req: Union[ETLRequestVocabulary, ETLRequestFe
 
     If using 'distinct' input arg, filter is specified through the distinct dict:
         e.g. distinct = dict(group=<str>, filter=<dict>)
+    If not using 'distinct' input arg, filter is taken from extraction config filters in ETL request
     """
     assert projection is None or distinct is None  # at most one can be specified
 
@@ -269,10 +271,12 @@ def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],
 
     # save vocab
     ts_feat = get_ts_now_str('ms') # has to be same for all records in this run
+    collection = DB_FEATURES_NOSQL_COLLECTIONS['features']
     engine = MongoDBEngine(DB_MONGO_CONFIG,
                            database=DB_FEATURES_NOSQL_DATABASE,
-                           collection=DB_FEATURES_NOSQL_COLLECTIONS['features'],
+                           collection=collection,
                            verbose=True)
     for df in feat_gen:
         records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
+        print(f"Inserting {len(df)} records in collection {collection} of database {DB_FEATURES_NOSQL_DATABASE}")
         engine.insert_many(records)

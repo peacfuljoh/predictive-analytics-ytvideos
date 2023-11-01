@@ -6,7 +6,7 @@ from pprint import pprint
 import pandas as pd
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
-from src.crawler.crawler.utils.mysql_engine import MySQLEngine
+from db_engines.mysql_engine import MySQLEngine
 from ytpa_utils.sql_utils import make_sql_query
 from ytpa_utils.val_utils import is_subset
 from ytpa_utils.df_utils import df_dt_codec

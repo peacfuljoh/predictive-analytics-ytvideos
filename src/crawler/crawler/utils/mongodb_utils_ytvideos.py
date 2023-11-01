@@ -6,7 +6,8 @@ import pandas as pd
 
 from ytpa_utils.misc_utils import fetch_data_at_url
 from ytpa_utils.val_utils import is_subset
-from .mongodb_engine import MongoDBEngine, get_mongodb_records_gen, load_all_recs_with_distinct
+from db_engines.mongodb_engine import MongoDBEngine
+from db_engines.mongodb_utils import get_mongodb_records_gen, load_all_recs_with_distinct
 from ..constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                          VOCAB_TIMESTAMP_COL, FEATURES_TIMESTAMP_COL, TIMESTAMP_FMT)
 from ..config import DB_INFO, DB_MONGO_CONFIG

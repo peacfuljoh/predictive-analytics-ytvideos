@@ -6,7 +6,8 @@ import copy
 import pandas as pd
 import numpy as np
 
-from src.crawler.crawler.utils.mongodb_engine import get_mongodb_records_gen, MongoDBEngine
+from db_engines.mongodb_utils import get_mongodb_records_gen
+from db_engines.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL,

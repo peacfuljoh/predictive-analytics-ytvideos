@@ -10,7 +10,7 @@ import scrapy
 from ytpa_utils.misc_utils import convert_num_str_to_int, apply_regex, print_df_full
 from ytpa_utils.time_utils import get_ts_now_str
 from ..utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
-from ..utils.mysql_engine import insert_records_from_dict, update_records_from_dict
+from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from ..utils.mongodb_utils_ytvideos import fetch_url_and_save_image
 from ..config import DB_INFO, DB_CONFIG, DB_MONGO_CONFIG
 from ..constants import (COL_VIDEO_URL, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,

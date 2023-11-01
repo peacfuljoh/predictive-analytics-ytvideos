@@ -3,7 +3,7 @@
 from typing import Union, Dict, List, Tuple
 import copy
 
-from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
+from db_engines.mongodb_engine import MongoDBEngine
 from ytpa_utils.val_utils import is_subset, is_list_of_list_of_strings
 
 

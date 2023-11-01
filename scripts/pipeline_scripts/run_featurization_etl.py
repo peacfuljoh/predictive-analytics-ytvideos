@@ -56,3 +56,4 @@ validate_etl_config(req_features,
 
 # run pipeline
 etl_features_main(req_vocab, req_features)
+

@@ -6,7 +6,7 @@ import re
 import scrapy
 
 from ..utils.mysql_utils_ytvideos import get_user_video_page_urls_from_db
-from ..utils.mysql_engine import insert_records_from_dict
+from db_engines.mysql_utils import insert_records_from_dict
 from ..config import DB_INFO, DB_CONFIG
 
 

@@ -2,7 +2,8 @@
 
 from typing import List
 
-from src.crawler.crawler.utils.mysql_engine import MySQLEngine, insert_records_from_dict
+from db_engines.mysql_engine import MySQLEngine
+from db_engines.mysql_utils import insert_records_from_dict
 from ytpa_utils.io_utils import load_json
 from src.crawler.crawler.paths import DB_VIDEO_SQL_FNAME, USERNAMES_JSON_PATH
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO
@@ -29,7 +30,7 @@ if 0:
     engine.create_db_from_sql_file(DB_VIDEO_SQL_FNAME)
 
 # clear current usernames and insert from JSON file
-if 1:
+if 0:
     tablename = DB_VIDEOS_TABLES['users']
 
     # clear

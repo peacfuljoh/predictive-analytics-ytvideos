@@ -10,7 +10,7 @@ import numpy as np
 
 from ytpa_utils.time_utils import get_ts_now_str
 from ytpa_utils.val_utils import is_subset
-from .mysql_engine import MySQLEngine
+from db_engines.mysql_engine import MySQLEngine
 from ..config import DB_CONFIG, DB_INFO
 from ..constants import (MOST_RECENT_VID_LIMIT, COL_VIDEO_URL, COL_TIMESTAMP_FIRST_SEEN,
                          VIDEO_STATS_CAPTURE_WINDOW_DAYS, COL_VIDEO_ID)

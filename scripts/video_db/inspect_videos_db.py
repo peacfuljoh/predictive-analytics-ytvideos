@@ -5,7 +5,8 @@ import datetime
 from typing import Dict, List
 
 from src.crawler.crawler.utils.mysql_utils_ytvideos import (get_video_info_for_stats_spider)
-from src.crawler.crawler.utils.mysql_engine import MySQLEngine, insert_records_from_dict, update_records_from_dict
+from db_engines.mysql_engine import MySQLEngine
+from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from ytpa_utils.misc_utils import print_df_full
 from ytpa_utils.time_utils import get_ts_now_str
 from src.crawler.crawler.config import DB_CONFIG, DB_INFO

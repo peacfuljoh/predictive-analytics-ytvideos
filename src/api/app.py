@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from routes import router_root, router_rawdata
 
-from src.crawler.crawler.utils.mysql_engine import MySQLEngine
+from db_engines.mysql_engine import MySQLEngine
 from src.crawler.crawler.config import DB_CONFIG
 
 

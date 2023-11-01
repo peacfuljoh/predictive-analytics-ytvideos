@@ -3,7 +3,7 @@
 from pprint import pprint
 
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
-from src.crawler.crawler.utils.mongodb_engine import MongoDBEngine
+from db_engines.mongodb_engine import MongoDBEngine
 
 
 DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE'] # NoSQL thumbnails
