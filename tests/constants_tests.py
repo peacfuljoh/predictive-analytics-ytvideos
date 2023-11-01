@@ -1,4 +1,11 @@
 
+
+from src.crawler.crawler.constants import (COL_USERNAME, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED, COL_TITLE, COL_KEYWORDS,
+                                           COL_TAGS, COL_COMMENT, COL_DESCRIPTION, COL_DURATION, COL_COMMENT_COUNT,
+                                           COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT, COL_LIKE_COUNT, COL_UPLOAD_DATE,
+                                           COL_TIMESTAMP_FIRST_SEEN, COL_THUMBNAIL_URL)
+
+
 DB_VIDEOS_DATABASE = "test_videos4645636"
 DB_VIDEOS_NOSQL_DATABASE = "test_videos825463"
 DB_FEATURES_NOSQL_DATABASE = "test_features2342422"
@@ -48,28 +55,28 @@ SCHEMA_SQL_ORIG_FNAME = 'src/crawler/crawler/dbs/ytvideos.sql'
 SCHEMA_SQL_TEST_FNAME = 'tests/schema.sql'
 
 DATA_SQL_TEST = dict(
-        users=dict(
-            username=['username1', 'username2']
-        ),
-        video_meta=dict(
-            video_id=[],
-            username=[],
-            title=[],
-            upload_date=[],
-            timestamp_first_seen=[],
-            duration=[],
-            keywords=[],
-            description=[],
-            thumbnail_url=[],
-            tags=[]
-        ),
-        video_stats=dict(
-            video_id=[],
-            timestamp_accessed=[],
-            like_count=[],
-            view_count=[],
-            subscriber_count=[],
-            comment_count=[],
-            comment=[]
-        )
+        users={
+            COL_USERNAME: ['username1', 'username2']
+        },
+        video_meta={
+            COL_VIDEO_ID: [], # TODO: implement this
+            COL_USERNAME: [],
+            COL_TITLE: [],
+            COL_UPLOAD_DATE: [],
+            COL_TIMESTAMP_FIRST_SEEN: [],
+            COL_DURATION: [],
+            COL_KEYWORDS: [],
+            COL_DESCRIPTION: [],
+            COL_THUMBNAIL_URL: [],
+            COL_TAGS: []
+        },
+        video_stats={
+            COL_VIDEO_ID: [],
+            COL_TIMESTAMP_ACCESSED: [],
+            COL_LIKE_COUNT: [],
+            COL_VIEW_COUNT: [],
+            COL_SUBSCRIBER_COUNT: [],
+            COL_COMMENT_COUNT: [],
+            COL_COMMENT: []
+        }
     )

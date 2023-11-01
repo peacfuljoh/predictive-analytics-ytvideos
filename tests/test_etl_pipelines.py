@@ -1,13 +1,14 @@
 """Script for experimenting with ETL pipeline"""
 
-from src.etl.prefeaturization_etl import etl_prefeatures_main
-from src.etl.prefeaturization_etl_utils import get_etl_req_prefeats
 from src.crawler.crawler.constants import COL_USERNAME
 from constants_tests import db_info, ETL_CONFIG_NAME_PREFEATURES_TEST
 from utils_for_tests import setup_for_prefeatures_tests, verify_prefeatures_tests
 
 
 def test_prefeaturization_etl_pipeline():
+    from src.etl.prefeaturization_etl import etl_prefeatures_main
+    from src.etl.prefeaturization_etl_utils import get_etl_req_prefeats
+
     # setup request
     etl_config = {
         'extract': {
