@@ -13,6 +13,9 @@ CR_ROOT_GHA_ = $(REPO_ROOT_GHA_)
 ACT_ENV = $(CONDA_ACTIVATE) $(REPO_NAME_)
 
 
+build-gha:
+	echo 'PYTHONPATH=$(CR_ROOT_GHA_)' >> $(GITHUB_ENV)
+
 test:
 	$(CONDA_ACTIVATE) $(REPO_NAME_) && \
 	cd $(CR_ROOT_) && \
