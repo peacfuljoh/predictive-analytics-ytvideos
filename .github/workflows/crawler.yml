@@ -1,0 +1,35 @@
+name: crawler-CI
+run-name: ${{ github.actor }} is validating the crawler repo
+on: [push]
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-20.04
+
+    env:
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: root
+      MONGODB_HOST: localhost
+      MONGODB_PORT: 27017
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v3
+      - run: cd /home/runner/work/crawler/crawler
+      - name: setup env vars
+        run: make build-gha
+      - name: setup conda env
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: crawler
+          environment-file: environment.yml
+          auto-activate-base: false
+      - name: Start MySQL
+        run: sudo /etc/init.d/mysql start
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.10.0
+        with:
+          mongodb-version: 7.0.1
+      - name: run tests
+        run: make test-gha
+        env:
+          PYTHONPATH: ${{ env.PYTHONPATH }}

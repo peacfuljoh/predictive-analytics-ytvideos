@@ -24,3 +24,4 @@ def test_prefeaturization_etl_pipeline():
     setup_for_prefeatures_tests(req) # setup for test
     etl_prefeatures_main(req) # run pipeline
     verify_prefeatures_tests(req) # verify results
+

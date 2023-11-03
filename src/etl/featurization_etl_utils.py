@@ -284,7 +284,8 @@ def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],
     engine = MongoDBEngine(mongo_config, database=database, collection=collection_features, verbose=True)
     for df in feat_gen:
         records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
-        print(f"Inserting {len(df)} records in collection {collection_features} of database {database}")
+        print(f"etl_load_features_to_db() -> Inserting {len(df)} records in collection {collection_features} "
+              f"of database {database}")
         engine.insert_many(records)
 
 

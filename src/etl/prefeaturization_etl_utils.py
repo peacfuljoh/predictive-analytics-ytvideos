@@ -524,5 +524,7 @@ def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
                            collection=collection_prefeatures,
                            verbose=True)
     for df in data['stats']:
+        print(f"etl_load_prefeatures() -> Inserting {len(df)} records in collection {collection_prefeatures} "
+              f"of database {database}")
         records = etl_load_prefeatures_prepare_for_insert(df, req)
         engine.insert_many(records)
