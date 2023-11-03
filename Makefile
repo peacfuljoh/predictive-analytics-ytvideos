@@ -2,11 +2,12 @@ SHELL = /bin/bash
 CONDA_ACTIVATE = source $$(conda info --base)/etc/profile.d/conda.sh ; conda activate ; conda activate
 
 REPO_NAME_ = crawler
+REPO_NAME_GHA_ = predictive-analytics-ytvideos
 
 REPO_ROOT_ = /home/nuc/$(REPO_NAME_)
 CR_ROOT_ = $(REPO_ROOT_)
 MAIN_ROOT_ = $(REPO_ROOT_)/src/$(REPO_NAME_)
-REPO_ROOT_GHA_ = /home/runner/work/$(REPO_NAME_)/$(REPO_NAME_)
+REPO_ROOT_GHA_ = /home/runner/work/$(REPO_NAME_GHA_)/$(REPO_NAME_GHA_)
 CR_ROOT_GHA_ = $(REPO_ROOT_GHA_)
 
 ACT_ENV = $(CONDA_ACTIVATE) $(REPO_NAME_)
