@@ -1,6 +1,7 @@
 
 import datetime
 import os
+import json
 
 from src.crawler.crawler.constants import (COL_USERNAME, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED, COL_TITLE, COL_KEYWORDS,
                                            COL_TAGS, COL_COMMENT, COL_DESCRIPTION, COL_DURATION, COL_COMMENT_COUNT,
@@ -19,9 +20,12 @@ ETL_CONFIG_NAME_PREFEATURES_TEST = 'test347583756'
 
 # setup db info and configs
 try: # local
-    from src.crawler.crawler.config import DB_MYSQL_CONFIG, DB_MONGO_CONFIG
-
-    REPO_ROOT = '/home/nuc/crawler/'
+    GLOBAL_CONFIG_PATH = '/home/nuc/crawler_config/config.json'
+    with open(GLOBAL_CONFIG_PATH, 'r') as f:
+        config = json.load(f)
+    DB_MYSQL_CONFIG = config['DB_MYSQL_CONFIG']
+    DB_MONGO_CONFIG = config['DB_MONGO_CONFIG']
+    REPO_ROOT = '/home/nuc/crawler'
 except: # CI/CD
     DB_MYSQL_CONFIG = dict(
         host="localhost",
@@ -32,8 +36,7 @@ except: # CI/CD
         host=os.environ['MONGODB_HOST'],
         port=int(os.environ['MONGODB_PORT'])
     )
-
-    REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos/'
+    REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos'
 
 db_info = {
     "db_mysql_config": DB_MYSQL_CONFIG,
@@ -67,8 +70,8 @@ db_info = {
 }
 
 # sql schema filenames
-SCHEMA_SQL_ORIG_FNAME = REPO_ROOT + 'src/crawler/crawler/dbs/ytvideos.sql'
-SCHEMA_SQL_TEST_FNAME = REPO_ROOT + 'tests/schema_test.sql'
+SCHEMA_SQL_ORIG_FNAME = os.path.join(REPO_ROOT, 'src/crawler/crawler/dbs/ytvideos.sql')
+SCHEMA_SQL_TEST_FNAME = os.path.join(REPO_ROOT, 'tests/schema_test.sql')
 
 # raw data for testing
 DATA_SQL_TEST = dict(
