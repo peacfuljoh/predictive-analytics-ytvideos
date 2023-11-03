@@ -1,5 +1,5 @@
-name: crawler-CI
-run-name: ${{ github.actor }} is validating the crawler repo
+name: predictive-analytics-ytvideos-CI
+run-name: ${{ github.actor }} is validating the predictive-analytics-ytvideos repo
 on: [push]
 jobs:
   test-and-deploy:
@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: checkout code
         uses: actions/checkout@v3
-      - run: cd /home/runner/work/crawler/crawler
+      - run: cd /home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos
       - name: setup env vars
         run: make build-gha
       - name: setup conda env

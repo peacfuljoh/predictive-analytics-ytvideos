@@ -33,7 +33,7 @@ except: # CI/CD
         port=int(os.environ['MONGODB_PORT'])
     )
 
-    REPO_ROOT = '/home/runner/work/crawler/crawler/'
+    REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos/'
 
 db_info = {
     "db_mysql_config": DB_MYSQL_CONFIG,
