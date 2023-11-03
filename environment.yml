@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - python=3.11.5
   - scrapy=2.10.1
   - pandas=2.0.3
   - pip=23.2.1
