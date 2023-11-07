@@ -19,14 +19,14 @@ ETL_CONFIG_NAME_PREFEATURES_TEST = 'test347583756'
 
 
 # setup db info and configs
-try: # local
-    GLOBAL_CONFIG_PATH = '/home/nuc/crawler_config/config.json'
+GLOBAL_CONFIG_PATH = '/home/nuc/crawler_config/config.json'
+if os.path.exists(GLOBAL_CONFIG_PATH): # local
     with open(GLOBAL_CONFIG_PATH, 'r') as f:
         config = json.load(f)
     DB_MYSQL_CONFIG = config['DB_MYSQL_CONFIG']
     DB_MONGO_CONFIG = config['DB_MONGO_CONFIG']
     REPO_ROOT = '/home/nuc/crawler'
-except: # CI/CD
+else: # CI/CD
     DB_MYSQL_CONFIG = dict(
         host="localhost",
         user=os.environ['MYSQL_USERNAME'],
