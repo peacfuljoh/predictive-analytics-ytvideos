@@ -1,13 +1,12 @@
 
 import datetime
 import os
-import json
 
 from src.crawler.crawler.constants import (COL_USERNAME, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED, COL_TITLE, COL_KEYWORDS,
                                            COL_TAGS, COL_COMMENT, COL_DESCRIPTION, COL_DURATION, COL_COMMENT_COUNT,
                                            COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT, COL_LIKE_COUNT, COL_UPLOAD_DATE,
                                            COL_TIMESTAMP_FIRST_SEEN, COL_THUMBNAIL_URL)
-
+from src.crawler.crawler.config import DB_MYSQL_CONFIG, DB_MONGO_CONFIG, REPO_ROOT
 
 # test database and config names
 DB_VIDEOS_DATABASE = "test_videos4645636"
@@ -19,25 +18,6 @@ ETL_CONFIG_NAME_PREFEATURES_TEST = 'test347583756'
 
 
 # setup db info and configs
-GLOBAL_CONFIG_PATH = '/home/nuc/crawler_config/config.json'
-if os.path.exists(GLOBAL_CONFIG_PATH): # local
-    with open(GLOBAL_CONFIG_PATH, 'r') as f:
-        config = json.load(f)
-    DB_MYSQL_CONFIG = config['DB_MYSQL_CONFIG']
-    DB_MONGO_CONFIG = config['DB_MONGO_CONFIG']
-    REPO_ROOT = '/home/nuc/crawler'
-else: # CI/CD
-    DB_MYSQL_CONFIG = dict(
-        host="localhost",
-        user=os.environ['MYSQL_USERNAME'],
-        password=os.environ['MYSQL_PASSWORD']
-    )
-    DB_MONGO_CONFIG = dict(
-        host=os.environ['MONGODB_HOST'],
-        port=int(os.environ['MONGODB_PORT'])
-    )
-    REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos'
-
 db_info = {
     "db_mysql_config": DB_MYSQL_CONFIG,
     "db_mongo_config": DB_MONGO_CONFIG,
