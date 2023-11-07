@@ -9,8 +9,9 @@ from db_engines.mysql_engine import MySQLEngine
 from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mysql_utils import insert_records_from_dict
 from ytpa_utils.val_utils import is_list_of_strings
-from constants_tests import (DB_VIDEOS_DATABASE, SCHEMA_SQL_ORIG_FNAME, SCHEMA_SQL_TEST_FNAME, DATA_SQL_TEST,
-                             DB_VIDEOS_NOSQL_DATABASE, DB_MODELS_NOSQL_DATABASE, DB_FEATURES_NOSQL_DATABASE)
+from constants_tests import (SCHEMA_SQL_ORIG_FNAME, SCHEMA_SQL_TEST_FNAME, DATA_SQL_TEST)
+from src.crawler.crawler.config import (DB_VIDEOS_DATABASE_TEST, DB_VIDEOS_NOSQL_DATABASE_TEST,
+                                        DB_MODELS_NOSQL_DATABASE_TEST, DB_FEATURES_NOSQL_DATABASE_TEST)
 
 
 
@@ -33,7 +34,7 @@ def setup_mysql_test_db(db_config: dict,
 
     nested keys in data: table, column
     """
-    assert database in [DB_VIDEOS_DATABASE]
+    assert database in [DB_VIDEOS_DATABASE_TEST]
     assert 'yt' not in database  # be careful with real db!
 
     engine = MySQLEngine(db_config)
@@ -61,7 +62,7 @@ def setup_mongo_test_dbs(db_config: dict,
         databases = [databases]
 
     for database in databases:
-        assert database in [DB_VIDEOS_NOSQL_DATABASE, DB_MODELS_NOSQL_DATABASE, DB_FEATURES_NOSQL_DATABASE]
+        assert database in [DB_VIDEOS_NOSQL_DATABASE_TEST, DB_MODELS_NOSQL_DATABASE_TEST, DB_FEATURES_NOSQL_DATABASE_TEST]
         assert 'yt' not in database  # be careful with real db!
 
         engine = MongoDBEngine(db_config, database=database)
@@ -84,7 +85,7 @@ def setup_test_schema_file(schema_orig_fname: str,
 
     with open(schema_orig_fname, 'r') as fp:
         text = fp.read()
-    text = text.replace('ytvideos', DB_VIDEOS_DATABASE)
+    text = text.replace('ytvideos', DB_VIDEOS_DATABASE_TEST)
     assert 'yt' not in text
     with open(schema_test_fname, 'w') as fp:
         fp.write(text)

@@ -44,7 +44,7 @@ def setup_prefeatures_df_gen(etl_config_name: str, extract_options: dict) \
 
 """ Root """
 @router_root.get("/", response_description="Test for liveness", response_model=str)
-def get_usernames(request: Request):
+def root(request: Request):
     """Test for liveness"""
     return "Hi there. The YT Analytics API is available."
 
@@ -89,25 +89,27 @@ async def get_video_meta_stats_join(websocket: WebSocket):
             # receive JSON data
             data_recv = await websocket.receive_json()
 
-            # initialize DataFrame generator
+            # validate payload
+            # TODO: implement this
+
+            # initialize DataFrame generator first time around
             if df_gen is None:
                 assert is_subset(['name', 'extract'], data_recv)
                 df_gen, info_tabular_extract, engine = \
                     setup_prefeatures_df_gen(data_recv['name'], data_recv['extract'])
 
             # check for next DataFrame and exit stream if finished
-            df = next(df_gen)
-            if df.empty: # clean up and disconnect
+            try:
+                df = next(df_gen)
+            except StopIteration: # clean up and disconnect
                 del engine
                 await websocket.send_json(WS_STREAM_TERM_MSG)
                 raise WebSocketDisconnect
 
-            # make it JSONifiable
-            df_dt_codec(df, TIMESTAMP_CONVERSION_FMTS, 'encode')
-
             # send DataFrame in chunks
             i = 0
             while not (df_ := df.iloc[i * WS_MAX_RECORDS_SEND: (i + 1) * WS_MAX_RECORDS_SEND]).empty:
+                df_dt_codec(df_, TIMESTAMP_CONVERSION_FMTS, 'encode') # make it JSONifiable
                 data_send: List[dict] = df_.to_dict('records')
                 await websocket.send_json(data_send)
                 i += 1
@@ -117,6 +119,9 @@ async def get_video_meta_stats_join(websocket: WebSocket):
         print(e)
         # manager.disconnect(websocket)
         # await manager.broadcast(f"Client #{client_id} left the chat")
+
+
+
 
 """ ... """
 

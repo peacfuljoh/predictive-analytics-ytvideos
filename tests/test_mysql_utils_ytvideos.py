@@ -1,4 +1,8 @@
 
+import os
+
+os.environ['RUN_TESTS'] = 'yes' # always set to  'yes' for tests!
+
 from src.crawler.crawler.utils.mysql_utils_ytvideos import make_videos_page_urls_from_usernames
 from utils_for_tests import assert_lists_match
 

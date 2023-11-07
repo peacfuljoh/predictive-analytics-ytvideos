@@ -1,6 +1,9 @@
 """Testing for ML models"""
 
 import copy
+import os
+
+os.environ['RUN_TESTS'] = 'yes' # always set to  'yes' for tests!
 
 import pandas as pd
 import numpy as np

@@ -13,9 +13,6 @@ from ..constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATU
 from ..config import DB_INFO, DB_MONGO_CONFIG
 
 
-DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
-DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
-
 
 REPL_STRS_TS_TO_MKEY = {'-': 'd', ' ': 's', ':': 'c', '.': 'p'}
 REPL_STRS_MKEY_TO_TS = {val: key for key, val in REPL_STRS_TS_TO_MKEY.items()}
@@ -68,8 +65,9 @@ def load_config_timestamp_sets_for_features(configs: Optional[dict] = None) -> p
     Load timestamped config info for features collection.
     """
     # setup
-    database = DB_FEATURES_NOSQL_DATABASE
-    collection = DB_FEATURES_NOSQL_COLLECTIONS['features']
+    database = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
+    collections = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
+    collection = collections['features']
     db_config = DB_MONGO_CONFIG
 
     cols_all = [PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,

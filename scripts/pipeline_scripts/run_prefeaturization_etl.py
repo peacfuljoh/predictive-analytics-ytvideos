@@ -10,6 +10,7 @@ from src.crawler.crawler.constants import (COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_
 from src.crawler.crawler.config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
 
 
+
 # setup config
 etl_config_name = 'test3'
 # etl_config_name = 'dashboard'
