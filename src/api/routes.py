@@ -1,6 +1,6 @@
 """Routes for data stores"""
 
-from typing import List, Tuple, Generator, Union, Optional
+from typing import List, Tuple, Generator, Union, Optional, Callable
 from pprint import pprint
 
 import pandas as pd
@@ -14,8 +14,10 @@ from ytpa_utils.val_utils import is_subset
 from ytpa_utils.df_utils import df_dt_codec
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG, WS_MAX_RECORDS_SEND,
-                                           COL_TIMESTAMP_ACCESSED)
+                                           VOCAB_ETL_CONFIG_COL, ETL_CONFIG_VALID_KEYS_FEATURES,
+                                           ETL_CONFIG_EXCLUDE_KEYS_FEATURES)
 from src.etl.prefeaturization_etl_utils import etl_extract_tabular, get_etl_req_prefeats
+from src.etl.featurization_etl_utils import etl_load_vocab_from_db, ETLRequestFeatures
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -27,6 +29,9 @@ DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
 router_root = APIRouter()
 router_rawdata = APIRouter()
 router_prefeatures = APIRouter()
+router_vocabulary = APIRouter()
+router_config = APIRouter()
+router_features = APIRouter()
 
 
 
@@ -91,6 +96,30 @@ async def send_df_via_websocket(df: pd.DataFrame,
         i += 1
     await websocket.send_json([])
 
+def get_mongodb_records(request, database: str, collection: str) -> List[dict]:
+    """Get records from MongoDB record store."""
+    engine = get_mongodb_engine(request, database=database, collection=collection)
+    df = engine.find_many()
+    recs = df.to_dict('records')
+    return recs
+
+async def run_websocket_stream(websocket: WebSocket,
+                               setup_df_gen: Callable):
+    """Run websocket stream that generates DataFrames."""
+    df_gen, engine = None, None
+    try:
+        while True:
+            data_recv = await websocket.receive_json() # receive JSON data
+            if df_gen is None: # initialize DataFrame generator first time around
+                df_gen, engine = setup_df_gen(data_recv)
+            df = await gen_next_records(df_gen, websocket)
+            await send_df_via_websocket(df, TIMESTAMP_CONVERSION_FMTS, websocket) # send DataFrame in chunks
+    except WebSocketDisconnect as e:
+        del df_gen, engine
+        print(e)
+
+
+
 
 
 
@@ -99,6 +128,22 @@ async def send_df_via_websocket(df: pd.DataFrame,
 def root(request: Request):
     """Test for liveness"""
     return "Hi there. The YT Analytics API is available."
+
+
+
+""" Configs """
+@router_config.post("/", response_description="Get config info", response_model=List[dict])
+def get_configs(request: Request, opts: dict):
+    config_name = opts.get('name')
+    if config_name == 'prefeatures':
+        return get_mongodb_records(request,
+                                   DB_FEATURES_NOSQL_DATABASE,
+                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
+    if config_name == 'vocabulary':
+        return get_mongodb_records(request,
+                                   DB_FEATURES_NOSQL_DATABASE,
+                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_vocabulary'])
+    return []
 
 
 
@@ -133,64 +178,68 @@ def get_video_stats(request: Request, opts: dict):
 @router_rawdata.websocket("/join")
 async def get_video_meta_stats_join(websocket: WebSocket):
     """Perform join query between meta and stats raw data tables and return a stream of records."""
+    def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], MySQLEngine]:
+        assert is_subset(['name', 'extract'], data_recv)
+        df_gen, _, engine = setup_rawdata_df_gen(data_recv['name'], data_recv)
+        return df_gen, engine
+
     await websocket.accept()
-    df_gen, engine = None, None
-    try:
-        while True:
-            # receive JSON data
-            data_recv = await websocket.receive_json()
-
-            # initialize DataFrame generator first time around
-            if df_gen is None:
-                assert is_subset(['name', 'extract'], data_recv)
-                df_gen, _, engine = setup_rawdata_df_gen(data_recv['name'], data_recv)
-
-            # check for next DataFrame and exit stream if finished
-            df = await gen_next_records(df_gen, websocket)
-
-            # send DataFrame in chunks
-            await send_df_via_websocket(df, TIMESTAMP_CONVERSION_FMTS, websocket)
-    except WebSocketDisconnect as e:
-        del df_gen, engine
-        print(e)
+    await run_websocket_stream(websocket, setup_df_gen)
 
 
 
 
 """ Prefeatures """
-@router_prefeatures.get("/config", response_description="Get prefeaturization ETL configurations",
-                        response_model=List[dict])
-def get_prefeature_configs(request: Request):
-    """Get all prefeaturization configs"""
-    engine = get_mongodb_engine(request,
-                                database=DB_FEATURES_NOSQL_DATABASE,
-                                collection=DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
-    df = engine.find_many()
-    recs = df.to_dict('records')
-    return recs
-
-@router_prefeatures.websocket("/data")
+@router_prefeatures.websocket("/")
 async def get_prefeatures(websocket: WebSocket):
     """Perform join query between meta and stats raw data tables and return a stream of records."""
+    def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], None]:
+        assert is_subset(['extract'], data_recv)
+        df_gen = setup_mongodb_df_gen(DB_FEATURES_NOSQL_DATABASE,
+                                      DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
+                                      data_recv['extract'])
+        return df_gen, None
+
     await websocket.accept()
-    df_gen = None
-    try:
-        while True:
-            # receive JSON data
-            data_recv = await websocket.receive_json()
+    await run_websocket_stream(websocket, setup_df_gen)
 
-            # initialize DataFrame generator first time around
-            if df_gen is None:
-                assert is_subset(['extract'], data_recv)
-                df_gen = setup_mongodb_df_gen(DB_FEATURES_NOSQL_DATABASE,
-                                              DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
-                                              data_recv['extract'])
 
-            # check for next DataFrame and exit stream if finished
-            df = await gen_next_records(df_gen, websocket)
 
-            # send DataFrame in chunks
-            await send_df_via_websocket(df, TIMESTAMP_CONVERSION_FMTS, websocket)
-    except WebSocketDisconnect as e:
-        del df_gen
-        print(e)
+
+""" Vocabulary """
+@router_vocabulary.post("/", response_description="Get vocabulary", response_model=dict)
+def get_vocabulary(request: Request, opts: dict):
+    """Perform join query between meta and stats raw data tables and return a stream of records."""
+    etl_config_name = opts['etl_config_name']
+
+    etl_config = {
+        'preconfig': {VOCAB_ETL_CONFIG_COL: etl_config_name},
+        'db': {'db_info': DB_INFO, 'db_mongo_config': DB_MONGO_CONFIG}
+    }
+
+    req_features = ETLRequestFeatures(etl_config,
+                                      etl_config_name,
+                                      ETL_CONFIG_VALID_KEYS_FEATURES,
+                                      ETL_CONFIG_EXCLUDE_KEYS_FEATURES)
+
+    return etl_load_vocab_from_db(req_features,
+                                  opts.get('timestamp_vocab'),
+                                  as_gs_dict=False)
+
+
+
+
+""" Features """
+@router_features.websocket("/")
+async def get_features(websocket: WebSocket):
+    """Perform join query between meta and stats raw data tables and return a stream of records."""
+    def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], None]:
+        assert is_subset(['extract'], data_recv)
+        df_gen = setup_mongodb_df_gen(DB_FEATURES_NOSQL_DATABASE,
+                                      DB_FEATURES_NOSQL_COLLECTIONS['features'],
+                                      data_recv['extract'])
+        return df_gen, None
+
+    await websocket.accept()
+    await run_websocket_stream(websocket, setup_df_gen)
+

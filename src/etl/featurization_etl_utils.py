@@ -21,9 +21,6 @@ from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
 
 
-# DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
-# DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
-
 
 STOPLIST = 'for a of the and to in on is this at as be it that by are was'
 STOP_WORD_LIST = set(STOPLIST.split() + [''])
@@ -131,11 +128,6 @@ def etl_create_vocab(df_gen: Generator[pd.DataFrame, None, None],
                      req: ETLRequestVocabulary) \
         -> Dictionary:
     """Create vocabulary from tokens in prefeature records"""
-    # get all unique token strings
-    # tokens_all: List[str] = []
-    # while not (df := next(df_gen)).empty:
-    #     tokens_all += list(df[PREFEATURES_TOKENS_COL])
-
     # create vocabulary
     dictionary = gs.corpora.Dictionary(gen_docs(df_gen))
 
@@ -195,35 +187,41 @@ def etl_load_vocab_to_db(dictionary: Dictionary,
 
 
 """ Tokens """
-def etl_load_vocab_from_db(req: ETLRequestFeatures,
-                           timestamp_vocab: Optional[str] = None) \
-        -> dict:
-    """Load vocabulary given specified options"""
+def etl_load_vocab_meta_from_db(engine: MongoDBEngine,
+                                filter: Optional[dict] = None) \
+        -> pd.DataFrame:
+    """Load vocabulary info without vocab itself. Used to inspect metadata."""
+    return engine.find_many(filter=filter, projection={VOCAB_VOCABULARY_COL: 0})
+
+def etl_load_vocab_setup_engine(req: ETLRequestFeatures):
+    """Setup MongoDB engine for loading vocabulary records."""
     db_ = req.get_db()
     mongo_config = db_['db_mongo_config']
     database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
     collection_vocab = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['vocabulary']
 
-    engine = MongoDBEngine(mongo_config, database=database, collection=collection_vocab, verbose=True)
+    return MongoDBEngine(mongo_config, database=database, collection=collection_vocab, verbose=True)
 
-    # TODO: replace with aggregation pipeline (first filter, then pick record with max timestamp_vocabulary)
-    # get records
+def etl_load_vocab_from_db(req: ETLRequestFeatures,
+                           timestamp_vocab: Optional[str] = None,
+                           as_gs_dict: bool = True) \
+        -> dict:
+    """Load vocabulary given specified options"""
+    engine = etl_load_vocab_setup_engine(req)
+
+    # get records (choose timestamp before loading entire vocabulary)
     etl_config_name = req.get_preconfig()[VOCAB_ETL_CONFIG_COL]
     filter = {VOCAB_ETL_CONFIG_COL: etl_config_name}
-    if timestamp_vocab is not None:
-        filter[VOCAB_TIMESTAMP_COL] = timestamp_vocab
-    recs_all = engine.find_many_gen(filter=filter)
-
-    # pick most recent
-    dfs = [df for df in recs_all]
-    df = pd.concat(dfs, axis=0, ignore_index=True)
-    rec: pd.DataFrame = df.loc[df[VOCAB_TIMESTAMP_COL] == df[VOCAB_TIMESTAMP_COL].max()] # argmax not allowed for strings
-    assert len(rec) == 1
-    rec = rec.iloc[0].to_dict()
+    filter[VOCAB_TIMESTAMP_COL] = timestamp_vocab if timestamp_vocab is not None else \
+        etl_load_vocab_meta_from_db(engine, filter=filter)[VOCAB_TIMESTAMP_COL].max()
+    df = engine.find_many(filter=filter)
+    assert len(df) == 1
+    rec: dict = df.iloc[0].to_dict()
 
     # convert vocab string to Dictionary object
     assert VOCAB_VOCABULARY_COL in rec
-    rec[VOCAB_VOCABULARY_COL] = convert_string_to_gs_dictionary(rec[VOCAB_VOCABULARY_COL])
+    if as_gs_dict:
+        rec[VOCAB_VOCABULARY_COL] = convert_string_to_gs_dictionary(rec[VOCAB_VOCABULARY_COL])
 
     return rec
 

@@ -1,7 +1,7 @@
 """Raw data API"""
 
 from fastapi import FastAPI
-from routes import router_root, router_rawdata, router_prefeatures
+from routes import router_root, router_rawdata, router_prefeatures, router_vocabulary, router_config, router_features
 
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mongodb_engine import MongoDBEngine
@@ -29,3 +29,7 @@ def shutdown_db_client():
 app.include_router(router_root, tags=["root"])
 app.include_router(router_rawdata, tags=["rawdata"], prefix="/rawdata")
 app.include_router(router_prefeatures, tags=["prefeatures"], prefix='/prefeatures')
+app.include_router(router_vocabulary, tags=["vocabulary"], prefix='/vocabulary')
+app.include_router(router_config, tags=["config"], prefix='/config')
+app.include_router(router_features, tags=["features"], prefix='/features')
+
