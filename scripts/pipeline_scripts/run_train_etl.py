@@ -17,7 +17,7 @@ db_ = {'db_info': DB_INFO, 'db_mysql_config': DB_MYSQL_CONFIG, 'db_mongo_config'
 
 
 # specify which version of the feature store to use
-config_load = {
+preconfig = {
     PREFEATURES_ETL_CONFIG_COL: 'test3',
     VOCAB_ETL_CONFIG_COL: 'test21715',
     FEATURES_ETL_CONFIG_COL: 'test21715',
@@ -56,7 +56,7 @@ ml_request = MLRequest(config_ml)
 # get data, train model
 if 1:
     # load feature records
-    df_gen, config_data = load_feature_records(config_load, ml_request)
+    df_gen, config_data = load_feature_records(preconfig, ml_request)
 
     # preprocess feature records
     data_all, model_embed = prepare_feature_records(df_gen, ml_request)
@@ -70,6 +70,6 @@ if 1:
 
 # store model
 if 1:
-    save_reg_model(model_reg, ml_request, config_load)
+    save_reg_model(model_reg, ml_request, preconfig)
 
 

@@ -47,13 +47,16 @@ else: # CI/CD
     )
     REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos'
 
-# determine where to get DB_INFO
-if 'RUN_TESTS' not in os.environ or os.environ['RUN_TESTS'] == 'no':
+# determine DB_INFO
+is_testing = 'RUN_TESTS' in os.environ and os.environ['RUN_TESTS'] == 'yes'
+if 'RUN_TESTS' in os.environ and os.environ['RUN_TESTS'] not in ['no', 'yes']:
+    raise Exception('Specify valid RUN_TESTS env var.')
+if not is_testing:
     if is_local: # not testing, running locally
         DB_INFO: dict = config['DB_INFO']
     else:
         raise NotImplementedError('Can only run non-tests in a local env.')
-elif os.environ['RUN_TESTS'] == 'yes':
+else:
     # setup db info and configs
     DB_INFO = {
         "db_mysql_config": DB_MYSQL_CONFIG,
@@ -85,5 +88,25 @@ elif os.environ['RUN_TESTS'] == 'yes':
             }
         }
     }
-else:
-    raise Exception('Specify valid RUN_TESTS env var.')
+
+
+
+# API endpoints
+hp = f"{API_CONFIG['host']}:{API_CONFIG['port']}"
+
+CONFIGS_ENDPOINT = f"http://{hp}/config/pull"
+
+RAWDATA_META_PULL_ENDPOINT = f"http://{hp}/rawdata/meta/pull"
+RAWDATA_META_PUSH_ENDPOINT = f"http://{hp}/rawdata/meta/push"
+RAWDATA_STATS_PULL_ENDPOINT = f"http://{hp}/rawdata/stats/pull"
+RAWDATA_STATS_PUSH_ENDPOINT = f"http://{hp}/rawdata/stats/push"
+RAWDATA_JOIN_ENDPOINT = f"ws://{hp}/rawdata/join"
+
+PREFEATURES_ENDPOINT = f"ws://{hp}/prefeatures/pull"
+
+
+VOCABULARY_ENDPOINT = f"http://{hp}/vocabulary/pull"
+
+
+FEATURES_ENDPOINT = f"ws://{hp}/features/pull"
+

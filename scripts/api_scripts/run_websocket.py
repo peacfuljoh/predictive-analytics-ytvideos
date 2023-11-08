@@ -4,7 +4,6 @@ import json
 from typing import List, Union, Optional
 import requests
 from pprint import pprint
-import queue
 
 import websockets
 import pandas as pd
@@ -12,21 +11,17 @@ import pandas as pd
 from src.crawler.crawler.constants import (WS_STREAM_TERM_MSG, COL_USERNAME,
                                            COL_TIMESTAMP_ACCESSED, PREFEATURES_ETL_CONFIG_COL,
                                            VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL)
-from src.crawler.crawler.config import API_CONFIG, DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG
+from src.crawler.crawler.config import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG,
+                                        RAWDATA_JOIN_ENDPOINT, CONFIGS_ENDPOINT, PREFEATURES_ENDPOINT,
+                                        VOCABULARY_ENDPOINT, FEATURES_ENDPOINT)
 
-
-RAWDATA_JOIN_ENDPOINT = f"ws://{API_CONFIG['host']}:{API_CONFIG['port']}/rawdata/join"
-CONFIGS_ENDPOINT = f"http://{API_CONFIG['host']}:{API_CONFIG['port']}/config"
-PREFEATURES_ENDPOINT = f"ws://{API_CONFIG['host']}:{API_CONFIG['port']}/prefeatures/data"
-VOCABULARY_ENDPOINT = f"http://{API_CONFIG['host']}:{API_CONFIG['port']}/vocabulary/data"
-FEATURES_ENDPOINT = f"ws://{API_CONFIG['host']}:{API_CONFIG['port']}/features/data"
 
 
 
 stream_rawdata_join = False
-stream_prefeatures = False
+stream_prefeatures = True
 stream_vocabulary = False
-stream_features = True
+stream_features = False
 
 
 
@@ -101,7 +96,20 @@ def run_dfs_stream_with_options(endpoint: str,
             tg.create_task(stream_dfs_websocket(endpoint, etl_config, q_stream))
     asyncio.run(run_tasks())
 
+def get_configs_post(collection: str,
+                     config_name: Optional[str] = None) \
+        -> List[dict]:
+    """
+    Get config info for a data collection and optionally verify that a given config name exists in the list of configs.
+    """
+    response = requests.post(CONFIGS_ENDPOINT, json=dict(name=collection))
+    recs = json.loads(response.text)
 
+    if config_name is not None:
+        config_ids = [config_['_id'] for config_ in recs]
+        assert config_name in config_ids
+
+    return recs
 
 
 
@@ -130,22 +138,17 @@ if stream_rawdata_join:
     process_dfs_stream_options = dict(print_df=True, print_count=True)
     run_dfs_stream_with_options(RAWDATA_JOIN_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream, process_dfs_stream_options)
 
-    print('\n' * 5)
+    print('\n' * 3)
+
 
 
 
 # prefeatures
 if stream_prefeatures:
-    # configs
-    response = requests.post(CONFIGS_ENDPOINT, json=dict(name='prefeatures'))
-    recs = json.loads(response.text)
-    pprint(recs)
-
-    # data
     etl_config_prefeatures = 'test3'
 
-    config_ids = [config_['_id'] for config_ in recs]
-    assert etl_config_prefeatures in config_ids
+    recs = get_configs_post('prefeatures', config_name=etl_config_prefeatures)
+    pprint(recs)
 
     ETL_CONFIG_OPTIONS = {
         'extract': {
@@ -161,21 +164,15 @@ if stream_prefeatures:
     process_dfs_stream_options = dict(print_df=False, print_count=True)
     run_dfs_stream_with_options(PREFEATURES_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream, process_dfs_stream_options)
 
-    print('\n' * 5)
+    print('\n' * 3)
 
 
 # vocabulary
 if stream_vocabulary:
-    # configs
-    response = requests.post(CONFIGS_ENDPOINT, json=dict(name='vocabulary'))
-    recs = json.loads(response.text)
-    pprint(recs)
-
-    # data
     etl_config_vocabulary = 'test21715'
 
-    config_ids = [config_['_id'] for config_ in recs]
-    assert etl_config_vocabulary in config_ids
+    recs = get_configs_post('vocabulary', config_name=etl_config_vocabulary)
+    pprint(recs)
 
     ETL_CONFIG_OPTIONS = {
         VOCAB_ETL_CONFIG_COL: etl_config_vocabulary
@@ -185,21 +182,15 @@ if stream_vocabulary:
     response = requests.post(VOCABULARY_ENDPOINT, json=ETL_CONFIG_OPTIONS)
     recs = json.loads(response.text)
 
-    print('\n' * 5)
+    print('\n' * 3)
 
 
 # features
 if stream_features:
-    # configs
-    response = requests.post(CONFIGS_ENDPOINT, json=dict(name='features'))
-    recs = json.loads(response.text)
-    pprint(recs)
-
-    # data
     etl_config_name = 'test21715'
 
-    config_ids = [config_['_id'] for config_ in recs]
-    assert etl_config_name in config_ids
+    recs = get_configs_post('features', config_name=etl_config_name)
+    pprint(recs)
 
     ETL_CONFIG_OPTIONS = {
         'extract': {
@@ -215,5 +206,5 @@ if stream_features:
     process_dfs_stream_options = dict(print_df=False, print_count=True)
     run_dfs_stream_with_options(FEATURES_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream, process_dfs_stream_options)
 
-    print('\n' * 5)
+    print('\n' * 3)
 

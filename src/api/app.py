@@ -1,11 +1,12 @@
 """Raw data API"""
 
 from fastapi import FastAPI
-from routes import router_root, router_rawdata, router_prefeatures, router_vocabulary, router_config, router_features
 
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.config import DB_MYSQL_CONFIG, DB_MONGO_CONFIG
+from routes import (router_root, router_rawdata, router_prefeatures, router_vocabulary, router_config, router_features,
+                    router_models)
 
 
 
@@ -32,4 +33,5 @@ app.include_router(router_prefeatures, tags=["prefeatures"], prefix='/prefeature
 app.include_router(router_vocabulary, tags=["vocabulary"], prefix='/vocabulary')
 app.include_router(router_config, tags=["config"], prefix='/config')
 app.include_router(router_features, tags=["features"], prefix='/features')
+app.include_router(router_models, tags=["models"], prefix='/model')
 

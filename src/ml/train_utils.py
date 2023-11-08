@@ -341,7 +341,7 @@ def make_model_obj(model_,
 
 def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]],
                    ml_request: MLRequest,
-                   config_load: Dict[str, str]):
+                   preconfig: Dict[str, str]):
     """Save regression model(s) to the model store along with configs."""
     db_ = ml_request.get_db()
     mongo_config = db_['db_mongo_config']
@@ -366,13 +366,13 @@ def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRe
         obj['meta'][ML_MODEL_TYPE] = ML_MODEL_TYPE_LIN_PROJ_RAND
     else:
         raise Exception('Model type not recognized.')
-    obj['config']['load'] = config_load
+    obj['config']['preconfig'] = preconfig
     obj['config']['ml'] = ml_request.get_config()
 
     # validate obj
     assert set(obj) == {'_id', 'meta', 'config'}
     assert set([ML_MODEL_TYPE]) == set(obj['meta'])
-    assert set(obj['config']) == {'load', 'ml'}
+    assert set(obj['config']) == {'preconfig', 'ml'}
 
     # write to model store
     engine = MongoDBEngine(mongo_config, database=database, collection=collection_meta, verbose=True)

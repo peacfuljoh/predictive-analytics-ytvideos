@@ -1,6 +1,6 @@
 """Routes for data stores"""
 
-from typing import List, Tuple, Generator, Union, Optional, Callable
+from typing import List, Tuple, Generator, Union, Optional, Callable, Dict
 from pprint import pprint
 
 import pandas as pd
@@ -12,18 +12,23 @@ from db_engines.mongodb_utils import get_mongodb_records_gen
 from ytpa_utils.sql_utils import make_sql_query
 from ytpa_utils.val_utils import is_subset
 from ytpa_utils.df_utils import df_dt_codec
-from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
+from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG
 from src.crawler.crawler.constants import (TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG, WS_MAX_RECORDS_SEND,
-                                           VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL)
+                                           VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID)
+from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from src.etl.prefeaturization_etl_utils import etl_extract_tabular
 from src.etl.etl_request_utils import get_validated_etl_request
 from src.etl.featurization_etl_utils import etl_load_vocab_from_db
+from src.crawler.crawler.utils.mongodb_utils_ytvideos import fetch_url_and_save_image
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
+DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE']
+DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
 DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
+
 
 
 router_root = APIRouter()
@@ -32,6 +37,7 @@ router_prefeatures = APIRouter()
 router_vocabulary = APIRouter()
 router_config = APIRouter()
 router_features = APIRouter()
+router_models = APIRouter()
 
 
 
@@ -149,14 +155,14 @@ def root(request: Request):
 
 
 """ Configs """
-@router_config.post("/", response_description="Get config info", response_model=List[dict])
+@router_config.post("/pull", response_description="Get config info", response_model=List[dict])
 def get_configs_route(request: Request, opts: dict):
     return get_configs(request, opts.get('name'))
 
 
 
 """ Raw data """
-@router_rawdata.get("/users", response_description="Get video usernames", response_model=List[str])
+@router_rawdata.get("/users/pull", response_description="Get video usernames", response_model=List[str])
 def get_video_usernames(request: Request):
     """Get all usernames"""
     engine, tablename = get_mysql_engine_and_tablename(request, 'users')
@@ -165,7 +171,7 @@ def get_video_usernames(request: Request):
     ids: List[str] = [id_[0] for id_ in ids]
     return ids
 
-@router_rawdata.post("/meta", response_description="Get video metadata", response_model=List[tuple])
+@router_rawdata.post("/meta/pull", response_description="Get video metadata", response_model=List[tuple])
 def get_video_metadata(request: Request, opts: dict):
     """Get video meta information"""
     pprint(opts)
@@ -174,7 +180,16 @@ def get_video_metadata(request: Request, opts: dict):
     records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
     return records
 
-@router_rawdata.post("/stats", response_description="Get video stats", response_model=List[tuple])
+@router_rawdata.post("/meta/push", response_description="Inject video metadata", response_model=None)
+def post_video_metadata(request: Request, data: dict):
+    """Inject video meta data to database"""
+    insert_records_from_dict(DB_VIDEOS_DATABASE,
+                             DB_VIDEOS_TABLES['meta'],
+                             data,
+                             DB_MYSQL_CONFIG,
+                             keys=list(data.keys()))
+
+@router_rawdata.post("/stats/pull", response_description="Get video stats", response_model=List[tuple])
 def get_video_stats(request: Request, opts: dict):
     """Get video meta information"""
     pprint(opts)
@@ -182,6 +197,32 @@ def get_video_stats(request: Request, opts: dict):
     query = make_sql_query(tablename, opts.get('cols'), opts.get('where'), opts.get('limit'))
     records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
     return records
+
+@router_rawdata.post("/stats/push", response_description="Inject video stats", response_model=None)
+def post_video_stats(request: Request, data: dict):
+    """Inject video stats information"""
+    # update metadata and insert stats
+    update_records_from_dict(DB_VIDEOS_DATABASE,
+                             DB_VIDEOS_TABLES['meta'],
+                             data,
+                             DB_MYSQL_CONFIG,
+                             another_condition='upload_date IS NULL') # to avoid overwriting timestamp_first_seen
+    insert_records_from_dict(DB_VIDEOS_DATABASE,
+                             DB_VIDEOS_TABLES['stats'],
+                             data,
+                             DB_MYSQL_CONFIG)
+
+    # fetch and save thumbnail to MongoDB database
+    if len(url := data[COL_THUMBNAIL_URL]) > 0:
+        try:
+            fetch_url_and_save_image(DB_VIDEOS_NOSQL_DATABASE,
+                                     DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'],
+                                     DB_MONGO_CONFIG,
+                                     data[COL_VIDEO_ID],
+                                     url,
+                                     verbose=True)
+        except:
+            print(f'Exception during MongoDB database injection for {COL_THUMBNAIL_URL}.')
 
 @router_rawdata.websocket("/join")
 async def get_video_meta_stats_join(websocket: WebSocket):
@@ -198,9 +239,8 @@ async def get_video_meta_stats_join(websocket: WebSocket):
 
 
 """ Prefeatures """
-@router_prefeatures.websocket("/data")
+@router_prefeatures.websocket("/pull")
 async def get_prefeatures(websocket: WebSocket):
-    """Perform join query between meta and stats raw data tables and return a stream of records."""
     def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], None]:
         assert is_subset(['extract'], data_recv)
         df_gen = setup_mongodb_df_gen(DB_FEATURES_NOSQL_DATABASE,
@@ -224,9 +264,8 @@ def get_preconfig(request: Request,
 
 
 """ Vocabulary """
-@router_vocabulary.post("/data", response_description="Get vocabulary", response_model=dict)
+@router_vocabulary.post("/pull", response_description="Get vocabulary", response_model=dict)
 def get_vocabulary(request: Request, opts: dict):
-    """Perform join query between meta and stats raw data tables and return a stream of records."""
     # load vocabulary from db
     etl_config = {
         'preconfig': {
@@ -248,9 +287,8 @@ def get_vocabulary(request: Request, opts: dict):
 
 
 """ Features """
-@router_features.websocket("/data")
+@router_features.websocket("/pull")
 async def get_features(websocket: WebSocket):
-    """Perform join query between meta and stats raw data tables and return a stream of records."""
     def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], None]:
         assert is_subset(['extract'], data_recv)
         df_gen = setup_mongodb_df_gen(DB_FEATURES_NOSQL_DATABASE,
@@ -263,3 +301,23 @@ async def get_features(websocket: WebSocket):
 
 
 
+
+# """ Models """
+# @router_models.post("/model", response_description="Get model", response_model=dict)
+# def get_model(request: Request, opts: dict):
+#     # load model from db
+#     etl_config = {
+#         'preconfig': {
+#             **get_preconfig(request, 'vocabulary', opts[VOCAB_ETL_CONFIG_COL]),
+#             VOCAB_ETL_CONFIG_COL: opts[VOCAB_ETL_CONFIG_COL]
+#         },
+#         'db': {'db_info': DB_INFO, 'db_mongo_config': DB_MONGO_CONFIG}
+#     }
+#     req_features = get_validated_etl_request('models', etl_config)
+#
+#     rec = etl_load_vocab_from_db(req_features,
+#                                  opts.get(VOCAB_TIMESTAMP_COL),
+#                                  as_gs_dict=False)
+#     rec['_id'] = str(rec['_id'])
+#
+#     return rec

@@ -13,4 +13,8 @@ from src.crawler.crawler.config import API_CONFIG
 
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=API_CONFIG['host'], port=API_CONFIG['port'], reload=True)
+    while 1:
+        try:
+            uvicorn.run("app:app", host=API_CONFIG['host'], port=API_CONFIG['port'], reload=False)
+        except:
+            print('\n\nAPI crashed. Restarting.\n\n')

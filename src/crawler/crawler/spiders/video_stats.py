@@ -3,6 +3,7 @@
 from typing import Union, List, Dict
 import json
 from pprint import pprint
+import requests
 
 import pandas as pd
 import scrapy
@@ -10,20 +11,13 @@ import scrapy
 from ytpa_utils.misc_utils import convert_num_str_to_int, apply_regex, print_df_full
 from ytpa_utils.time_utils import get_ts_now_str
 from ..utils.mysql_utils_ytvideos import get_video_info_for_stats_spider
-from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
-from ..utils.mongodb_utils_ytvideos import fetch_url_and_save_image
-from ..config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
+from ..config import RAWDATA_STATS_PUSH_ENDPOINT
 from ..constants import (COL_VIDEO_URL, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_LEN_TAG,
                          MAX_NUM_KEYWORDS, MAX_LEN_KEYWORD, COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN,
                          COL_DURATION, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT, COL_COMMENT_COUNT,
                          COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT, COL_TIMESTAMP_ACCESSED, COL_COMMENT, COL_TITLE,
                          COL_KEYWORDS, COL_DESCRIPTION, COL_TAGS, COL_THUMBNAIL_URL)
 
-
-DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
-DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE']
-DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
 
 
 def handle_extraction_failure(s: str, response):
@@ -161,18 +155,10 @@ class YouTubeVideoStats(scrapy.Spider):
             pprint(vid_info)
             print('=' * 50)
 
-        update_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['meta'], vid_info, DB_MYSQL_CONFIG,
-                                 another_condition='upload_date IS NULL') # to avoid overwriting timestamp_first_seen
-        insert_records_from_dict(DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES['stats'], vid_info, DB_MYSQL_CONFIG)
+        try:
+            requests.post(RAWDATA_STATS_PUSH_ENDPOINT, json=vid_info)
+            if self.debug_info:
+                print('Database injection was successful.')
+        except Exception as e:
+            print(e)
 
-        ### Fetch and save thumbnail to MongoDB database ###
-        key_ = COL_THUMBNAIL_URL
-        if len(url := vid_info[key_]) > 0:
-            try:
-                fetch_url_and_save_image(DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS['thumbnails'],
-                                         DB_MONGO_CONFIG, vid_info[COL_VIDEO_ID], url, verbose=True)
-            except:
-                print(f'Exception during MongoDB database injection for {key_}.')
-
-        if self.debug_info:
-            print('Database injection was successful.')

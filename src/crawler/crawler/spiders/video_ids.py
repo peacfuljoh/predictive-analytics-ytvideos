@@ -2,16 +2,12 @@
 
 from typing import List
 import re
+import requests
 
 import scrapy
 
 from ..utils.mysql_utils_ytvideos import get_user_video_page_urls_from_db
-from db_engines.mysql_utils import insert_records_from_dict
-from ..config import DB_INFO, DB_MYSQL_CONFIG
-
-
-DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
+from ..config import RAWDATA_META_PUSH_ENDPOINT
 
 
 
@@ -46,7 +42,6 @@ class YouTubeLatestVideoIds(scrapy.Spider):
         video_ids: List[str] = list(set(re.findall(regex, s))) # returns portion in parentheses for substrings matching regex
 
         ### Update database ###
-        tablename = DB_VIDEOS_TABLES['meta']
         username: str = response.url.split("/")[-2][1:]  # username portion starts with "@"
         d = dict(video_id=video_ids, username=[username] * len(video_ids))
 
@@ -54,7 +49,9 @@ class YouTubeLatestVideoIds(scrapy.Spider):
             print(d)
             print('=' * 50)
 
-        insert_records_from_dict(DB_VIDEOS_DATABASE, tablename, d, DB_MYSQL_CONFIG, keys=list(d.keys()))
-
-        if self.debug_info:
-            print('Database injection was successful.')
+        try:
+            requests.post(RAWDATA_META_PUSH_ENDPOINT, json=d)
+            if self.debug_info:
+                print('Database injection was successful.')
+        except Exception as e:
+            print(e)
