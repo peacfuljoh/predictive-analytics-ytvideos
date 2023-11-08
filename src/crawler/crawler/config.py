@@ -46,6 +46,7 @@ else: # CI/CD
         port=int(os.environ['MONGODB_PORT'])
     )
     REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos'
+    API_CONFIG = dict(host=0, port=0)
 
 # determine DB_INFO
 is_testing = 'RUN_TESTS' in os.environ and os.environ['RUN_TESTS'] == 'yes'
