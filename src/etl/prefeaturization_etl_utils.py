@@ -50,6 +50,8 @@ class ETLRequestPrefeatures(ETLRequest):
         self._validate_config_keys(config_, 'extract')
 
         # validate extract filters
+        if 'filters' not in config_:
+            config_['filters'] = {}
         for key, val in config_['filters'].items():
             if key == COL_VIDEO_ID:
                 assert isinstance(val, str) or is_list_of_strings(val)
@@ -109,19 +111,9 @@ class ETLRequestPrefeatures(ETLRequest):
             assert set(config['db_mysql_config']) == {'host', 'user', 'password'}
             assert set(config['db_mongo_config']) == {'host', 'port'}
 
-def get_etl_req_prefeats(etl_config_name: str,
-                         etl_config: dict) \
-        -> ETLRequestPrefeatures:
-    req = ETLRequestPrefeatures(etl_config,
-                                etl_config_name,
-                                ETL_CONFIG_VALID_KEYS_PREFEATURES,
-                                ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES)
-    db_ = req._db
-    validate_etl_config(req,
-                        db_['db_mongo_config'],
-                        db_['db_info']['DB_FEATURES_NOSQL_DATABASE'],
-                        db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_prefeatures'])
-    return req
+
+
+
 
 
 """ ETL Extract """

@@ -15,7 +15,7 @@ class ETLRequest():
                  valid_keys: Dict[str, List[str]],
                  exclude_keys: Dict[str, List[str]]):
         # fields
-        self.name = name
+        self.name = name # mainly used for db insertions
         self._validate_key_dicts([valid_keys, exclude_keys])
         self._valid_keys = valid_keys
         self._exclude_keys = exclude_keys

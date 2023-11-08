@@ -37,6 +37,8 @@ class ETLRequestVocabulary(ETLRequest):
         self._validate_config_keys(config_, 'extract')
 
         # validate extract filters
+        if 'filters' not in config_:
+            config_['filters'] = {}
         for key, val in config_['filters'].items():
             if key == COL_USERNAME:
                 assert isinstance(val, str) or is_list_of_strings(val)
@@ -66,6 +68,8 @@ class ETLRequestFeatures(ETLRequest):
         self._validate_config_keys(config_, 'extract')
 
         # validate extract filters
+        if 'filters' not in config_:
+            config_['filters'] = {}
         for key, val in config_['filters'].items():
             if key == COL_USERNAME:
                 assert isinstance(val, str) or is_list_of_strings(val)
@@ -73,6 +77,12 @@ class ETLRequestFeatures(ETLRequest):
                 assert isinstance(val, str)
             else:
                 raise NotImplementedError(f'Extract condition {key} is not available.')
+
+        # validate other extract options
+        if 'limit' in config_:
+            assert isinstance(config_['limit'], int)
+        else:
+            config_['limit'] = None
 
     def _validate_config_preconfig(self, config_: dict):
         # ensure specified options are a subset of valid options

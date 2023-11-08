@@ -3,7 +3,7 @@
 import pandas as pd
 
 from src.etl.prefeaturization_etl import etl_prefeatures_main
-from src.etl.prefeaturization_etl_utils import get_etl_req_prefeats
+from src.etl.etl_request_utils import get_validated_etl_request
 from src.visualization.dashboard import Dashboard
 from src.crawler.crawler.constants import (COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN, COL_USERNAME,
                                            COL_TIMESTAMP_ACCESSED, COL_TITLE)
@@ -44,7 +44,7 @@ if etl_config_name == 'dashboard':
     }
 
 # make ETL request object
-req = get_etl_req_prefeats(etl_config_name, etl_config)
+req = get_validated_etl_request('prefeatures', etl_config, etl_config_name)
 
 # run pipeline
 data = etl_prefeatures_main(req, return_for_dashboard=etl_config_name == 'dashboard')

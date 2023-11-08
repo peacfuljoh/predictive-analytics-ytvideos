@@ -1,6 +1,5 @@
 
 import asyncio
-from datetime import datetime
 import json
 from typing import List, Union, Optional
 import requests
@@ -10,15 +9,25 @@ import queue
 import websockets
 import pandas as pd
 
-from ytpa_utils.df_utils import df_dt_codec
-from src.crawler.crawler.constants import (TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG, COL_USERNAME,
-                                           COL_TIMESTAMP_ACCESSED, PREFEATURES_ETL_CONFIG_COL)
+from src.crawler.crawler.constants import (WS_STREAM_TERM_MSG, COL_USERNAME,
+                                           COL_TIMESTAMP_ACCESSED, PREFEATURES_ETL_CONFIG_COL,
+                                           VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL)
 from src.crawler.crawler.config import API_CONFIG, DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG
 
 
 RAWDATA_JOIN_ENDPOINT = f"ws://{API_CONFIG['host']}:{API_CONFIG['port']}/rawdata/join"
 CONFIGS_ENDPOINT = f"http://{API_CONFIG['host']}:{API_CONFIG['port']}/config"
-PREFEATURES_ENDPOINT = f"ws://{API_CONFIG['host']}:{API_CONFIG['port']}/prefeatures"
+PREFEATURES_ENDPOINT = f"ws://{API_CONFIG['host']}:{API_CONFIG['port']}/prefeatures/data"
+VOCABULARY_ENDPOINT = f"http://{API_CONFIG['host']}:{API_CONFIG['port']}/vocabulary/data"
+FEATURES_ENDPOINT = f"ws://{API_CONFIG['host']}:{API_CONFIG['port']}/features/data"
+
+
+
+stream_rawdata_join = False
+stream_prefeatures = False
+stream_vocabulary = False
+stream_features = True
+
 
 
 
@@ -30,36 +39,35 @@ async def get_next_msg(websocket: websockets.connect) -> Optional[List[dict]]:
     if data_recv == WS_STREAM_TERM_MSG:
         raise StopIteration
     if len(data_recv) == 0:
-        return None
+        return
     return data_recv
 
 async def receive_msgs(websocket: websockets.connect,
-                       q: queue.Queue):
+                       q: asyncio.Queue):
     """Receive sequence of data messages over websocket connection, placing them in a queue."""
     while 1:
         data_recv = await get_next_msg(websocket)
         if data_recv is None:
-            break
+            return
         df = pd.DataFrame.from_dict(data_recv)
-        q.put(df)
-        # await asyncio.sleep(1)
+        await q.put(df)
 
 async def stream_dfs_websocket(endpoint: str,
                                options: dict,
-                               q: queue.Queue):
+                               q: asyncio.Queue):
     """Stream data into a queue of DataFrames over a websocket."""
-    etl_config_options_str = json.dumps(options)
+    options_str = json.dumps(options)
     async with websockets.connect(endpoint) as websocket:
         try:
             while 1:
-                await websocket.send(etl_config_options_str)
+                await websocket.send(options_str)
                 await receive_msgs(websocket, q)
         except Exception as e:
             print(e)
-            q.put(None)
+            await q.put(None)
 
-def process_dfs_stream(q_stream: queue.Queue,
-                       options: Optional[dict] = None):
+async def process_dfs_stream(q_stream: asyncio.Queue,
+                             options: Optional[dict] = None):
     """Print DataFrames from a queue until a None is found"""
     # options
     if options is None:
@@ -70,7 +78,10 @@ def process_dfs_stream(q_stream: queue.Queue,
 
     # process stream
     count = 0
-    while (df := q_stream.get()) is not None:
+    while 1:
+        df = await q_stream.get()
+        if df is None:
+            return
         count += len(df)
         if print_dfs:
             print(df)
@@ -79,11 +90,26 @@ def process_dfs_stream(q_stream: queue.Queue,
         if q_stats:
             q_stats.put({'count': count})
 
+def run_dfs_stream_with_options(endpoint: str,
+                                etl_config: dict,
+                                q_stream: asyncio.Queue,
+                                process_options: dict):
+    """Simultaneously stream data through websocket and process it."""
+    async def run_tasks():
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(process_dfs_stream(q_stream, process_options))
+            tg.create_task(stream_dfs_websocket(endpoint, etl_config, q_stream))
+    asyncio.run(run_tasks())
+
+
+
+
+
 
 
 """ Main websocket stream functions """
 # raw data "join"
-if 1:
+if stream_rawdata_join:
     ETL_CONFIG_OPTIONS = {
         'name': 'test', # not used when loading raw data as in prefeatures ETL pipeline
         'extract': {
@@ -100,25 +126,22 @@ if 1:
         }
     }
 
-    q_stream = queue.Queue()
-    asyncio.run(stream_dfs_websocket(RAWDATA_JOIN_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream))
-
+    q_stream = asyncio.Queue()
     process_dfs_stream_options = dict(print_df=True, print_count=True)
-    process_dfs_stream(q_stream, process_dfs_stream_options)
+    run_dfs_stream_with_options(RAWDATA_JOIN_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream, process_dfs_stream_options)
 
     print('\n' * 5)
 
 
 
-
 # prefeatures
-if 1:
+if stream_prefeatures:
     # configs
     response = requests.post(CONFIGS_ENDPOINT, json=dict(name='prefeatures'))
     recs = json.loads(response.text)
     pprint(recs)
 
-    # prefeatures
+    # data
     etl_config_prefeatures = 'test3'
 
     config_ids = [config_['_id'] for config_ in recs]
@@ -134,42 +157,63 @@ if 1:
         }
     }
 
-    q_stream = queue.Queue()
-    asyncio.run(stream_dfs_websocket(PREFEATURES_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream))
-
-    process_dfs_stream_options = dict(print_df=True, print_count=True)
-    process_dfs_stream(q_stream, process_dfs_stream_options)
+    q_stream = asyncio.Queue()
+    process_dfs_stream_options = dict(print_df=False, print_count=True)
+    run_dfs_stream_with_options(PREFEATURES_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream, process_dfs_stream_options)
 
     print('\n' * 5)
 
 
 # vocabulary
-if 1:
+if stream_vocabulary:
     # configs
     response = requests.post(CONFIGS_ENDPOINT, json=dict(name='vocabulary'))
     recs = json.loads(response.text)
     pprint(recs)
 
-    # # prefeatures
-    # etl_config_prefeatures = 'test3'
-    #
-    # config_ids = [config_['_id'] for config_ in recs]
-    # assert etl_config_prefeatures in config_ids
-    #
-    # ETL_CONFIG_OPTIONS = {
-    #     'extract': {
-    #         'filter': {
-    #             COL_TIMESTAMP_ACCESSED: [['2023-10-15 00:00:00.000', '2023-10-16 00:00:00.000']],
-    #             COL_USERNAME: ["FoxNews", "NBCNews"],
-    #             PREFEATURES_ETL_CONFIG_COL: etl_config_prefeatures
-    #         }
-    #     }
-    # }
-    #
-    # q_stream = queue.Queue()
-    # asyncio.run(stream_dfs_websocket(PREFEATURES_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream))
-    #
-    # process_dfs_stream_options = dict(print_df=True, print_count=True)
-    # process_dfs_stream(q_stream, process_dfs_stream_options)
-    #
-    # print('\n' * 5)
+    # data
+    etl_config_vocabulary = 'test21715'
+
+    config_ids = [config_['_id'] for config_ in recs]
+    assert etl_config_vocabulary in config_ids
+
+    ETL_CONFIG_OPTIONS = {
+        VOCAB_ETL_CONFIG_COL: etl_config_vocabulary
+        # VOCAB_TIMESTAMP_COL: '...'
+    }
+
+    response = requests.post(VOCABULARY_ENDPOINT, json=ETL_CONFIG_OPTIONS)
+    recs = json.loads(response.text)
+
+    print('\n' * 5)
+
+
+# features
+if stream_features:
+    # configs
+    response = requests.post(CONFIGS_ENDPOINT, json=dict(name='features'))
+    recs = json.loads(response.text)
+    pprint(recs)
+
+    # data
+    etl_config_name = 'test21715'
+
+    config_ids = [config_['_id'] for config_ in recs]
+    assert etl_config_name in config_ids
+
+    ETL_CONFIG_OPTIONS = {
+        'extract': {
+            'filter': {
+                COL_TIMESTAMP_ACCESSED: [['2023-10-15 00:00:00.000', '2023-10-16 00:00:00.000']],
+                COL_USERNAME: ["FoxNews", "NBCNews"],
+                FEATURES_ETL_CONFIG_COL: etl_config_name
+            }
+        }
+    }
+
+    q_stream = asyncio.Queue()
+    process_dfs_stream_options = dict(print_df=False, print_count=True)
+    run_dfs_stream_with_options(FEATURES_ENDPOINT, ETL_CONFIG_OPTIONS, q_stream, process_dfs_stream_options)
+
+    print('\n' * 5)
+

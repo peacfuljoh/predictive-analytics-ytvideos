@@ -14,10 +14,10 @@ from ytpa_utils.val_utils import is_subset
 from ytpa_utils.df_utils import df_dt_codec
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG, WS_MAX_RECORDS_SEND,
-                                           VOCAB_ETL_CONFIG_COL, ETL_CONFIG_VALID_KEYS_FEATURES,
-                                           ETL_CONFIG_EXCLUDE_KEYS_FEATURES)
-from src.etl.prefeaturization_etl_utils import etl_extract_tabular, get_etl_req_prefeats
-from src.etl.featurization_etl_utils import etl_load_vocab_from_db, ETLRequestFeatures
+                                           VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL)
+from src.etl.prefeaturization_etl_utils import etl_extract_tabular
+from src.etl.etl_request_utils import get_validated_etl_request
+from src.etl.featurization_etl_utils import etl_load_vocab_from_db
 
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
@@ -56,7 +56,7 @@ def get_mongodb_engine(request: Request,
 def setup_rawdata_df_gen(etl_config_name: str, etl_config: dict) \
         -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
     """Setup DataFrame generator for MySQL queries."""
-    etl_request = get_etl_req_prefeats(etl_config_name, etl_config)
+    etl_request = get_validated_etl_request('prefeatures', etl_config, etl_config_name)
     df_gen, info_tabular_extract, engine = etl_extract_tabular(etl_request)
     return df_gen, info_tabular_extract, engine
 
@@ -118,6 +118,23 @@ async def run_websocket_stream(websocket: WebSocket,
         del df_gen, engine
         print(e)
 
+def get_configs(request: Request,
+                collection: str) \
+        -> List[dict]:
+    """Get list of configs for various pipelines."""
+    if collection == 'prefeatures':
+        return get_mongodb_records(request,
+                                   DB_FEATURES_NOSQL_DATABASE,
+                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
+    if collection == 'vocabulary':
+        return get_mongodb_records(request,
+                                   DB_FEATURES_NOSQL_DATABASE,
+                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_vocabulary'])
+    if collection == 'features':
+        return get_mongodb_records(request,
+                                   DB_FEATURES_NOSQL_DATABASE,
+                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_features'])
+    return []
 
 
 
@@ -133,17 +150,8 @@ def root(request: Request):
 
 """ Configs """
 @router_config.post("/", response_description="Get config info", response_model=List[dict])
-def get_configs(request: Request, opts: dict):
-    config_name = opts.get('name')
-    if config_name == 'prefeatures':
-        return get_mongodb_records(request,
-                                   DB_FEATURES_NOSQL_DATABASE,
-                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
-    if config_name == 'vocabulary':
-        return get_mongodb_records(request,
-                                   DB_FEATURES_NOSQL_DATABASE,
-                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_vocabulary'])
-    return []
+def get_configs_route(request: Request, opts: dict):
+    return get_configs(request, opts.get('name'))
 
 
 
@@ -190,7 +198,7 @@ async def get_video_meta_stats_join(websocket: WebSocket):
 
 
 """ Prefeatures """
-@router_prefeatures.websocket("/")
+@router_prefeatures.websocket("/data")
 async def get_prefeatures(websocket: WebSocket):
     """Perform join query between meta and stats raw data tables and return a stream of records."""
     def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], None]:
@@ -203,34 +211,44 @@ async def get_prefeatures(websocket: WebSocket):
     await websocket.accept()
     await run_websocket_stream(websocket, setup_df_gen)
 
+def get_preconfig(request: Request,
+                  collection: str,
+                  etl_config_name: str) \
+        -> dict:
+    """Get preconfig corresponding to a specified config."""
+    prefeatures_etl_configs = [cf for cf in get_configs(request, collection) if cf['_id'] == etl_config_name]
+    assert len(prefeatures_etl_configs) == 1
+    return prefeatures_etl_configs[0]['preconfig']
+
 
 
 
 """ Vocabulary """
-@router_vocabulary.post("/", response_description="Get vocabulary", response_model=dict)
+@router_vocabulary.post("/data", response_description="Get vocabulary", response_model=dict)
 def get_vocabulary(request: Request, opts: dict):
     """Perform join query between meta and stats raw data tables and return a stream of records."""
-    etl_config_name = opts['etl_config_name']
-
+    # load vocabulary from db
     etl_config = {
-        'preconfig': {VOCAB_ETL_CONFIG_COL: etl_config_name},
+        'preconfig': {
+            **get_preconfig(request, 'vocabulary', opts[VOCAB_ETL_CONFIG_COL]),
+            VOCAB_ETL_CONFIG_COL: opts[VOCAB_ETL_CONFIG_COL]
+        },
         'db': {'db_info': DB_INFO, 'db_mongo_config': DB_MONGO_CONFIG}
     }
+    req_features = get_validated_etl_request('features', etl_config)
 
-    req_features = ETLRequestFeatures(etl_config,
-                                      etl_config_name,
-                                      ETL_CONFIG_VALID_KEYS_FEATURES,
-                                      ETL_CONFIG_EXCLUDE_KEYS_FEATURES)
+    rec = etl_load_vocab_from_db(req_features,
+                                 opts.get(VOCAB_TIMESTAMP_COL),
+                                 as_gs_dict=False)
+    rec['_id'] = str(rec['_id'])
 
-    return etl_load_vocab_from_db(req_features,
-                                  opts.get('timestamp_vocab'),
-                                  as_gs_dict=False)
+    return rec
 
 
 
 
 """ Features """
-@router_features.websocket("/")
+@router_features.websocket("/data")
 async def get_features(websocket: WebSocket):
     """Perform join query between meta and stats raw data tables and return a stream of records."""
     def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], None]:
@@ -242,4 +260,6 @@ async def get_features(websocket: WebSocket):
 
     await websocket.accept()
     await run_websocket_stream(websocket, setup_df_gen)
+
+
 
