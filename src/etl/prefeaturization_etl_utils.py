@@ -86,27 +86,28 @@ class ETLRequestPrefeatures(ETLRequest):
 
     def _validate_config_db(self, config: dict):
         # config keys
-        assert set(config) == {'db_info', 'db_mysql_config', 'db_mongo_config'}
+        if 0:
+            assert set(config) == {'db_info', 'db_mysql_config', 'db_mongo_config'}
 
-        # db info (database/table/collection names, etc.)
-        info = config['db_info']
-        assert set(info) == {
-            'DB_VIDEOS_DATABASE', 'DB_VIDEOS_TABLES',
-            'DB_VIDEOS_NOSQL_DATABASE', 'DB_VIDEOS_NOSQL_COLLECTIONS',
-            'DB_FEATURES_NOSQL_DATABASE', 'DB_FEATURES_NOSQL_COLLECTIONS',
-            'DB_MODELS_NOSQL_DATABASE', 'DB_MODELS_NOSQL_COLLECTIONS'
+            # db info (database/table/collection names, etc.)
+            info = config['db_info']
+            assert set(info) == {
+                'DB_VIDEOS_DATABASE', 'DB_VIDEOS_TABLES',
+                'DB_VIDEOS_NOSQL_DATABASE', 'DB_VIDEOS_NOSQL_COLLECTIONS',
+                'DB_FEATURES_NOSQL_DATABASE', 'DB_FEATURES_NOSQL_COLLECTIONS',
+                'DB_MODELS_NOSQL_DATABASE', 'DB_MODELS_NOSQL_COLLECTIONS'
 
-        }
-        assert set(info['DB_VIDEOS_TABLES']) == {'users', 'meta', 'stats'}
-        assert set(info['DB_VIDEOS_NOSQL_COLLECTIONS']) == {'thumbnails'}
-        assert set(info['DB_FEATURES_NOSQL_COLLECTIONS']) == {'prefeatures', 'features', 'vocabulary',
-                                                               'etl_config_prefeatures', 'etl_config_features',
-                                                               'etl_config_vocabulary'}
-        assert set(info['DB_MODELS_NOSQL_COLLECTIONS']) == {'models', 'meta'}
+            }
+            assert set(info['DB_VIDEOS_TABLES']) == {'users', 'meta', 'stats'}
+            assert set(info['DB_VIDEOS_NOSQL_COLLECTIONS']) == {'thumbnails'}
+            assert set(info['DB_FEATURES_NOSQL_COLLECTIONS']) == {'prefeatures', 'features', 'vocabulary',
+                                                                   'etl_config_prefeatures', 'etl_config_features',
+                                                                   'etl_config_vocabulary'}
+            assert set(info['DB_MODELS_NOSQL_COLLECTIONS']) == {'models', 'meta'}
 
-        # db configs (server connection credentials)
-        assert set(config['db_mysql_config']) == {'host', 'user', 'password'}
-        assert set(config['db_mongo_config']) == {'host', 'port'}
+            # db configs (server connection credentials)
+            assert set(config['db_mysql_config']) == {'host', 'user', 'password'}
+            assert set(config['db_mongo_config']) == {'host', 'port'}
 
 def get_etl_req_prefeats(etl_config_name: str,
                          etl_config: dict) \

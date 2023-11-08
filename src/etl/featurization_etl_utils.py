@@ -108,9 +108,6 @@ def etl_extract_prefeature_records(req: Union[ETLRequestVocabulary, ETLRequestFe
     db_ = req.get_db()
 
     return get_mongodb_records_gen(
-        # DB_FEATURES_NOSQL_DATABASE,
-        # DB_FEATURES_NOSQL_COLLECTIONS['prefeatures'],
-        # DB_MONGO_CONFIG,
         db_['db_info']['DB_FEATURES_NOSQL_DATABASE'],
         db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['prefeatures'],
         db_['db_mongo_config'],

@@ -35,3 +35,8 @@ dashboard:
 	$(CONDA_ACTIVATE) $(REPO_NAME_) && \
 	cd $(REPO_ROOT_) && \
 	python scripts/etl/try_etl.py
+
+api:
+	$(CONDA_ACTIVATE) $(REPO_NAME_) && \
+	cd $(REPO_ROOT_) && \
+	python src/api/main.py
