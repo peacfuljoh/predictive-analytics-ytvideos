@@ -148,8 +148,5 @@ ETL_CONFIG_EXCLUDE_KEYS_FEATURES = dict(
     preconfig=[]
 )
 
-# web sockets
-WS_STREAM_TERM_MSG = 'DONE'
 
-WS_MAX_RECORDS_SEND = 100
 

@@ -1,20 +1,19 @@
 """Routes for data stores"""
 
-from typing import List, Tuple, Generator, Union, Optional, Callable, Dict
+from typing import List, Tuple, Generator, Optional
 from pprint import pprint
 
 import pandas as pd
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket
 
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mongodb_utils import get_mongodb_records_gen
 from ytpa_utils.sql_utils import make_sql_query
 from ytpa_utils.val_utils import is_subset
-from ytpa_utils.df_utils import df_dt_codec
+from ytpa_api_utils.websocket_utils import run_websocket_stream
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG
-from src.crawler.crawler.constants import (TIMESTAMP_CONVERSION_FMTS, WS_STREAM_TERM_MSG, WS_MAX_RECORDS_SEND,
-                                           VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID)
+from src.crawler.crawler.constants import VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID
 from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from src.etl.prefeaturization_etl_utils import etl_extract_tabular
 from src.etl.etl_request_utils import get_validated_etl_request
@@ -79,50 +78,12 @@ def setup_mongodb_df_gen(database: str,
                                      distinct=extract_options.get('distinct'))
     return df_gen
 
-async def gen_next_records(gen, websocket: WebSocket):
-    """Get next record from a generator if possibe, otherwise shut down websocket."""
-    try:
-        return next(gen)
-    except:
-        # clean up and disconnect
-        await websocket.send_json(WS_STREAM_TERM_MSG)
-        raise WebSocketDisconnect
-
-async def send_df_via_websocket(df: pd.DataFrame,
-                                df_dt_encodings: dict,
-                                websocket: WebSocket):
-    """Send DataFrame in pieces over websocket"""
-    i = 0
-    while not (df_ := df.iloc[i * WS_MAX_RECORDS_SEND: (i + 1) * WS_MAX_RECORDS_SEND]).empty:
-        if df_dt_encodings is not None:
-            cnvs = {key: val for key, val in df_dt_encodings.items() if key in df_.columns}
-            df_dt_codec(df_, cnvs, 'encode')  # make it JSONifiable
-        data_send: List[dict] = df_.to_dict('records')
-        await websocket.send_json(data_send)
-        i += 1
-    await websocket.send_json([])
-
 def get_mongodb_records(request, database: str, collection: str) -> List[dict]:
     """Get records from MongoDB record store."""
     engine = get_mongodb_engine(request, database=database, collection=collection)
     df = engine.find_many()
     recs = df.to_dict('records')
     return recs
-
-async def run_websocket_stream(websocket: WebSocket,
-                               setup_df_gen: Callable):
-    """Run websocket stream that generates DataFrames."""
-    df_gen, engine = None, None
-    try:
-        while True:
-            data_recv = await websocket.receive_json() # receive JSON data
-            if df_gen is None: # initialize DataFrame generator first time around
-                df_gen, engine = setup_df_gen(data_recv)
-            df = await gen_next_records(df_gen, websocket)
-            await send_df_via_websocket(df, TIMESTAMP_CONVERSION_FMTS, websocket) # send DataFrame in chunks
-    except WebSocketDisconnect as e:
-        del df_gen, engine
-        print(e)
 
 def get_configs(request: Request,
                 collection: str) \
@@ -141,6 +102,8 @@ def get_configs(request: Request,
                                    DB_FEATURES_NOSQL_DATABASE,
                                    DB_FEATURES_NOSQL_COLLECTIONS['etl_config_features'])
     return []
+
+
 
 
 
