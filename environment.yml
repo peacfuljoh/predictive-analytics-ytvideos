@@ -21,7 +21,7 @@ dependencies:
     - mysql-connector-python==8.1.0
     - scikit-learn==1.3.1
     - websockets==11.0.3
-    - ytpa-utils==0.1.7
+    - ytpa-utils==0.1.8
     - db-engines==0.1.10
-    - ytpa-api-utils=0.1.1
+    - ytpa-api-utils=0.1.4
 prefix: /home/nuc/miniconda3/envs/crawler

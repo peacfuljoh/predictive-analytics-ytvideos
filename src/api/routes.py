@@ -13,7 +13,8 @@ from ytpa_utils.sql_utils import make_sql_query
 from ytpa_utils.val_utils import is_subset
 from ytpa_api_utils.websocket_utils import run_websocket_stream
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG
-from src.crawler.crawler.constants import VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID
+from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID,
+                                           TIMESTAMP_CONVERSION_FMTS_ENCODE)
 from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 from src.etl.prefeaturization_etl_utils import etl_extract_tabular
 from src.etl.etl_request_utils import get_validated_etl_request
@@ -58,7 +59,8 @@ def get_mongodb_engine(request: Request,
     engine.set_db_info(database=database, collection=collection)
     return engine
 
-def setup_rawdata_df_gen(etl_config_name: str, etl_config: dict) \
+def setup_rawdata_df_gen(etl_config_name: str,
+                         etl_config: dict) \
         -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
     """Setup DataFrame generator for MySQL queries."""
     etl_request = get_validated_etl_request('prefeatures', etl_config, etl_config_name)
@@ -192,11 +194,16 @@ async def get_video_meta_stats_join(websocket: WebSocket):
     """Perform join query between meta and stats raw data tables and return a stream of records."""
     def setup_df_gen(data_recv: dict) -> Tuple[Generator[pd.DataFrame, None, None], MySQLEngine]:
         assert is_subset(['name', 'extract'], data_recv)
+        data_recv['db'] = {
+            'db_info': DB_INFO,
+            'db_mysql_config': DB_MYSQL_CONFIG,
+            'db_mongo_config': DB_MONGO_CONFIG
+        }
         df_gen, _, engine = setup_rawdata_df_gen(data_recv['name'], data_recv)
         return df_gen, engine
 
     await websocket.accept()
-    await run_websocket_stream(websocket, setup_df_gen)
+    await run_websocket_stream(websocket, setup_df_gen, transformations=TIMESTAMP_CONVERSION_FMTS_ENCODE)
 
 
 

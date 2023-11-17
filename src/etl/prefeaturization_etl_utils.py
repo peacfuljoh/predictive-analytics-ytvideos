@@ -70,7 +70,7 @@ class ETLRequestPrefeatures(ETLRequest):
 
         # validate other extract options
         if 'limit' in config_:
-            assert isinstance(config_['limit'], int)
+            assert config_['limit'] is None or isinstance(config_['limit'], int)
         else:
             config_['limit'] = None
 

@@ -45,11 +45,6 @@ if stream_rawdata_join:
                 COL_USERNAME: ["FoxNews", "NBCNews"]
             },
             'limit': 7217
-        },
-        'db': {
-            'db_info': DB_INFO,
-            'db_mysql_config': DB_MYSQL_CONFIG,
-            'db_mongo_config': DB_MONGO_CONFIG
         }
     }
 

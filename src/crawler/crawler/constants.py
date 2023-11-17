@@ -1,5 +1,11 @@
 """Miscellaneous constants for crawler"""
 
+import datetime
+
+import pandas as pd
+
+
+
 # settings during request to video stats table
 MOST_RECENT_VID_LIMIT: int = 30
 MAX_LEN_DESCRIPTION = 500
@@ -65,10 +71,27 @@ MODEL_SPLIT_NAME = 'name'
 # timestamps
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 DATE_FMT = '%Y-%m-%d'
-TIMESTAMP_CONVERSION_FMTS = {
-    COL_TIMESTAMP_ACCESSED: TIMESTAMP_FMT,
-    COL_TIMESTAMP_FIRST_SEEN: TIMESTAMP_FMT,
-    COL_UPLOAD_DATE: DATE_FMT
+func_encode_str = lambda df_col: df_col.astype(str)
+TIMESTAMP_CONVERSION_FMTS_ENCODE = {
+    COL_TIMESTAMP_ACCESSED: {'func': func_encode_str},
+    COL_TIMESTAMP_FIRST_SEEN: {'func': func_encode_str},
+    COL_UPLOAD_DATE: {'func': func_encode_str}
+}
+func_decode_date = lambda df_col: df_col.map(lambda s: datetime.datetime.strptime(s, DATE_FMT).date())
+# func_decode_timestamp = lambda df_col: pd.to_datetime(df_col, format=TIMESTAMP_FMT)
+def func_decode_timestamp_one(s):
+    fmts = (TIMESTAMP_FMT, DATE_FMT)
+    for fmt in fmts:
+        try:
+            return datetime.datetime.strptime(s, fmt)
+        except:
+            pass
+    raise Exception(f"No time format found that matches {s} among formats {fmts}")
+func_decode_timestamp = lambda df_col: df_col.map(func_decode_timestamp_one) # TODO: vectorize by format instead of converting one-by-one
+TIMESTAMP_CONVERSION_FMTS_DECODE = {
+    COL_TIMESTAMP_ACCESSED: {'func': func_decode_timestamp},
+    COL_TIMESTAMP_FIRST_SEEN: {'func': func_decode_timestamp},
+    COL_UPLOAD_DATE: {'func': func_decode_date}
 }
 
 # ML model
