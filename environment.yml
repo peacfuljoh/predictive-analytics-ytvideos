@@ -23,5 +23,5 @@ dependencies:
     - websockets==11.0.3
     - ytpa-utils==0.1.11
     - db-engines==0.1.10
-    - ytpa-api-utils=0.1.6
+    - ytpa-api-utils==0.1.6
 prefix: /home/nuc/miniconda3/envs/crawler

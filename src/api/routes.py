@@ -19,10 +19,10 @@ from ytpa_api_utils.websocket_utils import run_websocket_stream_server
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE)
 from src.api.routes_utils import (etl_load_vocab_from_db, get_mysql_engine_and_tablename,
-                                  setup_rawdata_df_gen, setup_mongodb_df_gen, get_configs)
-from src.api.secrets import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES,
-                             DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS, DB_FEATURES_NOSQL_COLLECTIONS,
-                             DB_FEATURES_NOSQL_DATABASE)
+                                  setup_rawdata_df_gen, setup_mongodb_df_gen, get_configs, get_mongodb_engine)
+from src.api.app_secrets import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES,
+                                 DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS, DB_FEATURES_NOSQL_COLLECTIONS,
+                                 DB_FEATURES_NOSQL_DATABASE)
 from src.etl.etl_request_utils import get_validated_etl_request
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import fetch_url_and_save_image
 
@@ -63,11 +63,13 @@ def insert_one_record(request: Request, data: dict):
     def func():
         database = DB_INFO[data['database']]
         collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
-        engine = MongoDBEngine(DB_MONGO_CONFIG,
-                               database=database,
-                               collection=collection,
-                               verbose=True)
+        engine = get_mongodb_engine(request, database=database, collection=collection)
+        # engine = MongoDBEngine(DB_MONGO_CONFIG,
+        #                        database=database,
+        #                        collection=collection,
+        #                        verbose=True)
         engine.insert_one(data['record'])
+        del engine
 
     return run_func_and_return_stdout(func)
 
@@ -82,10 +84,11 @@ def insert_many_records(request: Request, data: dict):
     def func():
         database = DB_INFO[data['database']]
         collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
-        engine = MongoDBEngine(DB_MONGO_CONFIG,
-                               database=database,
-                               collection=collection,
-                               verbose=True)
+        engine = get_mongodb_engine(request, database=database, collection=collection)
+        # engine = MongoDBEngine(DB_MONGO_CONFIG,
+        #                        database=database,
+        #                        collection=collection,
+        #                        verbose=True)
         print(f"insert_many_records() -> Inserting {len(data['records'])} records in collection {collection} "
               f"of database {database}")
         engine.insert_many(data['records'])

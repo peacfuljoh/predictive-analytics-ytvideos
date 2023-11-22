@@ -18,7 +18,7 @@ app.mongodb_engine = None # set on startup
 # app event handlers
 @app.on_event("startup")
 def startup_db_client():
-    app.mongodb_engine = MongoDBEngine(DB_MONGO_CONFIG)
+    app.mongodb_engine = MongoDBEngine(DB_MONGO_CONFIG, verbose=True)
     app.mysql_engine = MySQLEngine(DB_MYSQL_CONFIG)
 
 @app.on_event("shutdown")

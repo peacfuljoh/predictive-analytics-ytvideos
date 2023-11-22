@@ -20,9 +20,12 @@ dir_drive = '/media/nuc/Bork drive'
 dir_drive_subdir = os.path.join(dir_drive, 'ytpa', date_str)
 
 dir_config_nuc = '/home/nuc/crawler_config'
-dir_config_drive = os.path.join(dir_drive, 'crawler_config')
+# dir_config_drive = os.path.join(dir_drive, 'ytpa', date_str, 'crawler_config')
 
 
+
+if UPDATE_BACKUP_SQL or UPDATE_BACKUP_MONGO:
+    print(f'sudo mkdir "{dir_drive_subdir}"')
 
 
 # backup MySQL tables
@@ -61,10 +64,13 @@ if UPDATE_BACKUP_MONGO:
 if UPDATE_BACKUP_CONFIG:
     print('\n=== Updating config files ===')
 
-    if ('home/nuc' in dir_config_drive) or ('media/nuc' not in dir_config_drive):
-        raise Exception
-    else:
-        if os.path.exists(dir_config_drive):
-            shutil.rmtree(dir_config_drive)
-        shutil.copytree(dir_config_nuc, dir_config_drive)
+    print(f'sudo cp -r {dir_config_nuc} "{dir_drive_subdir}"')
+
+    # if ('home/nuc' in dir_config_drive) or ('media/nuc' not in dir_config_drive):
+    #     raise Exception
+    # else:
+    #     if os.path.exists(dir_config_drive):
+    #         shutil.rmtree(dir_config_drive)
+    #     # shutil.copytree(dir_config_nuc, dir_config_drive)
+    #     print(f'sudo cp -r {dir_config_nuc} "{dir_config_drive}/{date_str}"')
 
