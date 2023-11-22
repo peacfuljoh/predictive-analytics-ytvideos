@@ -10,21 +10,16 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from db_engines.mongodb_engine import MongoDBEngine
-from db_engines.mysql_engine import MySQLEngine
-from db_engines.mysql_utils import perform_join_mysql_query
-from ytpa_utils.val_utils import is_datetime_formatted_str, is_list_of_strings, is_list_of_list_of_time_range_strings
 from ytpa_utils.df_utils import get_duplicate_idxs
 from ytpa_utils.misc_utils import remove_trailing_chars
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id, post_one_record
-from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
+from src.crawler.crawler.constants import (STATS_NUMERICAL_COLS,
                                            PREFEATURES_ETL_CONFIG_COL,
-                                           PREFEATURES_TOKENS_COL, TIMESTAMP_FMT, DATE_FMT,
-                                           COL_UPLOAD_DATE, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT,
+                                           PREFEATURES_TOKENS_COL, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT,
                                            COL_COMMENT_COUNT, COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT,
                                            COL_TIMESTAMP_ACCESSED, COL_COMMENT, COL_TITLE, COL_KEYWORDS,
                                            COL_DESCRIPTION, COL_TAGS)
-from src.etl.etl_request import ETLRequest, req_to_etl_config_record
+from src.etl.etl_request import req_to_etl_config_record, ETLRequestPrefeatures
 from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
 
@@ -44,125 +39,9 @@ MIN_DESCRIPTION_LEN_1 = 20
 
 
 
-""" ETL request class for prefeatures processing """
-class ETLRequestPrefeatures(ETLRequest):
-    """
-    Request object for Extract-Transform-Load operations.
-    """
-    def _validate_config_extract(self, config_: dict):
-        # ensure specified options are a subset of valid options
-        self._validate_config_keys(config_, 'extract')
-
-        # validate extract filters
-        if 'filters' not in config_:
-            config_['filters'] = {}
-        for key, val in config_['filters'].items():
-            if key == COL_VIDEO_ID:
-                assert isinstance(val, str) or is_list_of_strings(val)
-            elif key == COL_USERNAME:
-                assert isinstance(val, str) or is_list_of_strings(val)
-            elif key == COL_UPLOAD_DATE:
-                fmt = DATE_FMT
-                func = lambda s: is_datetime_formatted_str(s, fmt)
-                assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
-            elif key == COL_TIMESTAMP_ACCESSED:
-                fmt = TIMESTAMP_FMT
-                func = lambda s: is_datetime_formatted_str(s, fmt)
-                assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
-            else:
-                raise NotImplementedError(f'Extract condition {key} is not available.')
-
-        # validate other extract options
-        if 'limit' in config_:
-            assert config_['limit'] is None or isinstance(config_['limit'], int)
-        else:
-            config_['limit'] = None
-
-    def _validate_config_transform(self, config_: dict):
-        # ensure specified options are a subset of valid options
-        self._validate_config_keys(config_, 'transform')
-
-        # validate transform filters
-        # ...
-
-        # validate other transform options
-        if 'include_additional_keys' in config_:
-            assert isinstance(config_['include_additional_keys'], list)
-            assert is_list_of_strings(list(config_['include_additional_keys']))
-
-    def _validate_config_db(self, config: dict):
-        # config keys
-        if 0:
-            assert set(config) == {'db_info', 'db_mysql_config', 'db_mongo_config'}
-
-            # db info (database/table/collection names, etc.)
-            info = config['db_info']
-            assert set(info) == {
-                'DB_VIDEOS_DATABASE', 'DB_VIDEOS_TABLES',
-                'DB_VIDEOS_NOSQL_DATABASE', 'DB_VIDEOS_NOSQL_COLLECTIONS',
-                'DB_FEATURES_NOSQL_DATABASE', 'DB_FEATURES_NOSQL_COLLECTIONS',
-                'DB_MODELS_NOSQL_DATABASE', 'DB_MODELS_NOSQL_COLLECTIONS'
-
-            }
-            assert set(info['DB_VIDEOS_TABLES']) == {'users', 'meta', 'stats'}
-            assert set(info['DB_VIDEOS_NOSQL_COLLECTIONS']) == {'thumbnails'}
-            assert set(info['DB_FEATURES_NOSQL_COLLECTIONS']) == {'prefeatures', 'features', 'vocabulary',
-                                                                   'etl_config_prefeatures', 'etl_config_features',
-                                                                   'etl_config_vocabulary'}
-            assert set(info['DB_MODELS_NOSQL_COLLECTIONS']) == {'models', 'meta'}
-
-            # db configs (server connection credentials)
-            assert set(config['db_mysql_config']) == {'host', 'user', 'password'}
-            assert set(config['db_mongo_config']) == {'host', 'port'}
-
-
-
-
 
 
 """ ETL Extract """
-def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
-    """Extract tabular raw_data according to request"""
-    db_ = req.get_db()
-
-    # required inputs
-    database = db_['db_info']['DB_VIDEOS_DATABASE']
-    tablename_primary = db_['db_info']['DB_VIDEOS_TABLES']['stats']
-    tablename_secondary = db_['db_info']['DB_VIDEOS_TABLES']['meta']
-    table_pseudoname_primary = 'stats'
-    table_pseudoname_secondary = 'meta'
-    join_condition = f'{table_pseudoname_primary}.video_id = {table_pseudoname_secondary}.video_id'
-    cols_all = {
-        table_pseudoname_primary: STATS_ALL_COLS,
-        table_pseudoname_secondary: [col for col in META_ALL_COLS_NO_URL if col != COL_VIDEO_ID]
-    }
-    extract_ = req.get_extract()
-    filters = extract_.get('filters')
-    limit = extract_.get('limit')
-
-    # perform query
-    df, engine = perform_join_mysql_query(
-        db_['db_mysql_config'],
-        database,
-        tablename_primary,
-        tablename_secondary,
-        table_pseudoname_primary,
-        table_pseudoname_secondary,
-        join_condition,
-        cols_all,
-        filters=filters,
-        limit=limit,
-        as_generator=True
-    )
-
-    # collect info from extraction
-    extract_info = dict(
-        table_pseudoname_primary=table_pseudoname_primary,
-        table_pseudoname_secondary=table_pseudoname_secondary
-    )
-
-    return df, extract_info, engine
-
 def etl_extract_tabular_ws(req: ETLRequestPrefeatures) -> Generator[pd.DataFrame, None, None]:
     """Get generator of raw data for prefeaturization via websocket"""
     etl_config_options = {'name': req.name, 'extract': req.get_extract()}
@@ -502,34 +381,6 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
     assert validate_mongodb_records_schema(records_all, SCHEMAS_MONGODB['prefeatures'])
 
     return records_all
-
-def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
-                         req: ETLRequestPrefeatures):
-    """Load prefeatures to NoSQL database."""
-    db_ = req.get_db()
-    mongo_config = db_['db_mongo_config']
-    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
-    collection_config = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_prefeatures']
-    collection_prefeatures = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['prefeatures']
-
-    # insert etl_config
-    engine = MongoDBEngine(mongo_config,
-                           database=database,
-                           collection=collection_config,
-                           verbose=True)
-    d_req = req_to_etl_config_record(req, 'subset')
-    engine.insert_one(d_req)
-
-    # insert records
-    engine = MongoDBEngine(mongo_config,
-                           database=database,
-                           collection=collection_prefeatures,
-                           verbose=True)
-    for df in data['stats']:
-        print(f"etl_load_prefeatures() -> Inserting {len(df)} records in collection {collection_prefeatures} "
-              f"of database {database}")
-        records = etl_load_prefeatures_prepare_for_insert(df, {'name': req.name})
-        engine.insert_many(records)
 
 def etl_load_prefeatures_ws(data: Dict[str, Generator[pd.DataFrame, None, None]],
                             req: ETLRequestPrefeatures):

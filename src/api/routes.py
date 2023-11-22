@@ -1,35 +1,32 @@
 """Routes for data stores"""
 
-from typing import List, Tuple, Generator, Optional, Callable
+from typing import List, Tuple, Generator
 from pprint import pprint
-import io
-from contextlib import redirect_stdout
 
 import pandas as pd
 from fastapi import APIRouter, Request, WebSocket
 
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mongodb_engine import MongoDBEngine
-from db_engines.mongodb_utils import get_mongodb_records_gen
+from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
+
 from ytpa_utils.sql_utils import make_sql_query
 from ytpa_utils.val_utils import is_subset, is_list_of_instances
+from ytpa_utils.misc_utils import run_func_and_return_stdout
+
 from ytpa_api_utils.websocket_utils import run_websocket_stream_server
-from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG
+
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE)
-from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
-from src.etl.prefeaturization_etl_utils import etl_extract_tabular
+from src.api.routes_utils import (etl_load_vocab_from_db, get_mysql_engine_and_tablename,
+                                  setup_rawdata_df_gen, setup_mongodb_df_gen, get_configs)
+from src.api.secrets import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES,
+                             DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS, DB_FEATURES_NOSQL_COLLECTIONS,
+                             DB_FEATURES_NOSQL_DATABASE)
 from src.etl.etl_request_utils import get_validated_etl_request
-from src.etl.featurization_etl_utils import etl_load_vocab_from_db
 from src.crawler.crawler.utils.mongodb_utils_ytvideos import fetch_url_and_save_image
 
 
-DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
-DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
-DB_VIDEOS_NOSQL_DATABASE = DB_INFO['DB_VIDEOS_NOSQL_DATABASE']
-DB_VIDEOS_NOSQL_COLLECTIONS = DB_INFO['DB_VIDEOS_NOSQL_COLLECTIONS']
-DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
-DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
 
 
 
@@ -44,77 +41,6 @@ router_mongo = APIRouter()
 
 
 
-""" Helper methods """
-def get_mysql_engine_and_tablename(request: Request,
-                                   key: str) \
-        -> Tuple[MySQLEngine, str]:
-    """Get MySQL engine and tablename"""
-    engine = request.app.mysql_engine
-    tablename = DB_VIDEOS_TABLES[key]
-    return engine, tablename
-
-def get_mongodb_engine(request: Request,
-                       database: Optional[str] = None,
-                       collection: Optional[str] = None) \
-        -> MongoDBEngine:
-    """Get MongoDB engine"""
-    engine = request.app.mongodb_engine
-    engine.set_db_info(database=database, collection=collection)
-    return engine
-
-def setup_rawdata_df_gen(etl_config_name: str,
-                         etl_config: dict) \
-        -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
-    """Setup DataFrame generator for MySQL queries."""
-    etl_request = get_validated_etl_request('prefeatures', etl_config, etl_config_name)
-    df_gen, info_tabular_extract, engine = etl_extract_tabular(etl_request)
-    return df_gen, info_tabular_extract, engine
-
-def setup_mongodb_df_gen(database: str,
-                         collection: str,
-                         extract_options: dict) \
-        -> Generator[pd.DataFrame, None, None]:
-    """Setup DataFrame generator for MongoDB queries."""
-    df_gen = get_mongodb_records_gen(database,
-                                     collection,
-                                     DB_MONGO_CONFIG,
-                                     filter=extract_options.get('filter'),
-                                     projection=extract_options.get('projection'),
-                                     distinct=extract_options.get('distinct'))
-    return df_gen
-
-def get_mongodb_records(request, database: str, collection: str) -> List[dict]:
-    """Get records from MongoDB record store."""
-    engine = get_mongodb_engine(request, database=database, collection=collection)
-    df = engine.find_many()
-    recs = df.to_dict('records')
-    return recs
-
-def get_configs(request: Request,
-                collection: str) \
-        -> List[dict]:
-    """Get list of configs for various pipelines."""
-    if collection == 'prefeatures':
-        return get_mongodb_records(request,
-                                   DB_FEATURES_NOSQL_DATABASE,
-                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_prefeatures'])
-    if collection == 'vocabulary':
-        return get_mongodb_records(request,
-                                   DB_FEATURES_NOSQL_DATABASE,
-                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_vocabulary'])
-    if collection == 'features':
-        return get_mongodb_records(request,
-                                   DB_FEATURES_NOSQL_DATABASE,
-                                   DB_FEATURES_NOSQL_COLLECTIONS['etl_config_features'])
-    return []
-
-def run_func_and_return_stdout(func: Callable) -> str:
-    """Run a function and return all stdout as a string"""
-    with redirect_stdout(io.StringIO()) as stdout_buf:
-        func()
-        return stdout_buf.getvalue()
-
-
 
 
 
@@ -126,8 +52,8 @@ def root(request: Request):
 
 
 
-""" General-purpose MongoDB ops """
-@router_mongo.post("/insert_one", response_description="Insert config info", response_model=str)
+""" General-purpose MongoDB CRUD+ """
+@router_mongo.post("/insert_one", response_description="Insert single record to MongoDB data store", response_model=str)
 def insert_one_record(request: Request, data: dict):
     assert set(data) == {'database', 'collection', 'record'}
     assert isinstance(data['database'], str)
@@ -279,22 +205,6 @@ def get_preconfig(request: Request,
     prefeatures_etl_configs = [cf for cf in get_configs(request, collection) if cf['_id'] == etl_config_name]
     assert len(prefeatures_etl_configs) == 1
     return prefeatures_etl_configs[0]['preconfig']
-
-# @router_prefeatures.post("/data/push", response_description="Insert prefeature records to data store", response_model=str)
-# def insert_prefeatures(request: Request, records: List[dict]):
-#     # insert records
-#     def func():
-#         database = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
-#         collection = DB_FEATURES_NOSQL_COLLECTIONS['prefeatures']
-#         engine = MongoDBEngine(DB_MONGO_CONFIG,
-#                                database=database,
-#                                collection=collection,
-#                                verbose=True)
-#         print(f"insert_prefeatures_data() -> Inserting {len(records)} records in collection {collection} "
-#               f"of database {database}")
-#         engine.insert_many(records)
-#
-#     return run_func_and_return_stdout(func)
 
 
 

@@ -1,10 +1,16 @@
-"""ETL request parent class"""
+"""ETL request classes and helper methods"""
 
-from typing import Union, Dict, List, Tuple
+from typing import Dict, List
 import copy
 
 from db_engines.mongodb_engine import MongoDBEngine
-from ytpa_utils.val_utils import is_subset, is_list_of_list_of_strings
+from ytpa_utils.val_utils import (is_subset, is_list_of_list_of_strings, is_list_of_strings, is_datetime_formatted_str,
+                                  is_list_of_list_of_time_range_strings)
+
+from src.crawler.crawler.constants import (COL_VIDEO_ID, COL_USERNAME, COL_UPLOAD_DATE, DATE_FMT,
+                                           COL_TIMESTAMP_ACCESSED, TIMESTAMP_FMT, PREFEATURES_ETL_CONFIG_COL,
+                                           VOCAB_ETL_CONFIG_COL)
+
 
 
 class ETLRequest():
@@ -184,3 +190,153 @@ def validate_etl_config(req: ETLRequest,
 
     # mark request as valid
     req.set_valid(True)
+
+
+
+
+
+
+""" ETL request class for prefeatures processing """
+class ETLRequestPrefeatures(ETLRequest):
+    """
+    Request object for Extract-Transform-Load operations.
+    """
+    def _validate_config_extract(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'extract')
+
+        # validate extract filters
+        if 'filters' not in config_:
+            config_['filters'] = {}
+        for key, val in config_['filters'].items():
+            if key == COL_VIDEO_ID:
+                assert isinstance(val, str) or is_list_of_strings(val)
+            elif key == COL_USERNAME:
+                assert isinstance(val, str) or is_list_of_strings(val)
+            elif key == COL_UPLOAD_DATE:
+                fmt = DATE_FMT
+                func = lambda s: is_datetime_formatted_str(s, fmt)
+                assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
+            elif key == COL_TIMESTAMP_ACCESSED:
+                fmt = TIMESTAMP_FMT
+                func = lambda s: is_datetime_formatted_str(s, fmt)
+                assert is_datetime_formatted_str(val, fmt) or is_list_of_list_of_time_range_strings(val, func, num_ranges=1)
+            else:
+                raise NotImplementedError(f'Extract condition {key} is not available.')
+
+        # validate other extract options
+        if 'limit' in config_:
+            assert config_['limit'] is None or isinstance(config_['limit'], int)
+        else:
+            config_['limit'] = None
+
+    def _validate_config_transform(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'transform')
+
+        # validate transform filters
+        # ...
+
+        # validate other transform options
+        if 'include_additional_keys' in config_:
+            assert isinstance(config_['include_additional_keys'], list)
+            assert is_list_of_strings(list(config_['include_additional_keys']))
+
+    def _validate_config_db(self, config: dict):
+        # config keys
+        if 0:
+            assert set(config) == {'db_info', 'db_mysql_config', 'db_mongo_config'}
+
+            # db info (database/table/collection names, etc.)
+            info = config['db_info']
+            assert set(info) == {
+                'DB_VIDEOS_DATABASE', 'DB_VIDEOS_TABLES',
+                'DB_VIDEOS_NOSQL_DATABASE', 'DB_VIDEOS_NOSQL_COLLECTIONS',
+                'DB_FEATURES_NOSQL_DATABASE', 'DB_FEATURES_NOSQL_COLLECTIONS',
+                'DB_MODELS_NOSQL_DATABASE', 'DB_MODELS_NOSQL_COLLECTIONS'
+
+            }
+            assert set(info['DB_VIDEOS_TABLES']) == {'users', 'meta', 'stats'}
+            assert set(info['DB_VIDEOS_NOSQL_COLLECTIONS']) == {'thumbnails'}
+            assert set(info['DB_FEATURES_NOSQL_COLLECTIONS']) == {'prefeatures', 'features', 'vocabulary',
+                                                                   'etl_config_prefeatures', 'etl_config_features',
+                                                                   'etl_config_vocabulary'}
+            assert set(info['DB_MODELS_NOSQL_COLLECTIONS']) == {'models', 'meta'}
+
+            # db configs (server connection credentials)
+            assert set(config['db_mysql_config']) == {'host', 'user', 'password'}
+            assert set(config['db_mongo_config']) == {'host', 'port'}
+
+
+
+
+
+
+
+""" ETL Request class for features processing """
+class ETLRequestVocabulary(ETLRequest):
+    """
+    Request object for Extract-Transform-Load operations.
+    """
+    def _validate_config_extract(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'extract')
+
+        # validate extract filters
+        if 'filters' not in config_:
+            config_['filters'] = {}
+        for key, val in config_['filters'].items():
+            if key == COL_USERNAME:
+                assert isinstance(val, str) or is_list_of_strings(val)
+            else:
+                raise NotImplementedError(f'Extract condition {key} is not available.')
+
+        # validate other extract options
+        if 'limit' in config_:
+            assert isinstance(config_['limit'], int)
+        else:
+            config_['limit'] = None
+
+    def _validate_config_preconfig(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'preconfig')
+
+        # validate entries
+        for key in [PREFEATURES_ETL_CONFIG_COL]:
+            assert key in config_ and isinstance(config_[key], str)
+
+
+class ETLRequestFeatures(ETLRequest):
+    """
+    Request object for Extract-Transform-Load operations.
+    """
+    def _validate_config_extract(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'extract')
+
+        # validate extract filters
+        if 'filters' not in config_:
+            config_['filters'] = {}
+        for key, val in config_['filters'].items():
+            if key == COL_USERNAME:
+                assert isinstance(val, str) or is_list_of_strings(val)
+            elif key == PREFEATURES_ETL_CONFIG_COL:
+                assert isinstance(val, str)
+            else:
+                raise NotImplementedError(f'Extract condition {key} is not available.')
+
+        # validate other extract options
+        if 'limit' in config_:
+            assert isinstance(config_['limit'], int)
+        else:
+            config_['limit'] = None
+
+    def _validate_config_preconfig(self, config_: dict):
+        # ensure specified options are a subset of valid options
+        self._validate_config_keys(config_, 'preconfig')
+
+        # validate entries
+        for key in [PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL]:
+            assert key in config_ and isinstance(config_[key], str)
+
+

@@ -4,9 +4,9 @@ from typing import Union
 from src.crawler.crawler.constants import ETL_CONFIG_VALID_KEYS_VOCAB, ETL_CONFIG_EXCLUDE_KEYS_VOCAB, \
     ETL_CONFIG_VALID_KEYS_FEATURES, ETL_CONFIG_EXCLUDE_KEYS_FEATURES, ETL_CONFIG_VALID_KEYS_PREFEATURES, \
     ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES
-from src.etl.etl_request import validate_etl_config
-from src.etl.featurization_etl_utils import ETLRequestVocabulary, ETLRequestFeatures
-from src.etl.prefeaturization_etl_utils import ETLRequestPrefeatures
+from src.etl.etl_request import validate_etl_config, ETLRequestPrefeatures, ETLRequestVocabulary, ETLRequestFeatures
+
+
 # from src.ml.ml_request import MLRequest
 
 

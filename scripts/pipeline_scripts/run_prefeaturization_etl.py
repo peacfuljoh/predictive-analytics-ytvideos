@@ -26,7 +26,7 @@ if etl_config_name == 'test3':
             },
             # 'limit': 1000
         },
-        'db': db_
+       'db': db_
     }
 if etl_config_name == 'dashboard':
     etl_config = {
@@ -40,7 +40,7 @@ if etl_config_name == 'dashboard':
         'transform': {
             'include_additional_keys': [COL_TITLE, COL_UPLOAD_DATE, COL_TIMESTAMP_FIRST_SEEN]
         },
-        'db': db_
+       'db': db_
     }
 
 # make ETL request object

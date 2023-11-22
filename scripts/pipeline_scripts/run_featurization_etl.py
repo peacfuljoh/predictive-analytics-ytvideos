@@ -9,10 +9,6 @@ from src.crawler.crawler.config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
 
 
 
-DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
-DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
-
-
 db_ = {'db_info': DB_INFO, 'db_mysql_config': DB_MYSQL_CONFIG, 'db_mongo_config': DB_MONGO_CONFIG}
 
 

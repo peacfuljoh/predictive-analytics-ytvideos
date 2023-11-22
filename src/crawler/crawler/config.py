@@ -106,11 +106,8 @@ RAWDATA_STATS_PUSH_ENDPOINT = f"http://{hp}/rawdata/stats/push"
 RAWDATA_JOIN_ENDPOINT = f"ws://{hp}/rawdata/join"
 
 PREFEATURES_ENDPOINT = f"ws://{hp}/prefeatures/pull"
-# PREFEATURES_DATA_PUSH_ENDPOINT = f"http://{hp}/prefeatures/data/push"
 
 VOCABULARY_ENDPOINT = f"http://{hp}/vocabulary/pull"
-
-
 
 FEATURES_ENDPOINT = f"ws://{hp}/features/pull"
 

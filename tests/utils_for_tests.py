@@ -4,7 +4,7 @@ import os
 
 import pandas as pd
 
-from src.etl.prefeaturization_etl_utils import ETLRequestPrefeatures
+from src.etl.etl_request import ETLRequestPrefeatures
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mysql_utils import insert_records_from_dict
