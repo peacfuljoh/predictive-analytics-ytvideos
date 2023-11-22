@@ -1,7 +1,8 @@
 """Featurization ETL utils"""
 
-from typing import Generator, Optional, List, Union, Tuple
+from typing import Generator, Optional, List, Union
 import tempfile
+import requests
 
 import pandas as pd
 import gensim as gs
@@ -10,20 +11,30 @@ from gensim.corpora import Dictionary
 # from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL,
                                            VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL,
-                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, COL_USERNAME)
+                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, COL_USERNAME,
+                                           TIMESTAMP_CONVERSION_FMTS_DECODE, TIMESTAMP_CONVERSION_FMTS_ENCODE,
+                                           COL_TIMESTAMP_ACCESSED)
 from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mongodb_utils import get_mongodb_records_gen
 from ytpa_utils.val_utils import is_list_of_strings
 from ytpa_utils.time_utils import get_ts_now_str
+from ytpa_utils.df_utils import df_dt_codec
 from src.etl.etl_request import ETLRequest, req_to_etl_config_record
-from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
+from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id, post_one_record
 from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
+
+from ytpa_api_utils.websocket_utils import df_generator_ws
+from ytpa_api_utils.request_utils import df_sender_for_insert
+from src.crawler.crawler.config import PREFEATURES_ENDPOINT, VOCABULARY_ENDPOINT, MONGO_INSERT_MANY_ENDPOINT
+
 
 
 
 STOPLIST = 'for a of the and to in on is this at as be it that by are was'
 STOP_WORD_LIST = set(STOPLIST.split() + [''])
+
+
 
 
 
@@ -97,31 +108,21 @@ class ETLRequestFeatures(ETLRequest):
 
 
 """ Prefeatures """
-def etl_extract_prefeature_records(req: Union[ETLRequestVocabulary, ETLRequestFeatures],
-                                   projection: Optional[dict] = None,
-                                   distinct: Optional[dict] = None) \
+def etl_extract_prefeature_records_ws(req: Union[ETLRequestVocabulary, ETLRequestFeatures],
+                                      projection: Optional[dict] = None,
+                                      distinct: Optional[dict] = None) \
         -> Generator[pd.DataFrame, None, None]:
-    """
-    Get a generator of prefeature records.
-
-    If using 'distinct' input arg, filter is specified through the distinct dict:
-        e.g. distinct = dict(group=<str>, filter=<dict>)
-    If not using 'distinct' input arg, filter is taken from extraction config filters in ETL request
-    """
+    """Websocket stream version of prefeature record generator"""
     assert projection is None or distinct is None  # at most one can be specified
 
     filter = None if (distinct is not None) else req.get_extract()['filters']
 
-    db_ = req.get_db()
+    extract_options = {'filter': filter, 'projection': projection, 'distinct': distinct}
+    etl_config_options = {'extract': extract_options}
+    df_gen = df_generator_ws(PREFEATURES_ENDPOINT, etl_config_options, transformations=TIMESTAMP_CONVERSION_FMTS_DECODE)
+    return df_gen
 
-    return get_mongodb_records_gen(
-        db_['db_info']['DB_FEATURES_NOSQL_DATABASE'],
-        db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['prefeatures'],
-        db_['db_mongo_config'],
-        filter=filter,
-        projection=projection,
-        distinct=distinct
-    )
+
 
 
 """ Vocabulary """
@@ -153,45 +154,47 @@ def etl_create_vocab(df_gen: Generator[pd.DataFrame, None, None],
 
     return dictionary
 
-def convert_gs_dictionary_to_string(dictionary: Dictionary) -> bytes:
+def convert_gs_dictionary_to_string(dictionary: Dictionary) -> str:
     """Convert corpora to string"""
     with tempfile.NamedTemporaryFile() as fp:
         dictionary.save_as_text(fp.file.name) # , sort_by_word=True) # save to text
-        return fp.read()
+        return fp.read().decode()
 
 def convert_string_to_gs_dictionary(s: str) -> Dictionary:
-    """Convert pre-formatted string to corpora"""
+    """Convert string to corpora"""
     with tempfile.NamedTemporaryFile() as fp:
-        fp.write(s)
+        fp.write(s.encode('utf-8'))
         return Dictionary.load_from_text(fp.file.name)
 
-def etl_load_vocab_to_db(dictionary: Dictionary,
-                         req: ETLRequestVocabulary):
-    """Load vocabulary into vocab store"""
-    db_ = req.get_db()
-    mongo_config = db_['db_mongo_config']
-    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
-    collection_config = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_vocabulary']
-    collection_vocab = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['vocabulary']
-
-    # save config
-    engine = MongoDBEngine(mongo_config, database=database, collection=collection_config, verbose=True)
-    d_req = req_to_etl_config_record(req, 'subset')
-    engine.insert_one(d_req)
-
-    # convert Gensim corpus to string
-    vocab_txt: bytes = convert_gs_dictionary_to_string(dictionary)
-
-    # save vocab
+def make_and_validate_vocab_record(vocab_txt: str,
+                                   req: ETLRequestVocabulary) -> dict:
+    """..."""
     rec_vocab = {
         VOCAB_VOCABULARY_COL: vocab_txt,
         VOCAB_TIMESTAMP_COL: get_ts_now_str('ms'),
         VOCAB_ETL_CONFIG_COL: req.name
     }
     assert validate_mongodb_records_schema(rec_vocab, SCHEMAS_MONGODB['vocabulary'])
+    return rec_vocab
 
-    engine = MongoDBEngine(mongo_config, database=database, collection=collection_vocab, verbose=True)
-    engine.insert_one(rec_vocab)
+def etl_load_vocab_to_db_ws(dictionary: Dictionary,
+                            req: ETLRequestVocabulary):
+    """Load vocabulary into vocab store"""
+    # save config
+    d_req = req_to_etl_config_record(req, 'subset')
+    res = post_one_record('DB_FEATURES_NOSQL_DATABASE', 'etl_config_vocabulary', d_req)
+    print(res.json())
+
+    # convert Gensim corpus to string
+    vocab_txt: str = convert_gs_dictionary_to_string(dictionary)
+
+    # save vocab
+    rec_vocab = make_and_validate_vocab_record(vocab_txt, req)
+    res = post_one_record('DB_FEATURES_NOSQL_DATABASE', 'vocabulary', rec_vocab)
+    print(res.json())
+
+
+
 
 
 
@@ -235,6 +238,23 @@ def etl_load_vocab_from_db(req: ETLRequestFeatures,
 
     return rec
 
+def etl_load_vocab_from_db_ws(req: ETLRequestFeatures,
+                              timestamp_vocab: Optional[str] = None,
+                              as_gs_dict: bool = True) \
+        -> dict:
+    """Load vocabulary given specified options"""
+    msg = {
+        VOCAB_ETL_CONFIG_COL: req.get_preconfig()[VOCAB_ETL_CONFIG_COL],
+        VOCAB_TIMESTAMP_COL: timestamp_vocab
+    }
+    res = requests.post(VOCABULARY_ENDPOINT, json=msg)
+    rec = res.json()
+
+    if as_gs_dict:
+        rec[VOCAB_VOCABULARY_COL] = convert_string_to_gs_dictionary(rec[VOCAB_VOCABULARY_COL])
+
+    return rec
+
 def etl_featurize_records_with_vocab(df_gen: Generator[pd.DataFrame, None, None],
                                      vocabulary: dict,
                                      req: ETLRequestFeatures) \
@@ -270,28 +290,18 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
 
     return records_all
 
-def etl_load_features_to_db(feat_gen: Generator[pd.DataFrame, None, None],
-                            req: ETLRequestFeatures):
+def etl_load_features_to_db_ws(feat_gen: Generator[pd.DataFrame, None, None],
+                               req: ETLRequestFeatures):
     """Save features config and feature records to database"""
-    db_ = req.get_db()
-    mongo_config = db_['db_mongo_config']
-    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
-    collection_config = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['etl_config_features']
-    collection_features = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['features']
-
-    # save config
-    engine = MongoDBEngine(mongo_config, database=database, collection=collection_config, verbose=True)
     d_req = req_to_etl_config_record(req, 'subset')
-    engine.insert_one(d_req)
+    res = post_one_record('DB_FEATURES_NOSQL_DATABASE', 'etl_config_features', d_req)
+    print(res.json())
 
-    # save vocab
+    # insert records
     ts_feat = get_ts_now_str('ms') # has to be same for all records in this run
-    engine = MongoDBEngine(mongo_config, database=database, collection=collection_features, verbose=True)
-    for df in feat_gen:
-        records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
-        print(f"etl_load_features_to_db() -> Inserting {len(df)} records in collection {collection_features} "
-              f"of database {database}")
-        engine.insert_many(records)
+    def preprocess_func(df: pd.DataFrame) -> dict:
+        df_dt_codec(df, {COL_TIMESTAMP_ACCESSED: TIMESTAMP_CONVERSION_FMTS_ENCODE[COL_TIMESTAMP_ACCESSED]})
+        records = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
+        return {'database': 'DB_FEATURES_NOSQL_DATABASE', 'collection': 'features', 'records': records}
 
-
-
+    df_sender_for_insert(MONGO_INSERT_MANY_ENDPOINT, preprocess_func, feat_gen, print_json=True)

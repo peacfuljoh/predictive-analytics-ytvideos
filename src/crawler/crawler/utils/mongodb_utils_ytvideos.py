@@ -3,6 +3,8 @@ import datetime
 from typing import Optional, Union, Tuple
 
 import pandas as pd
+import requests
+from requests import Response
 
 from ytpa_utils.misc_utils import fetch_data_at_url
 from ytpa_utils.val_utils import is_subset
@@ -10,9 +12,7 @@ from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mongodb_utils import get_mongodb_records_gen, load_all_recs_with_distinct
 from ..constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                          VOCAB_TIMESTAMP_COL, FEATURES_TIMESTAMP_COL, TIMESTAMP_FMT)
-from ..config import DB_INFO, DB_MONGO_CONFIG
-
-
+from ..config import DB_INFO, DB_MONGO_CONFIG, MONGO_INSERT_ONE_ENDPOINT
 
 REPL_STRS_TS_TO_MKEY = {'-': 'd', ' ': 's', ':': 'c', '.': 'p'}
 REPL_STRS_MKEY_TO_TS = {val: key for key, val in REPL_STRS_TS_TO_MKEY.items()}
@@ -115,3 +115,13 @@ def load_config_timestamp_sets_for_features(configs: Optional[dict] = None) -> p
             df[key] = val
 
     return df
+
+
+def post_one_record(database: str,
+                    collection: str,
+                    record: dict) \
+        -> Response:
+    """POST one record to the MongoDB database via the API endpoint."""
+    post_data = {'database': database, 'collection': collection, 'record': record}
+    res = requests.post(MONGO_INSERT_ONE_ENDPOINT, json=post_data)
+    return res

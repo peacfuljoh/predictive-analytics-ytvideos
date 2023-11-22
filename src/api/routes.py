@@ -1,7 +1,9 @@
 """Routes for data stores"""
 
-from typing import List, Tuple, Generator, Optional
+from typing import List, Tuple, Generator, Optional, Callable
 from pprint import pprint
+import io
+from contextlib import redirect_stdout
 
 import pandas as pd
 from fastapi import APIRouter, Request, WebSocket
@@ -10,8 +12,8 @@ from db_engines.mysql_engine import MySQLEngine
 from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mongodb_utils import get_mongodb_records_gen
 from ytpa_utils.sql_utils import make_sql_query
-from ytpa_utils.val_utils import is_subset
-from ytpa_api_utils.websocket_utils import run_websocket_stream
+from ytpa_utils.val_utils import is_subset, is_list_of_instances
+from ytpa_api_utils.websocket_utils import run_websocket_stream_server
 from src.crawler.crawler.config import DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE)
@@ -38,6 +40,7 @@ router_vocabulary = APIRouter()
 router_config = APIRouter()
 router_features = APIRouter()
 router_models = APIRouter()
+router_mongo = APIRouter()
 
 
 
@@ -105,7 +108,11 @@ def get_configs(request: Request,
                                    DB_FEATURES_NOSQL_COLLECTIONS['etl_config_features'])
     return []
 
-
+def run_func_and_return_stdout(func: Callable) -> str:
+    """Run a function and return all stdout as a string"""
+    with redirect_stdout(io.StringIO()) as stdout_buf:
+        func()
+        return stdout_buf.getvalue()
 
 
 
@@ -119,10 +126,53 @@ def root(request: Request):
 
 
 
+""" General-purpose MongoDB ops """
+@router_mongo.post("/insert_one", response_description="Insert config info", response_model=str)
+def insert_one_record(request: Request, data: dict):
+    assert set(data) == {'database', 'collection', 'record'}
+    assert isinstance(data['database'], str)
+    assert isinstance(data['collection'], str)
+    assert isinstance(data['record'], dict)
+
+    def func():
+        database = DB_INFO[data['database']]
+        collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
+        engine = MongoDBEngine(DB_MONGO_CONFIG,
+                               database=database,
+                               collection=collection,
+                               verbose=True)
+        engine.insert_one(data['record'])
+
+    return run_func_and_return_stdout(func)
+
+@router_mongo.post("/insert_many", response_description="Insert multiple records to MongoDB data store", response_model=str)
+def insert_many_records(request: Request, data: dict):
+    # insert records
+    assert set(data) == {'database', 'collection', 'records'}
+    assert isinstance(data['database'], str)
+    assert isinstance(data['collection'], str)
+    assert is_list_of_instances(data['records'], dict)
+
+    def func():
+        database = DB_INFO[data['database']]
+        collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
+        engine = MongoDBEngine(DB_MONGO_CONFIG,
+                               database=database,
+                               collection=collection,
+                               verbose=True)
+        print(f"insert_many_records() -> Inserting {len(data['records'])} records in collection {collection} "
+              f"of database {database}")
+        engine.insert_many(data['records'])
+
+    return run_func_and_return_stdout(func)
+
+
+
 """ Configs """
 @router_config.post("/pull", response_description="Get config info", response_model=List[dict])
 def get_configs_route(request: Request, opts: dict):
     return get_configs(request, opts.get('name'))
+
 
 
 
@@ -203,7 +253,7 @@ async def get_video_meta_stats_join(websocket: WebSocket):
         return df_gen, engine
 
     await websocket.accept()
-    await run_websocket_stream(websocket, setup_df_gen, transformations=TIMESTAMP_CONVERSION_FMTS_ENCODE)
+    await run_websocket_stream_server(websocket, setup_df_gen, transformations=TIMESTAMP_CONVERSION_FMTS_ENCODE)
 
 
 
@@ -219,7 +269,7 @@ async def get_prefeatures(websocket: WebSocket):
         return df_gen, None
 
     await websocket.accept()
-    await run_websocket_stream(websocket, setup_df_gen)
+    await run_websocket_stream_server(websocket, setup_df_gen)
 
 def get_preconfig(request: Request,
                   collection: str,
@@ -230,6 +280,22 @@ def get_preconfig(request: Request,
     assert len(prefeatures_etl_configs) == 1
     return prefeatures_etl_configs[0]['preconfig']
 
+# @router_prefeatures.post("/data/push", response_description="Insert prefeature records to data store", response_model=str)
+# def insert_prefeatures(request: Request, records: List[dict]):
+#     # insert records
+#     def func():
+#         database = DB_INFO['DB_FEATURES_NOSQL_DATABASE']
+#         collection = DB_FEATURES_NOSQL_COLLECTIONS['prefeatures']
+#         engine = MongoDBEngine(DB_MONGO_CONFIG,
+#                                database=database,
+#                                collection=collection,
+#                                verbose=True)
+#         print(f"insert_prefeatures_data() -> Inserting {len(records)} records in collection {collection} "
+#               f"of database {database}")
+#         engine.insert_many(records)
+#
+#     return run_func_and_return_stdout(func)
+
 
 
 
@@ -237,6 +303,8 @@ def get_preconfig(request: Request,
 @router_vocabulary.post("/pull", response_description="Get vocabulary", response_model=dict)
 def get_vocabulary(request: Request, opts: dict):
     # load vocabulary from db
+    assert set(opts) == {VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL}
+
     etl_config = {
         'preconfig': {
             **get_preconfig(request, 'vocabulary', opts[VOCAB_ETL_CONFIG_COL]),
@@ -267,7 +335,7 @@ async def get_features(websocket: WebSocket):
         return df_gen, None
 
     await websocket.accept()
-    await run_websocket_stream(websocket, setup_df_gen)
+    await run_websocket_stream_server(websocket, setup_df_gen)
 
 
 

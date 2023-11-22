@@ -16,18 +16,22 @@ from db_engines.mysql_utils import perform_join_mysql_query
 from ytpa_utils.val_utils import is_datetime_formatted_str, is_list_of_strings, is_list_of_list_of_time_range_strings
 from ytpa_utils.df_utils import get_duplicate_idxs
 from ytpa_utils.misc_utils import remove_trailing_chars
-from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id
+from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id, post_one_record
 from src.crawler.crawler.constants import (STATS_ALL_COLS, META_ALL_COLS_NO_URL, STATS_NUMERICAL_COLS,
                                            PREFEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_TOKENS_COL, TIMESTAMP_FMT, DATE_FMT,
-                                           ETL_CONFIG_VALID_KEYS_PREFEATURES, ETL_CONFIG_EXCLUDE_KEYS_PREFEATURES,
                                            COL_UPLOAD_DATE, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT,
                                            COL_COMMENT_COUNT, COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT,
                                            COL_TIMESTAMP_ACCESSED, COL_COMMENT, COL_TITLE, COL_KEYWORDS,
                                            COL_DESCRIPTION, COL_TAGS)
-from src.etl.etl_request import ETLRequest, req_to_etl_config_record, validate_etl_config
+from src.etl.etl_request import ETLRequest, req_to_etl_config_record
 from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
+
+from ytpa_api_utils.websocket_utils import df_generator_ws
+from ytpa_api_utils.request_utils import df_sender_for_insert
+from src.crawler.crawler.config import RAWDATA_JOIN_ENDPOINT, MONGO_INSERT_MANY_ENDPOINT
+from src.crawler.crawler.constants import TIMESTAMP_CONVERSION_FMTS_DECODE
 
 
 CHARSETS = {
@@ -159,6 +163,11 @@ def etl_extract_tabular(req: ETLRequestPrefeatures) -> Tuple[Generator[pd.DataFr
 
     return df, extract_info, engine
 
+def etl_extract_tabular_ws(req: ETLRequestPrefeatures) -> Generator[pd.DataFrame, None, None]:
+    """Get generator of raw data for prefeaturization via websocket"""
+    etl_config_options = {'name': req.name, 'extract': req.get_extract()}
+    df_gen = df_generator_ws(RAWDATA_JOIN_ENDPOINT, etl_config_options, transformations=TIMESTAMP_CONVERSION_FMTS_DECODE)
+    return df_gen
 
 def etl_extract_nontabular(df: pd.DataFrame,
                            info_tabular_extract: dict) \
@@ -460,14 +469,14 @@ def etl_featurize(data: Dict[str, Union[Generator[pd.DataFrame, None, None], Dic
 
 """ ETL Load """
 def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
-                                            req: ETLRequestPrefeatures) \
+                                            opts: dict) \
         -> List[dict]:
     """
     Convert DataFrame with prefeatures info into dict for MongoDB insertion.
     """
     cols_exclude = [COL_USERNAME, COL_VIDEO_ID]
 
-    records_all: List[dict] = [] # update cmds
+    records_all: List[dict] = []
     for video_id, df_ in df.groupby(COL_VIDEO_ID):
         # get info for DB update
         cols_include = [col for col in df_.columns if col not in cols_exclude]
@@ -481,11 +490,11 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
 
             # define record for insertion
             record_to_insert = {
-                '_id': f'{video_id}_{ts_str_id}_{req.name}', # required to avoid duplication
+                '_id': f'{video_id}_{ts_str_id}_{opts["name"]}', # required to avoid duplication
                 COL_USERNAME: username,
                 COL_VIDEO_ID: video_id,
                 COL_TIMESTAMP_ACCESSED: ts_str,
-                PREFEATURES_ETL_CONFIG_COL: req.name,
+                PREFEATURES_ETL_CONFIG_COL: opts["name"],
                 **rec
             }
             records_all.append(record_to_insert)
@@ -519,5 +528,21 @@ def etl_load_prefeatures(data: Dict[str, Generator[pd.DataFrame, None, None]],
     for df in data['stats']:
         print(f"etl_load_prefeatures() -> Inserting {len(df)} records in collection {collection_prefeatures} "
               f"of database {database}")
-        records = etl_load_prefeatures_prepare_for_insert(df, req)
+        records = etl_load_prefeatures_prepare_for_insert(df, {'name': req.name})
         engine.insert_many(records)
+
+def etl_load_prefeatures_ws(data: Dict[str, Generator[pd.DataFrame, None, None]],
+                            req: ETLRequestPrefeatures):
+    """Load prefeatures to NoSQL database via websocket."""
+    # insert etl_config
+    d_req = req_to_etl_config_record(req, 'subset')
+    res = post_one_record('DB_FEATURES_NOSQL_DATABASE', 'etl_config_prefeatures', d_req)
+    print(res.json())
+
+    # insert records
+    def preprocess_func(df: pd.DataFrame) -> dict:
+        records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, {'name': req.name})
+        return {'database': 'DB_FEATURES_NOSQL_DATABASE', 'collection': 'prefeatures', 'records': records}
+
+    df_sender_for_insert(MONGO_INSERT_MANY_ENDPOINT, preprocess_func, data['stats'], print_json=True)
+

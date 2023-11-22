@@ -14,7 +14,6 @@ from src.crawler.crawler.constants import (COL_USERNAME, COL_TIMESTAMP_ACCESSED,
 """ MongoDB schemas """
 d_type_str = dict(type=str)
 d_type_int = dict(type=int)
-d_type_bytes = dict(type=bytes)
 d_type_list = dict(type=list)
 d_type_dict = dict(type=dict)
 
@@ -31,7 +30,7 @@ MONGO_REC_SCHEMA_PREFEATURES = {
     PREFEATURES_TOKENS_COL: d_type_str
 }
 MONGO_REC_SCHEMA_VOCABULARY = {
-    VOCAB_VOCABULARY_COL: d_type_bytes,
+    VOCAB_VOCABULARY_COL: d_type_str,
     VOCAB_TIMESTAMP_COL: d_type_str,
     VOCAB_ETL_CONFIG_COL: d_type_str
 }

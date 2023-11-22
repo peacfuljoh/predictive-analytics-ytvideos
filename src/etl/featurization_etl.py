@@ -10,13 +10,12 @@ ETL (prefeatures + vocabulary -> features)
     - load: send features to feature store
 """
 
-from typing import Dict
-
 from gensim.corpora import Dictionary
 
-from src.etl.featurization_etl_utils import \
-    ETLRequestFeatures, ETLRequestVocabulary, etl_extract_prefeature_records, etl_create_vocab, etl_load_vocab_to_db, \
-    etl_featurize_records_with_vocab, etl_load_features_to_db, etl_load_vocab_from_db
+from src.etl.featurization_etl_utils import (ETLRequestFeatures, ETLRequestVocabulary,
+                                             etl_create_vocab,etl_featurize_records_with_vocab,
+                                             etl_extract_prefeature_records_ws, etl_load_vocab_to_db_ws,
+                                             etl_load_vocab_from_db_ws, etl_load_features_to_db_ws)
 from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL
 
 
@@ -30,21 +29,21 @@ def etl_vocabulary_pipeline(req_vocab: ETLRequestVocabulary):
     # extract
     filter = {'$match': {PREFEATURES_ETL_CONFIG_COL: req_vocab.get_preconfig()[PREFEATURES_ETL_CONFIG_COL]}}
     distinct = dict(group=PREFEATURES_TOKENS_COL, filter=filter) # filter is applied first
-    df_gen = etl_extract_prefeature_records(req_vocab, distinct=distinct)
+    df_gen = etl_extract_prefeature_records_ws(req_vocab, distinct=distinct)
 
     # transform
     vocabulary: Dictionary = etl_create_vocab(df_gen, req_vocab)
 
     # load
-    etl_load_vocab_to_db(vocabulary, req_vocab)
+    etl_load_vocab_to_db_ws(vocabulary, req_vocab)
 
 def etl_features_pipeline(req_features: ETLRequestFeatures):
     # extract
-    df_gen = etl_extract_prefeature_records(req_features)
-    vocabulary: dict = etl_load_vocab_from_db(req_features)
+    df_gen = etl_extract_prefeature_records_ws(req_features)
+    vocabulary: dict = etl_load_vocab_from_db_ws(req_features)
 
     # transform
     feat_gen = etl_featurize_records_with_vocab(df_gen, vocabulary, req_features)
 
     # load
-    etl_load_features_to_db(feat_gen, req_features)
+    etl_load_features_to_db_ws(feat_gen, req_features)

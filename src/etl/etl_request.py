@@ -102,6 +102,8 @@ class ETLRequest():
         Arg 'mode' determines what is included in returned dict:
         - 'all': include everything
         - 'subset': only include fields relevant to ETL steps (i.e. not filters or limit)
+
+        Note: 'db' is automatically excluded.
         """
         if validity_check:
             self._check_if_valid()

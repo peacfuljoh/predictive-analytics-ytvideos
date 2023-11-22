@@ -96,6 +96,8 @@ else:
 hp = f"{API_CONFIG['host']}:{API_CONFIG['port']}"
 
 CONFIGS_ENDPOINT = f"http://{hp}/config/pull"
+MONGO_INSERT_ONE_ENDPOINT = f"http://{hp}/mongo/insert_one"
+MONGO_INSERT_MANY_ENDPOINT = f"http://{hp}/mongo/insert_many"
 
 RAWDATA_META_PULL_ENDPOINT = f"http://{hp}/rawdata/meta/pull"
 RAWDATA_META_PUSH_ENDPOINT = f"http://{hp}/rawdata/meta/push"
@@ -104,9 +106,10 @@ RAWDATA_STATS_PUSH_ENDPOINT = f"http://{hp}/rawdata/stats/push"
 RAWDATA_JOIN_ENDPOINT = f"ws://{hp}/rawdata/join"
 
 PREFEATURES_ENDPOINT = f"ws://{hp}/prefeatures/pull"
-
+# PREFEATURES_DATA_PUSH_ENDPOINT = f"http://{hp}/prefeatures/data/push"
 
 VOCABULARY_ENDPOINT = f"http://{hp}/vocabulary/pull"
+
 
 
 FEATURES_ENDPOINT = f"ws://{hp}/features/pull"

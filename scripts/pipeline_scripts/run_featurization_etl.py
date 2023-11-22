@@ -1,4 +1,5 @@
 """Script for experimenting with ETL pipeline"""
+
 import copy
 
 from src.etl.etl_request_utils import get_validated_etl_request
@@ -6,17 +7,22 @@ from src.etl.featurization_etl import etl_features_main
 from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL, COL_USERNAME
 from src.crawler.crawler.config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
 
+
+
 DB_FEATURES_NOSQL_DATABASE = DB_INFO['DB_FEATURES_NOSQL_DATABASE'] # NoSQL features
 DB_FEATURES_NOSQL_COLLECTIONS = DB_INFO['DB_FEATURES_NOSQL_COLLECTIONS']
+
 
 db_ = {'db_info': DB_INFO, 'db_mysql_config': DB_MYSQL_CONFIG, 'db_mongo_config': DB_MONGO_CONFIG}
 
 
+
+
 # set up pipeline_scripts config options
 etl_config_prefeatures_name = 'test3'
-etl_config_name = 'test21715' # vocab and features
+etl_config_name = 'test5544' # vocab and features
 
-if etl_config_name == 'test21715':
+if etl_config_name == 'test5544':
     etl_config_vocab = {
         'extract': {
             'filters': {
@@ -39,3 +45,5 @@ req_features = get_validated_etl_request('features', etl_config_features, etl_co
 
 # run pipeline
 etl_features_main(req_vocab, req_features)
+
+

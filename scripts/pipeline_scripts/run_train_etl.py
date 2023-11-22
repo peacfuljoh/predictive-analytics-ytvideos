@@ -19,8 +19,8 @@ db_ = {'db_info': DB_INFO, 'db_mysql_config': DB_MYSQL_CONFIG, 'db_mongo_config'
 # specify which version of the feature store to use
 preconfig = {
     PREFEATURES_ETL_CONFIG_COL: 'test3',
-    VOCAB_ETL_CONFIG_COL: 'test21715',
-    FEATURES_ETL_CONFIG_COL: 'test21715',
+    VOCAB_ETL_CONFIG_COL: 'test5544',
+    FEATURES_ETL_CONFIG_COL: 'test5544',
     # FEATURES_TIMESTAMP_COL: '2023-10-05 17:13:16.668'
 }
 

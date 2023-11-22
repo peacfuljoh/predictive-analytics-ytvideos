@@ -5,13 +5,13 @@ import json
 import requests
 from pprint import pprint
 
-from ytpa_api_utils.websocket_utils import run_dfs_stream_with_options, process_dfs_stream
+from ytpa_api_utils.websocket_utils import run_dfs_stream_with_options
+from ytpa_api_utils.misc_utils import process_dfs_stream
 from ytpa_api_utils.request_utils import get_configs_post
 
 from src.crawler.crawler.constants import (COL_USERNAME, COL_TIMESTAMP_ACCESSED, PREFEATURES_ETL_CONFIG_COL,
                                            VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL)
-from src.crawler.crawler.config import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG,
-                                        RAWDATA_JOIN_ENDPOINT, CONFIGS_ENDPOINT, PREFEATURES_ENDPOINT,
+from src.crawler.crawler.config import (RAWDATA_JOIN_ENDPOINT, CONFIGS_ENDPOINT, PREFEATURES_ENDPOINT,
                                         VOCABULARY_ENDPOINT, FEATURES_ENDPOINT)
 
 
