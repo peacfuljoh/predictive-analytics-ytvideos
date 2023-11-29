@@ -57,4 +57,3 @@ if etl_config_name == 'dashboard':
     dashboard = Dashboard(df)
     dashboard.run()
 
-

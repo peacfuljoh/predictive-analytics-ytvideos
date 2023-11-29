@@ -18,7 +18,7 @@ All steps in the pipeline have associated JSON-format configs that are stored al
 Raw data is continuously crawled for the latest videos, so we can run predictive analytics in real-time!
 
 
-### Frameworks
+### Frameworks/technologies
 
 Frameworks/technologies used (initial dev, on-prem):
 - Database: MySQL, MongoDB, Redis
@@ -95,11 +95,17 @@ Managing Conda environments: https://conda.io/projects/conda/en/latest/user-guid
 
 MySQL setup and Python API tutorial: https://realpython.com/python-mysql/
 
-MongoDB setup: https://www.mongodb.com/languages/python/pymongo-tutorial
+Setting up MongoDB on Ubuntu: https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/
 
-MongoDB on Ubuntu: https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/#std-label-install-mdb-community-ubuntu
+Working with FastAPI and the MongoDB Python API (PyMongo): https://www.mongodb.com/languages/python/pymongo-tutorial
 
 Randomized delays between scrapy crawls: https://scrapeops.io/python-scrapy-playbook/scrapy-delay-between-requests/
+
+
+## Database engines
+
+Once MongoDB is installed, you can run the interactive shell with `mongosh` on the command line. The linux process for
+the database server is `mongod` and can be inspected with `sudo systemctl status mongod`.
 
 
 ## Make CLI commands

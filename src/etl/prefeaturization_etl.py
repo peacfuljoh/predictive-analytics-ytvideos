@@ -11,7 +11,8 @@ from PIL import Image
 import pandas as pd
 
 from src.etl.prefeaturization_etl_utils import (etl_extract_tabular_ws, etl_extract_nontabular,
-                                                etl_clean_raw_data, etl_featurize, etl_load_prefeatures_ws)
+                                                etl_clean_raw_data, etl_featurize, etl_load_prefeatures_ws,
+                                                etl_load_prefeatures_ws_dryrun)
 from src.etl.etl_request import ETLRequestPrefeatures
 
 
@@ -51,3 +52,5 @@ def etl_prefeatures_load(data: Dict[str, Generator[pd.DataFrame, None, None]],
                          req: ETLRequestPrefeatures):
     """Load extracted prefeatures to prefeature store"""
     etl_load_prefeatures_ws(data, req)
+    # etl_load_prefeatures_ws_dryrun(data, req)
+

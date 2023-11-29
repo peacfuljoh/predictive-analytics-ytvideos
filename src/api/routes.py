@@ -7,7 +7,6 @@ import pandas as pd
 from fastapi import APIRouter, Request, WebSocket
 
 from db_engines.mysql_engine import MySQLEngine
-from db_engines.mongodb_engine import MongoDBEngine
 from db_engines.mysql_utils import insert_records_from_dict, update_records_from_dict
 
 from ytpa_utils.sql_utils import make_sql_query
@@ -64,12 +63,7 @@ def insert_one_record(request: Request, data: dict):
         database = DB_INFO[data['database']]
         collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
         engine = get_mongodb_engine(request, database=database, collection=collection)
-        # engine = MongoDBEngine(DB_MONGO_CONFIG,
-        #                        database=database,
-        #                        collection=collection,
-        #                        verbose=True)
         engine.insert_one(data['record'])
-        del engine
 
     return run_func_and_return_stdout(func)
 
@@ -85,10 +79,6 @@ def insert_many_records(request: Request, data: dict):
         database = DB_INFO[data['database']]
         collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
         engine = get_mongodb_engine(request, database=database, collection=collection)
-        # engine = MongoDBEngine(DB_MONGO_CONFIG,
-        #                        database=database,
-        #                        collection=collection,
-        #                        verbose=True)
         print(f"insert_many_records() -> Inserting {len(data['records'])} records in collection {collection} "
               f"of database {database}")
         engine.insert_many(data['records'])
@@ -118,7 +108,6 @@ def get_video_usernames(request: Request):
 @router_rawdata.post("/meta/pull", response_description="Get video metadata", response_model=List[tuple])
 def get_video_metadata(request: Request, opts: dict):
     """Get video meta information"""
-    pprint(opts)
     engine, tablename = get_mysql_engine_and_tablename(request, 'meta')
     query = make_sql_query(tablename, opts.get('cols'), opts.get('where'), opts.get('limit'))
     records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
@@ -136,10 +125,10 @@ def post_video_metadata(request: Request, data: dict):
 @router_rawdata.post("/stats/pull", response_description="Get video stats", response_model=List[tuple])
 def get_video_stats(request: Request, opts: dict):
     """Get video meta information"""
-    pprint(opts)
     engine, tablename = get_mysql_engine_and_tablename(request, 'stats')
     query = make_sql_query(tablename, opts.get('cols'), opts.get('where'), opts.get('limit'))
     records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
+    del engine
     return records
 
 @router_rawdata.post("/stats/push", response_description="Inject video stats", response_model=None)

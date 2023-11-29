@@ -15,7 +15,7 @@ from src.crawler.crawler.constants import (VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP
                                            STATS_ALL_COLS, META_ALL_COLS_NO_URL, COL_VIDEO_ID)
 from src.etl.etl_request_utils import get_validated_etl_request
 from src.etl.etl_request import ETLRequestPrefeatures, ETLRequestFeatures
-from src.api.app_secrets import (DB_MONGO_CONFIG, DB_VIDEOS_TABLES, DB_FEATURES_NOSQL_COLLECTIONS,
+from src.api.app_secrets import (DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_TABLES, DB_FEATURES_NOSQL_COLLECTIONS,
                                  DB_FEATURES_NOSQL_DATABASE)
 
 
@@ -28,7 +28,8 @@ def get_mysql_engine_and_tablename(request: Request,
                                    key: str) \
         -> Tuple[MySQLEngine, str]:
     """Get MySQL engine and tablename"""
-    engine = request.app.mysql_engine
+    # engine = request.app.mysql_engine
+    engine = MySQLEngine(DB_MYSQL_CONFIG)
     tablename = DB_VIDEOS_TABLES[key]
     return engine, tablename
 
@@ -37,7 +38,8 @@ def get_mongodb_engine(request: Request,
                        collection: Optional[str] = None) \
         -> MongoDBEngine:
     """Get MongoDB engine"""
-    engine = request.app.mongodb_engine
+    # engine = request.app.mongodb_engine
+    engine = MongoDBEngine(DB_MONGO_CONFIG, verbose=True)
     engine.set_db_info(database=database, collection=collection)
     return engine
 

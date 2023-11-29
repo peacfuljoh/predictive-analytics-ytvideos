@@ -382,6 +382,14 @@ def etl_load_prefeatures_prepare_for_insert(df: pd.DataFrame,
 
     return records_all
 
+def etl_load_prefeatures_ws_dryrun(data: Dict[str, Generator[pd.DataFrame, None, None]],
+                                   req: ETLRequestPrefeatures):
+    """..."""
+    d_req = req_to_etl_config_record(req, 'subset')
+
+    for df in data['stats']:
+        records = etl_load_prefeatures_prepare_for_insert(df, {'name': req.name})
+
 def etl_load_prefeatures_ws(data: Dict[str, Generator[pd.DataFrame, None, None]],
                             req: ETLRequestPrefeatures):
     """Load prefeatures to NoSQL database via websocket."""
