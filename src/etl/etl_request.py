@@ -3,7 +3,6 @@
 from typing import Dict, List
 import copy
 
-from db_engines.mongodb_engine import MongoDBEngine
 from ytpa_utils.val_utils import (is_subset, is_list_of_list_of_strings, is_list_of_strings, is_datetime_formatted_str,
                                   is_list_of_list_of_time_range_strings)
 
@@ -169,28 +168,6 @@ def req_to_etl_config_record(req: ETLRequest,
         **d_req[req.name]
     }
     return d_req
-
-def validate_etl_config(req: ETLRequest,
-                        db_config: dict,
-                        database: str,
-                        collection: str):
-    """Check that specified ETL config doesn't conflict with any existing configs in the ETL config db"""
-    d_req = req_to_etl_config_record(req, 'subset') # specified config
-    engine = MongoDBEngine(db_config,
-                           database=database,
-                           collection=collection,
-                           verbose=True)
-    d_req_exist = engine.find_one_by_id(d_req['_id']) # existing config
-
-    # check for invalid ETL config
-    if (d_req_exist is not None) and (d_req_exist['_id'] == d_req['_id']):
-        if d_req != d_req_exist: # ensure that options match exactly
-            raise Exception(f'The specified ETL pipeline options do not match those of '
-                            f'the existing config for name {req.name}.')
-
-    # mark request as valid
-    req.set_valid(True)
-
 
 
 

@@ -12,7 +12,7 @@ from PIL import Image
 
 from ytpa_utils.df_utils import get_duplicate_idxs
 from ytpa_utils.misc_utils import remove_trailing_chars
-from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id, post_one_record
+from src.etl.etl_utils import post_one_record, convert_ts_fmt_for_mongo_id
 from src.crawler.crawler.constants import (STATS_NUMERICAL_COLS,
                                            PREFEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_TOKENS_COL, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT,

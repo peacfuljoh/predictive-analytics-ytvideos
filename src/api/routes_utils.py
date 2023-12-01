@@ -14,7 +14,7 @@ from ytpa_utils.gensim_utils import convert_string_to_gs_dictionary
 from src.crawler.crawler.constants import (VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL, VOCAB_ETL_CONFIG_COL,
                                            STATS_ALL_COLS, META_ALL_COLS_NO_URL, COL_VIDEO_ID)
 from src.etl.etl_request_utils import get_validated_etl_request
-from src.etl.etl_request import ETLRequestPrefeatures, ETLRequestFeatures
+from src.etl.etl_request import ETLRequest, ETLRequestPrefeatures, ETLRequestFeatures, req_to_etl_config_record
 from src.api.app_secrets import (DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_TABLES, DB_FEATURES_NOSQL_COLLECTIONS,
                                  DB_FEATURES_NOSQL_DATABASE)
 
@@ -24,21 +24,17 @@ from src.api.app_secrets import (DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_TAB
 
 
 """ Endpoint helper methods """
-def get_mysql_engine_and_tablename(request: Request,
-                                   key: str) \
+def get_mysql_engine_and_tablename(key: str) \
         -> Tuple[MySQLEngine, str]:
     """Get MySQL engine and tablename"""
-    # engine = request.app.mysql_engine
     engine = MySQLEngine(DB_MYSQL_CONFIG)
     tablename = DB_VIDEOS_TABLES[key]
     return engine, tablename
 
-def get_mongodb_engine(request: Request,
-                       database: Optional[str] = None,
+def get_mongodb_engine(database: Optional[str] = None,
                        collection: Optional[str] = None) \
         -> MongoDBEngine:
     """Get MongoDB engine"""
-    # engine = request.app.mongodb_engine
     engine = MongoDBEngine(DB_MONGO_CONFIG, verbose=True)
     engine.set_db_info(database=database, collection=collection)
     return engine
@@ -47,9 +43,20 @@ def setup_rawdata_df_gen(etl_config_name: str,
                          etl_config: dict) \
         -> Tuple[Generator[pd.DataFrame, None, None], dict, MySQLEngine]:
     """Setup DataFrame generator for MySQL queries."""
-    etl_request = get_validated_etl_request('prefeatures', etl_config, etl_config_name)
+    etl_request = get_validated_etl_request('prefeatures', etl_config, etl_config_name,
+                                            validation_func=validation_func_local)
     df_gen, info_tabular_extract, engine = etl_extract_tabular(etl_request)
     return df_gen, info_tabular_extract, engine
+
+def validation_func_local(req: ETLRequest,
+                          collection: str):
+    """Validation function local to API that avoids calling config validation endpoint (freezes inside a websocket)."""
+    config = req_to_etl_config_record(req, 'subset')
+    is_valid = validate_config(config, collection)
+    if not is_valid:
+        raise Exception(f'The specified ETL pipeline options do not match those of '
+                        f'the existing config for name {req.name}.')
+    req.set_valid(True)
 
 def setup_mongodb_df_gen(database: str,
                          collection: str,
@@ -66,7 +73,7 @@ def setup_mongodb_df_gen(database: str,
 
 def get_mongodb_records(request, database: str, collection: str) -> List[dict]:
     """Get records from MongoDB record store."""
-    engine = get_mongodb_engine(request, database=database, collection=collection)
+    engine = get_mongodb_engine(database=database, collection=collection)
     df = engine.find_many()
     recs = df.to_dict('records')
     return recs
@@ -88,6 +95,21 @@ def get_configs(request: Request,
                                    DB_FEATURES_NOSQL_DATABASE,
                                    DB_FEATURES_NOSQL_COLLECTIONS['etl_config_features'])
     return []
+
+def validate_config(config: dict,
+                    collection: str) \
+        -> bool:
+    """Validate provided config against existing configs in a specified collection"""
+    database = DB_FEATURES_NOSQL_DATABASE
+    collection = DB_FEATURES_NOSQL_COLLECTIONS['etl_config_' + collection]
+
+    engine = get_mongodb_engine(database=database, collection=collection)
+    config_exist = engine.find_one_by_id(config['_id'])  # existing config
+
+    # ensure that configs with same id match exactly
+    if (config_exist is not None) and (config != config_exist):
+        return False
+    return True
 
 
 

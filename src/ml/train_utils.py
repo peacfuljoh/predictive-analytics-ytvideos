@@ -15,8 +15,8 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME, KEYS_FOR_PRED_NONBOW_ID,
                                            COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED,
                                            MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME)
-from src.crawler.crawler.utils.mongodb_utils_ytvideos import (load_config_timestamp_sets_for_features,
-                                                              convert_ts_fmt_for_mongo_id)
+from src.crawler.crawler.utils.mongodb_utils_ytvideos import (load_config_timestamp_sets_for_features)
+from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances
 from ytpa_utils.time_utils import get_ts_now_str
 from src.ml.ml_request import MLRequest

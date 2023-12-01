@@ -80,7 +80,7 @@ TIMESTAMP_CONVERSION_FMTS_ENCODE = {
 func_decode_date = lambda df_col: df_col.map(lambda s: datetime.datetime.strptime(s, DATE_FMT).date())
 # func_decode_timestamp = lambda df_col: pd.to_datetime(df_col, format=TIMESTAMP_FMT)
 def func_decode_timestamp_one(s):
-    fmts = (TIMESTAMP_FMT, DATE_FMT)
+    fmts = (TIMESTAMP_FMT, DATE_FMT, '%Y-%m-%d %H:%M:%S')
     for fmt in fmts:
         try:
             return datetime.datetime.strptime(s, fmt)

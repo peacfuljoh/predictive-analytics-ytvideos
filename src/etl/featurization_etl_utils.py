@@ -18,7 +18,7 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY
                                            FEATURES_TIMESTAMP_COL, TIMESTAMP_CONVERSION_FMTS_DECODE,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE, COL_TIMESTAMP_ACCESSED)
 from src.crawler.crawler.config import PREFEATURES_ENDPOINT, VOCABULARY_ENDPOINT, MONGO_INSERT_MANY_ENDPOINT
-from src.crawler.crawler.utils.mongodb_utils_ytvideos import convert_ts_fmt_for_mongo_id, post_one_record
+from src.etl.etl_utils import post_one_record, convert_ts_fmt_for_mongo_id
 from src.etl.etl_request import req_to_etl_config_record, ETLRequestVocabulary, ETLRequestFeatures
 from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB

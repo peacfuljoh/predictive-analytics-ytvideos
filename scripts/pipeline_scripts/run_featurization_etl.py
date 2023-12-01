@@ -5,11 +5,8 @@ import copy
 from src.etl.etl_request_utils import get_validated_etl_request
 from src.etl.featurization_etl import etl_features_main
 from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL, COL_USERNAME
-from src.crawler.crawler.config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
 
 
-
-db_ = {'db_info': DB_INFO, 'db_mysql_config': DB_MYSQL_CONFIG, 'db_mongo_config': DB_MONGO_CONFIG}
 
 
 
@@ -27,8 +24,7 @@ if etl_config_name == 'test5544':
         },
         'preconfig': {
             PREFEATURES_ETL_CONFIG_COL: etl_config_prefeatures_name
-        },
-        'db': db_
+        }
     }
 
     etl_config_features = copy.deepcopy(etl_config_vocab)

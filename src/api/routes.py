@@ -1,7 +1,6 @@
 """Routes for data stores"""
 
-from typing import List, Tuple, Generator
-from pprint import pprint
+from typing import List, Tuple, Generator, Dict
 
 import pandas as pd
 from fastapi import APIRouter, Request, WebSocket
@@ -18,7 +17,8 @@ from ytpa_api_utils.websocket_utils import run_websocket_stream_server
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE)
 from src.api.routes_utils import (etl_load_vocab_from_db, get_mysql_engine_and_tablename,
-                                  setup_rawdata_df_gen, setup_mongodb_df_gen, get_configs, get_mongodb_engine)
+                                  setup_rawdata_df_gen, setup_mongodb_df_gen, get_configs, get_mongodb_engine,
+                                  validate_config)
 from src.api.app_secrets import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES,
                                  DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS, DB_FEATURES_NOSQL_COLLECTIONS,
                                  DB_FEATURES_NOSQL_DATABASE)
@@ -62,7 +62,7 @@ def insert_one_record(request: Request, data: dict):
     def func():
         database = DB_INFO[data['database']]
         collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
-        engine = get_mongodb_engine(request, database=database, collection=collection)
+        engine = get_mongodb_engine(database=database, collection=collection)
         engine.insert_one(data['record'])
 
     return run_func_and_return_stdout(func)
@@ -78,7 +78,7 @@ def insert_many_records(request: Request, data: dict):
     def func():
         database = DB_INFO[data['database']]
         collection = DB_FEATURES_NOSQL_COLLECTIONS[data['collection']]
-        engine = get_mongodb_engine(request, database=database, collection=collection)
+        engine = get_mongodb_engine(database=database, collection=collection)
         print(f"insert_many_records() -> Inserting {len(data['records'])} records in collection {collection} "
               f"of database {database}")
         engine.insert_many(data['records'])
@@ -90,7 +90,17 @@ def insert_many_records(request: Request, data: dict):
 """ Configs """
 @router_config.post("/pull", response_description="Get config info", response_model=List[dict])
 def get_configs_route(request: Request, opts: dict):
+    """Get configs"""
     return get_configs(request, opts.get('name'))
+
+@router_config.post("/validate", response_description="Validate config", response_model=Dict[str, bool])
+def validate_configs_route(request: Request, data: dict):
+    """Check if config is valid. If config exists with the same id, they must match exactly."""
+    assert set(data) == {'config', 'collection'}
+    assert isinstance(data['config'], dict)
+    assert isinstance(data['collection'], str)
+
+    return {'valid': validate_config(data['config'], data['collection'])}
 
 
 
@@ -99,7 +109,7 @@ def get_configs_route(request: Request, opts: dict):
 @router_rawdata.get("/users/pull", response_description="Get video usernames", response_model=List[str])
 def get_video_usernames(request: Request):
     """Get all usernames"""
-    engine, tablename = get_mysql_engine_and_tablename(request, 'users')
+    engine, tablename = get_mysql_engine_and_tablename('users')
     query = make_sql_query(tablename)
     ids: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
     ids: List[str] = [id_[0] for id_ in ids]
@@ -108,7 +118,7 @@ def get_video_usernames(request: Request):
 @router_rawdata.post("/meta/pull", response_description="Get video metadata", response_model=List[tuple])
 def get_video_metadata(request: Request, opts: dict):
     """Get video meta information"""
-    engine, tablename = get_mysql_engine_and_tablename(request, 'meta')
+    engine, tablename = get_mysql_engine_and_tablename('meta')
     query = make_sql_query(tablename, opts.get('cols'), opts.get('where'), opts.get('limit'))
     records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
     return records
@@ -125,10 +135,9 @@ def post_video_metadata(request: Request, data: dict):
 @router_rawdata.post("/stats/pull", response_description="Get video stats", response_model=List[tuple])
 def get_video_stats(request: Request, opts: dict):
     """Get video meta information"""
-    engine, tablename = get_mysql_engine_and_tablename(request, 'stats')
+    engine, tablename = get_mysql_engine_and_tablename('stats')
     query = make_sql_query(tablename, opts.get('cols'), opts.get('where'), opts.get('limit'))
     records: List[tuple] = engine.select_records(DB_VIDEOS_DATABASE, query)
-    del engine
     return records
 
 @router_rawdata.post("/stats/push", response_description="Inject video stats", response_model=None)
@@ -154,8 +163,9 @@ def post_video_stats(request: Request, data: dict):
                                      data[COL_VIDEO_ID],
                                      url,
                                      verbose=True)
-        except:
+        except Exception as e:
             print(f'Exception during MongoDB database injection for {COL_THUMBNAIL_URL}.')
+            print(e)
 
 @router_rawdata.websocket("/join")
 async def get_video_meta_stats_join(websocket: WebSocket):
