@@ -4,16 +4,23 @@ THIS PROJECT IS UNDER CONSTRUCTION. IT'S CURRENTLY HIGHLY MODULAR ALBEIT MONOLIT
 
 ## Summary
 
-This repo contains an end-to-end, full-stack web application implementing predictive analytics for YouTube (YT) videos. The goal is to predict future stats (e.g. likes, comments, views) from current stats, metadata (e.g. subscribers), text (e.g. title, description, tags, keywords), and the video's thumbnail image.
+This repo contains an end-to-end, full-stack web application implementing predictive analytics for YouTube (YT) videos. 
+The goal is to predict future stats (e.g. likes, comments, views) from current stats, metadata (e.g. subscribers), 
+text (e.g. title, description, tags, keywords), and the video's thumbnail image.
 
 1. Data collection: A backend web crawler process regularly pulls video stats and other info for desired YT channels and stores them in MySQL tables.
 2. Featurization: An ETL pipeline converts these records into "prefeatures" that are fed through a second ETL pipeline to produce "features", stored in MongoDB collections. Prefeaturization is sample-specific while featurization involves creating a dictionary for the text features from a desired subset of videos and users, and thus requires processing the entire dataset together.
 3. Model training: A desired feature set is used to train a regression model that predicts future video stats from stats at a previous point in time.
 4. Front-end dashboard: A Flask-served dashboard enables exploration of the database (slicing and filtering as desired), training models with desired feature subsets, and visualizing predictions.
 
-The pipeline components use Python generators wherever possible to minimize memory use. This is a common data streaming technique when working with large-scale document datasets and is standard practice in text-processing libraries like Gensim (used in this project).
+The pipeline components use Python generators wherever possible to minimize memory use. 
+This is a common data streaming technique when working with large-scale document datasets and is standard practice 
+in text-processing libraries like Gensim (used in this project).
 
-All steps in the pipeline have associated JSON-format configs that are stored alongside the corresponding ETL output artifacts. This enables feature and model versioning (a.k.a. provenance) and therefore reproducibility. If all data stores (not raw data!) are emptied, the pipeline can be re-run with the same config options to produce the same outputs.
+All steps in the pipeline have associated JSON-format configs that are stored alongside the corresponding ETL output 
+artifacts. This enables feature and model versioning (a.k.a. provenance) and therefore reproducibility. 
+If all data stores (not raw data!) are emptied, the pipeline can be re-run with the same config options to 
+produce the same outputs.
 
 Raw data is continuously crawled for the latest videos, so we can run predictive analytics in real-time!
 
@@ -23,7 +30,7 @@ Raw data is continuously crawled for the latest videos, so we can run predictive
 Frameworks/technologies used (initial dev, on-prem):
 - Database: MySQL, MongoDB, Redis
 - Web: Scrapy, Flask (w/ Jinja, Plotly)
-- API: FastAPI (w/ OpenAPI spec)
+- API: FastAPI
 - Text: Gensim
 - Automation/Deployment: Make, Github Actions
 - Packaging: Poetry
@@ -114,6 +121,7 @@ There are several `make` commands that are utilities for running processes from 
 - `make crawl`
 - `make dashboard`
 - `make test`
+- `make api`
 
 These activate the conda env, cd into a directory, and then run a script. See the `Makefile` for more info.
 
@@ -191,12 +199,15 @@ linear dimensionality reduction or other techniques (e.g. fastText, word2vec). T
 significantly.
 
 
-## APIs
+## API
 
-APIs are implemented as FastAPI processes with an OpenAPI spec and associated Swagger docs.
+The (internal) API is implemented with FastAPI.
+On the host machine, REST endpoints are browsed via the Swagger docs at `http://<HOST>:<PORT>/docs`. This will not, 
+however, show spec info for websocket endpoints.
 
-To launch the API process in dev on the command line (at repo root level): 
-`PYTHONPATH=$(pwd) python src/api/main.py`
+For more on FastAPI documentation, see https://www.linode.com/docs/guides/documenting-a-fastapi-app-with-openapi/.
+
+### Access endpoints from the command line with curl
 
 Example of a CURL request to get selected columns from filtered video `stats` records (and print nicely to command line
 with `jq`):
@@ -206,9 +217,6 @@ curl \
     -X POST \
     -H "Content-Type: application/json" \
     -d '{"cols": ["video_id", "like_count", "view_count", "timestamp_accessed"], "where": {"timestamp_accessed": [["2023-10-19 05:00:00", "2023-10-19 05:05:00"]]}}' \
-    http://<HOST>:<PORT>/rawdata/stats \
+    http://<HOST>:<PORT>/rawdata/stats/pull \
     | jq
 ```
-
-
-### Raw data

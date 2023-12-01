@@ -111,6 +111,14 @@ def validate_config(config: dict,
         return False
     return True
 
+def get_preconfig(request: Request,
+                  collection: str,
+                  etl_config_name: str) \
+        -> dict:
+    """Get preconfig corresponding to a specified config."""
+    prefeatures_etl_configs = [cf for cf in get_configs(request, collection) if cf['_id'] == etl_config_name]
+    assert len(prefeatures_etl_configs) == 1
+    return prefeatures_etl_configs[0]['preconfig']
 
 
 
@@ -200,5 +208,4 @@ def etl_load_vocab_from_db(req: ETLRequestFeatures,
         rec[VOCAB_VOCABULARY_COL] = convert_string_to_gs_dictionary(rec[VOCAB_VOCABULARY_COL])
 
     return rec
-
 

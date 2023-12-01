@@ -1,4 +1,4 @@
-"""Routes for data stores"""
+"""API routes for predictive analytics system"""
 
 from typing import List, Tuple, Generator, Dict
 
@@ -18,7 +18,7 @@ from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE)
 from src.api.routes_utils import (etl_load_vocab_from_db, get_mysql_engine_and_tablename,
                                   setup_rawdata_df_gen, setup_mongodb_df_gen, get_configs, get_mongodb_engine,
-                                  validate_config)
+                                  validate_config, get_preconfig)
 from src.api.app_secrets import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES,
                                  DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS, DB_FEATURES_NOSQL_COLLECTIONS,
                                  DB_FEATURES_NOSQL_DATABASE)
@@ -28,15 +28,15 @@ from src.crawler.crawler.utils.mongodb_utils_ytvideos import fetch_url_and_save_
 
 
 
-
-router_root = APIRouter()
-router_rawdata = APIRouter()
-router_prefeatures = APIRouter()
-router_vocabulary = APIRouter()
-router_config = APIRouter()
-router_features = APIRouter()
-router_models = APIRouter()
-router_mongo = APIRouter()
+# routers (API sets)
+router_base = APIRouter() # misc
+router_mongo = APIRouter() # general-purpose CRUD ops for MongoDB
+router_config = APIRouter() # ETL pipeline config
+router_rawdata = APIRouter() # raw data
+router_prefeatures = APIRouter() # prefeatures
+router_vocabulary = APIRouter() # vocabulary
+router_features = APIRouter() # features
+router_models = APIRouter() # models
 
 
 
@@ -44,7 +44,7 @@ router_mongo = APIRouter()
 
 
 """ Root """
-@router_root.get("/", response_description="Test for liveness", response_model=str)
+@router_base.get("/", response_description="Test for liveness", response_model=str)
 def root(request: Request):
     """Test for liveness"""
     return "Hi there. The YT Analytics API is available."
@@ -199,14 +199,6 @@ async def get_prefeatures(websocket: WebSocket):
     await websocket.accept()
     await run_websocket_stream_server(websocket, setup_df_gen)
 
-def get_preconfig(request: Request,
-                  collection: str,
-                  etl_config_name: str) \
-        -> dict:
-    """Get preconfig corresponding to a specified config."""
-    prefeatures_etl_configs = [cf for cf in get_configs(request, collection) if cf['_id'] == etl_config_name]
-    assert len(prefeatures_etl_configs) == 1
-    return prefeatures_etl_configs[0]['preconfig']
 
 
 
