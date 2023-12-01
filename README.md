@@ -66,6 +66,15 @@ delay between crawls (e.g. 10 seconds). This avoids spamming the target domain's
 
 7. Run the timed crawler script: `src/crawler/main.py`.
 
+### Packaging
+
+This project spans several Python packages (maintained via Poetry and available on PyPI):
+
+- ytpa_utils: general utils used across entire project
+- ytpa_api_utils: API-specific tools
+- db_engines: convenience classes/methods for working with MySQL and MongoDB databases
+
+
 
 ## Config file
 
