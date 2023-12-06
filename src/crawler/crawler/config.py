@@ -35,6 +35,9 @@ if is_local: # local
     DB_MONGO_CONFIG: Dict[str, str] = config['DB_MONGO_CONFIG']
     AUTOCRAWL_CONFIG: dict = config['AUTOCRAWL_CONFIG']
     API_CONFIG: dict = config['API_CONFIG']
+
+    # logger info
+    LOG_DIR_PATH = os.path.join(DATA_ROOT, 'logs')
 else: # CI/CD
     DB_MYSQL_CONFIG = dict(
         host="localhost",
@@ -47,6 +50,7 @@ else: # CI/CD
     )
     REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos'
     API_CONFIG = dict(host=0, port=0)
+    LOG_DIR_PATH = None
 
 # determine DB_INFO
 is_testing = 'RUN_TESTS' in os.environ and os.environ['RUN_TESTS'] == 'yes'

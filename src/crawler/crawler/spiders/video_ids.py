@@ -6,8 +6,11 @@ import requests
 
 import scrapy
 
+from ..logging.loggers import loggers
 from ..utils.mysql_utils_ytvideos import get_user_video_page_urls_from_db
 from ..config import RAWDATA_META_PUSH_ENDPOINT
+
+LOGGER_CRAWLER = loggers.get('crawler')
 
 
 
@@ -30,10 +33,10 @@ class YouTubeLatestVideoIds(scrapy.Spider):
 
     def parse(self, response):
         self.url_count += 1
-        if self.debug_info:
-            print('=' * 50)
-            print(f'Processing URL {self.url_count}/{len(self.start_urls)}')
-            print(response.url)
+        if self.debug_info and LOGGER_CRAWLER is not None:
+            LOGGER_CRAWLER.debug('=' * 50)
+            LOGGER_CRAWLER.debug(f'Processing URL {self.url_count}/{len(self.start_urls)}')
+            LOGGER_CRAWLER.debug(response.url)
 
         ### Get info ###
         # get body as string and find video urls
@@ -45,13 +48,16 @@ class YouTubeLatestVideoIds(scrapy.Spider):
         username: str = response.url.split("/")[-2][1:]  # username portion starts with "@"
         d = dict(video_id=video_ids, username=[username] * len(video_ids))
 
-        if self.debug_info:
-            print(d)
-            print('=' * 50)
+        if self.debug_info and LOGGER_CRAWLER is not None:
+            LOGGER_CRAWLER.debug(d)
+            LOGGER_CRAWLER.debug('=' * 50)
 
         try:
             requests.post(RAWDATA_META_PUSH_ENDPOINT, json=d)
-            if self.debug_info:
-                print('Database injection was successful.')
+            if self.debug_info and LOGGER_CRAWLER is not None:
+                LOGGER_CRAWLER.debug('Database injection was successful.')
         except Exception as e:
-            print(e)
+            if LOGGER_CRAWLER is not None:
+                LOGGER_CRAWLER.exception('Exception in YouTubeLatestVideoIds.')
+            else:
+                print(e)

@@ -17,13 +17,16 @@ from ..constants import (COL_VIDEO_URL, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_L
                          COL_DURATION, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT, COL_COMMENT_COUNT,
                          COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT, COL_TIMESTAMP_ACCESSED, COL_COMMENT, COL_TITLE,
                          COL_KEYWORDS, COL_DESCRIPTION, COL_TAGS, COL_THUMBNAIL_URL)
+from ..logging.loggers import loggers
+
+LOGGER_CRAWLER = loggers.get('crawler')
 
 
 
 def handle_extraction_failure(s: str, response):
-    video_id_ = response.url.split("=")[-1]
-    with open(f'/home/nuc/crawler_data/{video_id_}.txt', 'w', encoding='utf-8') as fp:
-        fp.write(s)
+    # video_id_ = response.url.split("=")[-1]
+    # with open(f'/home/nuc/crawler_data/{video_id_}.txt', 'w', encoding='utf-8') as fp:
+    #     fp.write(s)
     raise Exception(f'\n\n!!!!! Could not parse response body for {response.url}. !!!!!\n\n')
 
 def extract_individual_stats(d: dict,
@@ -105,7 +108,7 @@ def extract_video_stats_from_response_body(response,
     try:
         extract_individual_stats(d, s)
         extract_stats_from_video_details(d, s, fmt, response)
-    except Exception:
+    except Exception as e:
         handle_extraction_failure(s, response)
 
     return d
@@ -135,14 +138,21 @@ class YouTubeVideoStats(scrapy.Spider):
 
     def parse(self, response):
         self.url_count += 1
-        if self.debug_info:
-            print('=' * 50)
-            print(f'Processing URL {self.url_count}/{len(self.start_urls)}')
-            print(response.url)
+        if self.debug_info and LOGGER_CRAWLER is not None:
+            LOGGER_CRAWLER.debug('=' * 50)
+            LOGGER_CRAWLER.debug(f'Processing URL {self.url_count}/{len(self.start_urls)}')
+            LOGGER_CRAWLER.debug(response.url)
 
         ### Get stats info ###
         # get vid info from response body
-        vid_info = extract_video_stats_from_response_body(response, fmt='sql')
+        try:
+            vid_info = extract_video_stats_from_response_body(response, fmt='sql')
+        except Exception as e:
+            if LOGGER_CRAWLER is not None:
+                LOGGER_CRAWLER.exception('Exception in extract_video_stats_from_response_body()')
+            else:
+                print(e)
+            return
         df_row = self.df_videos.loc[self.df_videos[COL_VIDEO_URL] == response.url]
         vid_info[COL_VIDEO_ID] = df_row[COL_VIDEO_ID].iloc[0]
         vid_info[COL_USERNAME] = df_row[COL_USERNAME].iloc[0]
@@ -151,14 +161,17 @@ class YouTubeVideoStats(scrapy.Spider):
         vid_info[COL_TIMESTAMP_FIRST_SEEN] = ts_now_str
 
         ### Insert stats info to MySQL database ###
-        if self.debug_info:
-            pprint(vid_info)
-            print('=' * 50)
+        if self.debug_info and LOGGER_CRAWLER is not None:
+            # pprint(vid_info)
+            LOGGER_CRAWLER.debug('=' * 50)
 
         try:
             requests.post(RAWDATA_STATS_PUSH_ENDPOINT, json=vid_info)
-            if self.debug_info:
-                print('Database injection was successful.')
+            if self.debug_info and LOGGER_CRAWLER is not None:
+                LOGGER_CRAWLER.debug('Database injection was successful.')
         except Exception as e:
-            print(e)
+            if LOGGER_CRAWLER is not None:
+                LOGGER_CRAWLER.exception('Exception in YouTubeVideoStats')
+            else:
+                print(e)
 

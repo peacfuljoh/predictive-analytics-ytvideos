@@ -69,7 +69,7 @@ if 1:
     model_reg = train_regression_model_simple(data_all, ml_request)
 
 # store model
-if 1:
+if 0:
     save_reg_model(model_reg, ml_request, preconfig)
 
 

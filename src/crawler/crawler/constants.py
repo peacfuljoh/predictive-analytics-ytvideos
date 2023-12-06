@@ -69,6 +69,7 @@ MODEL_META_ID = 'meta_id'
 MODEL_SPLIT_NAME = 'name'
 
 # timestamps
+TIMESTAMP_FMT_FPATH = '%Y-%m-%d_%H-%M-%S-%f'
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S.%f'
 DATE_FMT = '%Y-%m-%d'
 func_encode_str = lambda df_col: df_col.astype(str)

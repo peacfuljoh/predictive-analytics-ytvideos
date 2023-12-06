@@ -1,15 +1,18 @@
 """Script for setting up MySQL database and tables for crawled video stats"""
 
+import os
 from typing import List
 
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mysql_utils import insert_records_from_dict
 from ytpa_utils.io_utils import load_json
-from src.crawler.crawler.paths import DB_VIDEO_SQL_FNAME, USERNAMES_JSON_PATH
+from src.crawler.crawler.config import DATA_ROOT, CRAWLER_ROOT
 from src.crawler.crawler.config import DB_MYSQL_CONFIG, DB_INFO
 
 from inspect_videos_db import inspect_videos_db
 
+USERNAMES_JSON_PATH = os.path.join(DATA_ROOT, 'usernames.json')
+DB_VIDEO_SQL_FNAME = os.path.join(CRAWLER_ROOT, 'dbs', 'ytvideos.sql')
 
 DB_VIDEOS_DATABASE = DB_INFO['DB_VIDEOS_DATABASE']
 DB_VIDEOS_TABLES = DB_INFO['DB_VIDEOS_TABLES']
