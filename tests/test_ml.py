@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 from src.ml.ml_request import MLRequest
-from src.ml.ml_models import MLModelLinProjRandom
+from src.ml.models_projection import MLModelLinProjRandom
 from ytpa_utils.df_utils import join_on_dfs
 from src.crawler.crawler.constants import FEATURES_VECTOR_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, \
     ML_MODEL_TYPE_LIN_PROJ_RAND, ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_SR_ALPHAS

@@ -76,7 +76,9 @@ func_encode_str = lambda df_col: df_col.astype(str)
 TIMESTAMP_CONVERSION_FMTS_ENCODE = {
     COL_TIMESTAMP_ACCESSED: {'func': func_encode_str},
     COL_TIMESTAMP_FIRST_SEEN: {'func': func_encode_str},
-    COL_UPLOAD_DATE: {'func': func_encode_str}
+    COL_UPLOAD_DATE: {'func': func_encode_str},
+    VOCAB_TIMESTAMP_COL: {'func': func_encode_str},
+    FEATURES_TIMESTAMP_COL: {'func': func_encode_str}
 }
 func_decode_date = lambda df_col: df_col.map(lambda s: datetime.datetime.strptime(s, DATE_FMT).date())
 # func_decode_timestamp = lambda df_col: pd.to_datetime(df_col, format=TIMESTAMP_FMT)
@@ -92,7 +94,9 @@ func_decode_timestamp = lambda df_col: df_col.map(func_decode_timestamp_one) # T
 TIMESTAMP_CONVERSION_FMTS_DECODE = {
     COL_TIMESTAMP_ACCESSED: {'func': func_decode_timestamp},
     COL_TIMESTAMP_FIRST_SEEN: {'func': func_decode_timestamp},
-    COL_UPLOAD_DATE: {'func': func_decode_date}
+    COL_UPLOAD_DATE: {'func': func_decode_date},
+    VOCAB_TIMESTAMP_COL: {'func': func_decode_timestamp},
+    FEATURES_TIMESTAMP_COL: {'func': func_decode_timestamp}
 }
 
 # ML model
@@ -103,16 +107,16 @@ TRAIN_TEST_SPLIT_DFLT = 0.8
 
 ML_MODEL_TYPE = 'model_type'
 ML_MODEL_HYPERPARAMS = 'hyperparams'
-ML_MODEL_TYPE_LIN_PROJ_RAND = 'lin_proj_random'
-ML_MODEL_TYPE_GAM_TOPIC = 'gam_topic'
+ML_MODEL_TYPE_LIN_PROJ_RAND = 'lin_proj_random' # linear regression model with random projection of bag-of-words
+ML_MODEL_TYPE_SEQ2SEQ = 'seq2seq'
 ML_HYPERPARAM_EMBED_DIM = 'embed_dim'
 ML_HYPERPARAM_RLP_DENSITY = 'lin_proj_random_density'
 ML_HYPERPARAM_SR_ALPHAS = 'simple_reg_alphas'
 ML_HYPERPARAM_SR_CV_SPLIT = 'simple_reg_cv_split'
 ML_HYPERPARAM_SR_CV_COUNT = 'simple_reg_cv_count'
 SPLIT_TRAIN_BY_USERNAME = 'split_train_by_username'
-ML_CONFIG_KEYS = [ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, 'db']
-ML_MODEL_TYPES = [ML_MODEL_TYPE_LIN_PROJ_RAND, ML_MODEL_TYPE_GAM_TOPIC]
+ML_CONFIG_KEYS = [ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS]
+ML_MODEL_TYPES = [ML_MODEL_TYPE_LIN_PROJ_RAND, ML_MODEL_TYPE_SEQ2SEQ]
 TRAIN_TEST_SPLIT = 'tt_split'
 KEYS_TRAIN_ID = [COL_USERNAME, COL_VIDEO_ID]
 KEYS_TRAIN_NUM = [COL_COMMENT_COUNT, COL_LIKE_COUNT, COL_VIEW_COUNT, COL_SUBSCRIBER_COUNT]
@@ -126,12 +130,12 @@ MODEL_DICT_MODEL = 'model'
 MODEL_DICT_CONFIG = 'config'
 
 # col names for DataFrames in LR model
-KEYS_FOR_FIT_NONBOW_SRC = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]
+KEYS_FOR_FIT_NONBOW_SRC = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF] # excludes FEATURES_VECTOR_COL
 KEYS_FOR_FIT_NONBOW_SRC = [key + '_src' for key in KEYS_FOR_FIT_NONBOW_SRC] + [KEY_TRAIN_TIME_DIFF + '_tgt']
-KEYS_FOR_FIT_NONBOW_TGT = KEYS_TRAIN_NUM_TGT
-KEYS_FOR_FIT_NONBOW_TGT = [key + '_tgt' for key in KEYS_FOR_FIT_NONBOW_TGT]
+KEYS_FOR_FIT_NONBOW_TGT = [key + '_tgt' for key in KEYS_TRAIN_NUM_TGT]
 KEYS_FOR_PRED_NONBOW_ID = KEYS_TRAIN_ID + [KEY_TRAIN_TIME_DIFF + suffix for suffix in ['_src', '_tgt']]
 KEYS_FOR_PRED_NONBOW_TGT = [key + '_pred' for key in KEYS_TRAIN_NUM_TGT]
+assert [val[:-4] for val in KEYS_FOR_FIT_NONBOW_TGT] == [val[:-5] for val in KEYS_FOR_PRED_NONBOW_TGT]
 
 # ETL config key info
 ETL_CONFIG_VALID_KEYS_PREFEATURES = dict(

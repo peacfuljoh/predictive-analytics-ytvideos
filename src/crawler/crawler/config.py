@@ -101,6 +101,7 @@ hp = f"{API_CONFIG['host']}:{API_CONFIG['port']}"
 
 CONFIGS_ENDPOINT = f"http://{hp}/config/pull"
 CONFIGS_VALIDATE_ENDPOINT = f"http://{hp}/config/validate"
+CONFIG_TIMESTAMP_SETS_ENDPOINT = f"http://{hp}/config/timestamp_sets"
 MONGO_INSERT_ONE_ENDPOINT = f"http://{hp}/mongo/insert_one"
 MONGO_INSERT_MANY_ENDPOINT = f"http://{hp}/mongo/insert_many"
 

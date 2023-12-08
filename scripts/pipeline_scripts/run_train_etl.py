@@ -1,19 +1,17 @@
 """Script for testing train and test"""
 
 from src.ml.train_utils import (load_feature_records, train_test_split, prepare_feature_records,
-                                train_regression_model_simple, save_reg_model)
+                                train_regression_model_simple, train_regression_model_seq2seq, save_reg_model)
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                                            FEATURES_TIMESTAMP_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
                                            ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_EMBED_DIM,
                                            ML_MODEL_TYPE_LIN_PROJ_RAND, VEC_EMBED_DIMS, TRAIN_TEST_SPLIT,
+                                           ML_MODEL_TYPE_SEQ2SEQ,
                                            ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
                                            ML_HYPERPARAM_SR_CV_COUNT, SPLIT_TRAIN_BY_USERNAME)
 from ytpa_utils.misc_utils import print_df_full
 from src.ml.ml_request import MLRequest
-from src.crawler.crawler.config import DB_INFO, DB_MYSQL_CONFIG, DB_MONGO_CONFIG
 
-
-db_ = {'db_info': DB_INFO, 'db_mysql_config': DB_MYSQL_CONFIG, 'db_mongo_config': DB_MONGO_CONFIG}
 
 
 # specify which version of the feature store to use
@@ -25,26 +23,47 @@ preconfig = {
 }
 
 # specify ML model options
-rlp_density = 0.01 # density of sparse projector matrix
-train_test_split_fract = 0.8 # fraction of raw_data for train
-sr_alphas = [1e-6, 1e-4, 1e-2] # simple regression regularization coefficient
-cv_split = 0.9 # cross-validation split ratio
-cv_count = 10 # number of CV splits
+# model_type = ML_MODEL_TYPE_LIN_PROJ_RAND
+model_type = ML_MODEL_TYPE_SEQ2SEQ
+
+train_test_split_fract = 0.8 # fraction of data for train
 split_train_by_username = True
 
-config_ml = {
-    ML_MODEL_TYPE: ML_MODEL_TYPE_LIN_PROJ_RAND,
-    ML_MODEL_HYPERPARAMS: {
-        ML_HYPERPARAM_EMBED_DIM: VEC_EMBED_DIMS, # number of dimensions in dense vectors after projecting sparse bow vecs
-        ML_HYPERPARAM_RLP_DENSITY: rlp_density,
-        ML_HYPERPARAM_SR_ALPHAS: sr_alphas,
-        ML_HYPERPARAM_SR_CV_SPLIT: cv_split,
-        ML_HYPERPARAM_SR_CV_COUNT: cv_count
-    },
-    TRAIN_TEST_SPLIT: train_test_split_fract,
-    SPLIT_TRAIN_BY_USERNAME: split_train_by_username,
-    'db': db_
-}
+if model_type == ML_MODEL_TYPE_LIN_PROJ_RAND:
+    rlp_density = 0.01 # density of sparse projector matrix
+    sr_alphas = [1e-6, 1e-4, 1e-2] # simple regression regularization coefficient
+    cv_split = 0.9 # cross-validation split ratio
+    cv_count = 10 # number of CV splits
+
+    config_ml = {
+        ML_MODEL_TYPE: ML_MODEL_TYPE_SEQ2SEQ,
+        ML_MODEL_HYPERPARAMS: {
+            ML_HYPERPARAM_EMBED_DIM: VEC_EMBED_DIMS, # no. dims in dense vectors after projecting sparse bow vecs
+            ML_HYPERPARAM_RLP_DENSITY: rlp_density,
+            ML_HYPERPARAM_SR_ALPHAS: sr_alphas,
+            ML_HYPERPARAM_SR_CV_SPLIT: cv_split,
+            ML_HYPERPARAM_SR_CV_COUNT: cv_count
+        }
+    }
+
+    split_by = None
+elif model_type == ML_MODEL_TYPE_SEQ2SEQ:
+
+
+    config_ml = {
+        ML_MODEL_TYPE: ML_MODEL_TYPE_SEQ2SEQ,
+        ML_MODEL_HYPERPARAMS: {
+            ML_HYPERPARAM_EMBED_DIM: VEC_EMBED_DIMS,
+        }
+    }
+
+    split_by = 'video_id'
+else:
+    raise NotImplementedError
+
+config_ml[TRAIN_TEST_SPLIT] = train_test_split_fract
+config_ml[SPLIT_TRAIN_BY_USERNAME] = split_train_by_username
+
 
 ml_request = MLRequest(config_ml)
 
@@ -60,13 +79,15 @@ if 1:
 
     # preprocess feature records
     data_all, model_embed = prepare_feature_records(df_gen, ml_request)
-    del df_gen
 
     # split into train and test
-    train_test_split(data_all, ml_request)  # in-place
+    train_test_split(data_all, ml_request, split_by=split_by)  # in-place
 
     # train model
-    model_reg = train_regression_model_simple(data_all, ml_request)
+    if model_type == ML_MODEL_TYPE_LIN_PROJ_RAND:
+        model_reg = train_regression_model_simple(data_all, ml_request)
+    elif model_type == ML_MODEL_TYPE_SEQ2SEQ:
+        model_reg = train_regression_model_seq2seq(data_all, ml_request)
 
 # store model
 if 0:

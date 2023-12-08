@@ -6,7 +6,7 @@ import requests
 
 import scrapy
 
-from ..logging.loggers import loggers
+from src.crawler.crawler.loggers import loggers
 from ..utils.mysql_utils_ytvideos import get_user_video_page_urls_from_db
 from ..config import RAWDATA_META_PUSH_ENDPOINT
 

@@ -8,8 +8,8 @@ import logging
 
 from ytpa_utils.time_utils import get_ts_now_formatted
 
-from ..config import LOG_DIR_PATH
-from ..constants import TIMESTAMP_FMT_FPATH
+from src.crawler.crawler.config import LOG_DIR_PATH
+from src.crawler.crawler.constants import TIMESTAMP_FMT_FPATH
 
 
 # setup loggers if log files path is defined

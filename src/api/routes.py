@@ -11,14 +11,16 @@ from db_engines.mysql_utils import insert_records_from_dict, update_records_from
 from ytpa_utils.sql_utils import make_sql_query
 from ytpa_utils.val_utils import is_subset, is_list_of_instances
 from ytpa_utils.misc_utils import run_func_and_return_stdout
+from ytpa_utils.df_utils import df_dt_codec
 
 from ytpa_api_utils.websocket_utils import run_websocket_stream_server
 
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, VOCAB_TIMESTAMP_COL, COL_THUMBNAIL_URL, COL_VIDEO_ID,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE)
+from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL
 from src.api.routes_utils import (etl_load_vocab_from_db, get_mysql_engine_and_tablename,
                                   setup_rawdata_df_gen, setup_mongodb_df_gen, get_configs, get_mongodb_engine,
-                                  validate_config, get_preconfig)
+                                  validate_config, get_preconfig, load_config_timestamp_sets_for_features)
 from src.api.app_secrets import (DB_INFO, DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_DATABASE, DB_VIDEOS_TABLES,
                                  DB_VIDEOS_NOSQL_DATABASE, DB_VIDEOS_NOSQL_COLLECTIONS, DB_FEATURES_NOSQL_COLLECTIONS,
                                  DB_FEATURES_NOSQL_DATABASE)
@@ -101,6 +103,20 @@ def validate_configs_route(request: Request, data: dict):
     assert isinstance(data['collection'], str)
 
     return {'valid': validate_config(data['config'], data['collection'])}
+
+@router_config.post("/timestamp_sets", response_description="Get config names and their timestamp sets for "
+                                                            "ML training", response_model=dict)
+def validate_configs_route(request: Request, config_opts: dict):
+    assert is_subset(config_opts, {PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
+                                   FEATURES_TIMESTAMP_COL})
+
+    # get all config combinations and their timestamps (limited by config names given in config_opts)
+    configs_timestamps: pd.DataFrame = load_config_timestamp_sets_for_features(configs=config_opts)
+
+    # make JSONifiable
+    df_dt_codec(configs_timestamps, TIMESTAMP_CONVERSION_FMTS_ENCODE)
+
+    return configs_timestamps.to_dict()
 
 
 

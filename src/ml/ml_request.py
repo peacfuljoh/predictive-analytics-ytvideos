@@ -2,10 +2,11 @@
 
 import copy
 
-from src.crawler.crawler.constants import (ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, ML_MODEL_TYPE_LIN_PROJ_RAND, \
-                                           ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS, ML_MODEL_TYPES, TRAIN_TEST_SPLIT,
+from src.crawler.crawler.constants import (ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, ML_MODEL_TYPE_LIN_PROJ_RAND,
+                                           ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS,
+                                           ML_MODEL_TYPES, TRAIN_TEST_SPLIT,
                                            TRAIN_TEST_SPLIT_DFLT, ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
-                                           ML_HYPERPARAM_SR_CV_COUNT)
+                                           ML_HYPERPARAM_SR_CV_COUNT, ML_MODEL_TYPE_SEQ2SEQ)
 from ytpa_utils.val_utils import is_list_of_floats
 
 
@@ -30,6 +31,8 @@ class MLRequest():
         # validate by specific model types
         if config[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND:
             self._validate_lin_proj_rand(config)
+        elif config[ML_MODEL_TYPE] == ML_MODEL_TYPE_SEQ2SEQ:
+            self._validate_seq2seq(config)
         else:
             raise NotImplementedError(f'The specified model type ({config[ML_MODEL_TYPE]}) is not available.')
 
@@ -61,6 +64,15 @@ class MLRequest():
         # cross validation
         assert ML_HYPERPARAM_SR_CV_SPLIT in hp
         assert ML_HYPERPARAM_SR_CV_COUNT in hp
+
+    def _validate_seq2seq(self, config: dict):
+        """Validate config options specific to the random linear projection model."""
+        # validate hyperparameters
+        hp = config[ML_MODEL_HYPERPARAMS]
+
+        # embedding
+        assert ML_HYPERPARAM_EMBED_DIM in hp
+        assert isinstance(hp[ML_HYPERPARAM_EMBED_DIM], int)
 
     def get_config(self) -> dict:
         assert self.get_valid()

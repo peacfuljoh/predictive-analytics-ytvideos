@@ -1,26 +1,32 @@
 """Train utils"""
-
+import datetime
 from typing import Generator, Tuple, Dict, List, Optional, Union
+import requests
 
 import pandas as pd
 import numpy as np
+from scipy.interpolate import interp1d
 
-from db_engines.mongodb_utils import get_mongodb_records_gen
-from db_engines.mongodb_engine import MongoDBEngine
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
-                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL,
-                                           TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
-                                           NUM_INTVLS_PER_VIDEO, ML_MODEL_TYPE, ML_MODEL_TYPE_LIN_PROJ_RAND, TRAIN_TEST_SPLIT,
-                                           KEYS_TRAIN_ID, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT,
+                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
+                                           NUM_INTVLS_PER_VIDEO, ML_MODEL_TYPE, ML_MODEL_TYPE_LIN_PROJ_RAND,
+                                           ML_MODEL_TYPE_SEQ2SEQ, ML_MODEL_TYPES, KEYS_TRAIN_NUM,
+                                           TRAIN_TEST_SPLIT, KEYS_TRAIN_ID, KEYS_TRAIN_NUM_TGT,
                                            KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME, KEYS_FOR_PRED_NONBOW_ID,
                                            COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED,
-                                           MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME)
-from src.crawler.crawler.utils.mongodb_utils_ytvideos import (load_config_timestamp_sets_for_features)
+                                           MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME,
+                                           TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE)
+from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT
 from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances
 from ytpa_utils.time_utils import get_ts_now_str
+from ytpa_utils.df_utils import df_dt_codec
+from ytpa_api_utils.websocket_utils import df_generator_ws
+from src.ml.ml_constants import KEYS_EXTRACT_LIN, KEYS_FEAT_SRC_LIN, KEYS_FEAT_TGT_LIN, KEYS_EXTRACT_SEQ2SEQ
 from src.ml.ml_request import MLRequest
-from src.ml.ml_models import MLModelLinProjRandom, MLModelRegressionSimple
+from src.ml.models_linear import MLModelBaseRegressionSimple
+from src.ml.models_nn import MLModelSeq2Seq
+from src.ml.models_projection import MLModelLinProjRandom
 from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
 
@@ -33,27 +39,29 @@ def load_feature_records(configs: dict,
                          ml_request: MLRequest) \
         -> Tuple[Generator[pd.DataFrame, None, None], Dict[str, str]]:
     """Get DataFrame generator for features"""
-    db_ = ml_request.get_db()
-    mongo_config = db_['db_mongo_config']
-    database = db_['db_info']['DB_FEATURES_NOSQL_DATABASE']
-    collection = db_['db_info']['DB_FEATURES_NOSQL_COLLECTIONS']['features']
-
     assert PREFEATURES_ETL_CONFIG_COL in configs
     assert VOCAB_ETL_CONFIG_COL in configs
     assert FEATURES_ETL_CONFIG_COL in configs
 
     # get all available config and timestamp combinations
-    configs_timestamps = load_config_timestamp_sets_for_features(configs=configs)
+    res = requests.post(CONFIG_TIMESTAMP_SETS_ENDPOINT, json=configs)
+    configs_timestamps = pd.DataFrame(res.json())
+    df_dt_codec(configs_timestamps, TIMESTAMP_CONVERSION_FMTS_DECODE)
 
     # choose a configs-timestamps combination
     mask = configs_timestamps[FEATURES_TIMESTAMP_COL] == configs_timestamps[FEATURES_TIMESTAMP_COL].max()
-    config_chosen = configs_timestamps.loc[mask].iloc[0].to_dict()
+    config_chosen: pd.DataFrame = configs_timestamps.loc[mask].iloc[:1]
     # print_df_full(config_chosen)
 
     # get a features DataFrame generator
-    df_gen = get_mongodb_records_gen(database, collection, mongo_config, filter=config_chosen)
+    config_chosen_strs = config_chosen.copy()
+    df_dt_codec(config_chosen_strs, TIMESTAMP_CONVERSION_FMTS_ENCODE) # make msg serializable
+    filter_: dict = config_chosen_strs.iloc[0].to_dict()
+    etl_config_options = {'extract': {'filter': filter_}}
+    df_gen = df_generator_ws(FEATURES_ENDPOINT, etl_config_options, transformations=TIMESTAMP_CONVERSION_FMTS_DECODE)
 
-    return df_gen, {**configs, **config_chosen}
+    return df_gen, {**configs, **config_chosen.iloc[0].to_dict()}
+
 
 
 """ Feature preparation """
@@ -133,7 +141,7 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
     """
     data_all: List[pd.DataFrame] = []
 
-    for ids, df in df_data.groupby(KEYS_TRAIN_ID): # one group per video
+    for _, df in df_data.groupby(KEYS_TRAIN_ID): # one group per video
         # sort by timestamp (index pairing assumes time-ordering)
         df = df.sort_values(by=[COL_TIMESTAMP_ACCESSED])
 
@@ -160,62 +168,183 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
 
     return df_data
 
-def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
-                            ml_request: MLRequest) \
+def resample_to_uniform_grid(df_all: pd.DataFrame, period: int = 3600):
+    """
+    Resample stats sequences in dataframe to uniform time spacing.
+    Input arg 'period' is in units of seconds.
+    """
+    # TODO: write test for this and verify correctness visually
+
+    df_resamp = []
+    for _, df in df_all.groupby(KEYS_TRAIN_ID):
+        # get time and numerical columns
+        dt_start = df[COL_TIMESTAMP_ACCESSED].iloc[0]
+        ts: np.ndarray = (df[COL_TIMESTAMP_ACCESSED] - dt_start).dt.total_seconds().to_numpy() # timestamps in seconds
+        data: np.ndarray = df.drop(columns=KEYS_TRAIN_ID + [COL_TIMESTAMP_ACCESSED]).to_numpy() # numerical data array
+
+        # interpolate
+        ts_resamp = np.arange(np.min(ts), np.max(ts), period) # starts at 0
+        f = interp1d(ts, data, kind='spline', axis=0, fill_value="extrapolate")
+        data_resamp = f(ts_resamp)
+        dt_resamp = dt_start + ts_resamp * datetime.timedelta(seconds=1)
+
+        # put together resampled DataFrame
+        df_resamp = pd.concat((
+            pd.DataFrame(data_resamp, columns=KEYS_TRAIN_NUM),
+            pd.Series(dt_resamp, name=COL_TIMESTAMP_ACCESSED)
+        ), axis=1)
+        for col_id in KEYS_TRAIN_ID:
+            df_resamp[col_id] = df.iloc[0][col_id]
+
+    return pd.concat(df_resamp, axis=0, ignore_index=True)
+
+def prepare_feature_records_lin_reg(df_gen: Generator[pd.DataFrame, None, None],
+                                    ml_request: MLRequest) \
         -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
-    """Stream raw_data in and convert to format needed for ML"""
-    config_ml = ml_request.get_config()
-    assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
-
-    # setup
-    keys_extract = KEYS_TRAIN_ID + [FEATURES_VECTOR_COL, COL_TIMESTAMP_ACCESSED] + KEYS_TRAIN_NUM  # define cols to keep
-    keys_feat_src = KEYS_TRAIN_NUM + [KEY_TRAIN_TIME_DIFF]  # columns of interest for output vectors
-    keys_feat_tgt = KEYS_TRAIN_NUM_TGT + [KEY_TRAIN_TIME_DIFF] # columns of interest for output vectors
-
+    """Prepare feature records for linear regression model."""
     # stream all raw_data into RAM
-    df_data = stream_all_features_into_ram(df_gen, keys_extract)
+    df_data = stream_all_features_into_ram(df_gen, KEYS_EXTRACT_LIN)
 
     # filter by group and collect bag-of-words info in a separate DataFrame
     df_nonbow, df_bow = split_feature_df_and_filter(df_data, MIN_VID_SAMPS_FOR_DATASET)
 
     # embed bag-of-words features: raw_data-independent dimensionality reduction
-    model_embed = embed_bow_with_lin_proj_rand(ml_request, df_bow) # df_bow modified in-place
+    model_embed = embed_bow_with_lin_proj_rand(ml_request, df_bow)  # df_bow modified in-place
 
     # prepare non-bow features
-    df_nonbow = prepare_input_output_vectors(df_nonbow, keys_feat_src, keys_feat_tgt)
+    df_nonbow = prepare_input_output_vectors(df_nonbow, KEYS_FEAT_SRC_LIN, KEYS_FEAT_TGT_LIN)
 
     return dict(nonbow=df_nonbow, bow=df_bow), model_embed
 
-def train_test_split(data: Dict[str, pd.DataFrame],
-                     ml_request: MLRequest):
-    """Split full dataset into train and test sets"""
-    tt_split: float = ml_request.get_config()[TRAIN_TEST_SPLIT]
+def prepare_feature_records_seq2seq(df_gen: Generator[pd.DataFrame, None, None],
+                                    ml_request: MLRequest) \
+        -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
+    """Prepare feature records for sequence-to-sequence model."""
+    # stream all raw_data into RAM
+    df_data = stream_all_features_into_ram(df_gen, KEYS_EXTRACT_SEQ2SEQ)
 
+    # filter by group and collect bag-of-words info in a separate DataFrame
+    df_nonbow, df_bow = split_feature_df_and_filter(df_data, MIN_VID_SAMPS_FOR_DATASET)
+
+    # embed bag-of-words features: raw_data-independent dimensionality reduction
+    model_embed = embed_bow_with_lin_proj_rand(ml_request, df_bow)  # df_bow modified in-place
+
+    # resample to uniform grid
+    df_nonbow = resample_to_uniform_grid(df_nonbow)
+
+    return dict(nonbow=df_nonbow, bow=df_bow), model_embed
+
+def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
+                            ml_request: MLRequest) \
+        -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
+    """Stream raw_data in and convert to format needed for ML"""
+    config_ml = ml_request.get_config()
+    assert config_ml[ML_MODEL_TYPE] in ML_MODEL_TYPES
+
+    if config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND:
+        data_all, model_embed = prepare_feature_records_lin_reg(df_gen, ml_request)
+    elif config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_SEQ2SEQ:
+        data_all, model_embed = prepare_feature_records_seq2seq(df_gen, ml_request)
+    else:
+        raise NotImplementedError
+
+    return data_all, model_embed
+
+def train_test_split_uniform(data: Dict[str, pd.DataFrame],
+                             tt_split: float) \
+        -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Train-test split uniformly across all samples"""
     data_nonbow = data['nonbow']
     num_samps = len(data_nonbow)
-    num_samp_train = int(num_samps * tt_split)
+    num_train = int(num_samps * tt_split)
     ii = np.random.permutation(num_samps)
-    data_train = data_nonbow.iloc[ii[:num_samp_train]]
-    data_test = data_nonbow.iloc[ii[num_samp_train:]]
+    data_train = data_nonbow.iloc[ii[:num_train]]
+    data_test = data_nonbow.iloc[ii[num_train:]]
 
-    data['nonbow_train'] = data_train
-    data['nonbow_test'] = data_test
+    return data_train, data_test
+
+def train_test_split_video_id(data: Dict[str, pd.DataFrame],
+                              tt_split: float) \
+        -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Train-test split by video_id. Split is performed one a per-username basis and then merged across users."""
+    data_train = []
+    data_test = []
+    for _, df in data['non_bow'].groupby(COL_USERNAME):
+        video_ids = df[COL_VIDEO_ID].unique()
+        num_vids = len(video_ids)
+        num_train = int(num_vids * tt_split)
+        ii = np.random.permutation(num_vids)
+        video_ids_train = video_ids[ii[:num_train]]
+        video_ids_test = video_ids[ii[num_train:]]
+        mask_train = df[COL_VIDEO_ID].isin(video_ids_train)
+        mask_test = df[COL_VIDEO_ID].isin(video_ids_test)
+        data_train.append(df[mask_train])
+        data_test.append(df[mask_test])
+
+    data_train = pd.concat(data_train, axis=0, ignore_index=True)
+    data_test = pd.concat(data_test, axis=0, ignore_index=True)
+
+    return data_train, data_test
+
+def train_test_split(data: Dict[str, pd.DataFrame],
+                     ml_request: MLRequest,
+                     split_by: Optional[str] = None):
+    """
+    Split non-bow data into train and test sets.
+    Input arg 'split_by' determines how examples are split (i.e. uniformly, by video_id, etc.).
+    """
+    assert split_by in [None, 'video_id']
+
+    tt_split: float = ml_request.get_config()[TRAIN_TEST_SPLIT]
+
+    if split_by is None:
+        data['nonbow_train'], data['nonbow_test'] = train_test_split_uniform(data, tt_split)
+    elif split_by == 'video_id':
+        data['nonbow_train'], data['nonbow_test'] = train_test_split_video_id(data, tt_split)
+
     del data['nonbow'] # save on memory
+
+def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
+                                   ml_request: MLRequest) \
+        -> MLModelSeq2Seq:
+    """Train sequence-to-sequence prediction model"""
+    config_ml = ml_request.get_config()
+    assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_SEQ2SEQ
+
+    # fit model
+    model = MLModelSeq2Seq(ml_request, verbose=True)
+    model.fit(data['nonbow_train'], data['bow'])
+
+    # see predictions
+    if 1:
+        import matplotlib.pyplot as plt
+
+        # if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
+        #     plot_predictions(data, model)
+        # else:
+        #     for uname, model_ in model.items():
+        #         df_nonbow = data['nonbow_test']
+        #         data_ = dict(nonbow_test=df_nonbow[df_nonbow[COL_USERNAME] == uname])
+        #         plot_predictions(data_, model_)
+
+        plt.show()
+
+    return model
 
 def train_regression_model_simple(data: Dict[str, pd.DataFrame],
                                   ml_request: MLRequest) \
-        -> Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]]:
+        -> Union[MLModelBaseRegressionSimple, Dict[str, MLModelBaseRegressionSimple]]:
     """Train simple regression model"""
     config_ml = ml_request.get_config()
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
 
     # fit model
     if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
-        model = MLModelRegressionSimple(ml_request, verbose=True)
+        model = MLModelBaseRegressionSimple(ml_request, verbose=True)
         model.fit(data['nonbow_train'], data['bow'])
     else:
         usernames = data['nonbow_train'][COL_USERNAME].drop_duplicates()
-        model = {uname: MLModelRegressionSimple(ml_request, verbose=True) for uname in usernames}
+        model = {uname: MLModelBaseRegressionSimple(ml_request, verbose=True) for uname in usernames}
         for uname, model_ in model.items():
             df_nonbow = data['nonbow_train']
             df_nonbow = df_nonbow[df_nonbow[COL_USERNAME] == uname]
@@ -223,17 +352,17 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
             df_bow = df_bow[df_bow[COL_USERNAME] == uname]
             model_.fit(df_nonbow, df_bow)
 
-        if 1:
+        if 0:
             # try model encoding and decoding
             model_dicts = {}
             for uname, model_ in model.items():
                 model_dicts[uname] = model_.encode()
             model = {}
             for uname in usernames:
-                model[uname] = MLModelRegressionSimple(verbose=True, model_dict=model_dicts[uname])
+                model[uname] = MLModelBaseRegressionSimple(verbose=True, model_dict=model_dicts[uname])
 
     # see predictions
-    if 0:
+    if 1:
         import matplotlib.pyplot as plt
 
         if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
@@ -288,35 +417,7 @@ def plot_predictions(data: Dict[str, pd.DataFrame],
                 # predict with model
                 df_pred = [model.predict(df_) for df_ in df_test]
             else: # incremental prediction from a starting time
-                # TODO: move the incremental prediction block to its own function (to within lin reg class?)
-                df_pred = []
-
-                # create test sets anchored on a few src times
-                for j in idxs_start:
-                    rec_first = df_i.iloc[j]
-                    df_ = pd.DataFrame([rec_first])
-                    times_ = np.linspace(rec_first[t0_col], rec_last[t0_col] * 1.25, n_pred)
-
-                    df_pred_ = []
-                    for k, t_ in enumerate(times_):
-                        if k == 0:
-                            # first sample
-                            df_pred_one = df_[KEYS_FOR_PRED_NONBOW_ID].copy()
-                            df_pred_one[KEY_TRAIN_TIME_DIFF + '_tgt'] = df_pred_one[KEY_TRAIN_TIME_DIFF + '_src']
-                            for key in KEYS_TRAIN_NUM_TGT:
-                                df_pred_one[key + '_pred'] = df_[key + '_src']
-                        else:
-                            # predict one step forward (update src time, tgt time, and src stats)
-                            df_test = df_[KEYS_FOR_PRED_NONBOW_ID].copy()
-                            df_test[KEY_TRAIN_TIME_DIFF + '_src'] = df_pred_[-1][KEY_TRAIN_TIME_DIFF + '_tgt']
-                            df_test[KEY_TRAIN_TIME_DIFF + '_tgt'] = t_
-                            for key in KEYS_TRAIN_NUM_TGT:
-                                df_test[key + '_src'] = df_pred_[-1][key + '_pred']
-                            for key in ['subscriber_count_src']:
-                                df_test[key] = df_[key]
-                            df_pred_one = model.predict(df_test)
-                        df_pred_.append(df_pred_one)
-                    df_pred.append(pd.concat(df_pred_, axis=0, ignore_index=True))
+                df_pred = incremental_pred(idxs_start, model, df_i, t0_col, rec_last, n_pred)
 
             # plot
             keys_tgt = KEYS_TRAIN_NUM_TGT
@@ -329,6 +430,39 @@ def plot_predictions(data: Dict[str, pd.DataFrame],
                     axes[i, j].set_title(key)
             axes[i, 0].set_ylabel(username + '\n' + video_id)
 
+def incremental_pred(idxs_start, model, df_i, t0_col, rec_last, n_pred) -> List[pd.DataFrame]:
+    """Incremental extrapolation of linear model predictions into the future from a starting time"""
+    df_pred = []
+
+    # create test sets anchored on a few src times
+    for j in idxs_start:
+        rec_first = df_i.iloc[j]
+        df_ = pd.DataFrame([rec_first])
+        times_ = np.linspace(rec_first[t0_col], rec_last[t0_col] * 1.25, n_pred)
+
+        df_pred_ = []
+        for k, t_ in enumerate(times_):
+            if k == 0:
+                # first sample
+                df_pred_one = df_[KEYS_FOR_PRED_NONBOW_ID].copy()
+                df_pred_one[KEY_TRAIN_TIME_DIFF + '_tgt'] = df_pred_one[KEY_TRAIN_TIME_DIFF + '_src']
+                for key in KEYS_TRAIN_NUM_TGT:
+                    df_pred_one[key + '_pred'] = df_[key + '_src']
+            else:
+                # predict one step forward (update src time, tgt time, and src stats)
+                df_test = df_[KEYS_FOR_PRED_NONBOW_ID].copy()
+                df_test[KEY_TRAIN_TIME_DIFF + '_src'] = df_pred_[-1][KEY_TRAIN_TIME_DIFF + '_tgt']
+                df_test[KEY_TRAIN_TIME_DIFF + '_tgt'] = t_
+                for key in KEYS_TRAIN_NUM_TGT:
+                    df_test[key + '_src'] = df_pred_[-1][key + '_pred']
+                for key in ['subscriber_count_src']:
+                    df_test[key] = df_[key]
+                df_pred_one = model.predict(df_test)
+            df_pred_.append(df_pred_one)
+        df_pred.append(pd.concat(df_pred_, axis=0, ignore_index=True))
+
+    return df_pred
+
 def make_model_obj(model_,
                    _id: str,
                    uname_: Optional[str] = '') \
@@ -339,10 +473,12 @@ def make_model_obj(model_,
         MODEL_SPLIT_NAME: uname_
     }
 
-def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRegressionSimple]],
+def save_reg_model(model_reg: Union[MLModelBaseRegressionSimple, Dict[str, MLModelBaseRegressionSimple]],
                    ml_request: MLRequest,
                    preconfig: Dict[str, str]):
     """Save regression model(s) to the model store along with configs."""
+    from db_engines.mongodb_engine import MongoDBEngine
+
     db_ = ml_request.get_db()
     mongo_config = db_['db_mongo_config']
     database = db_['db_info']['DB_MODELS_NOSQL_DATABASE']
@@ -350,8 +486,8 @@ def save_reg_model(model_reg: Union[MLModelRegressionSimple, Dict[str, MLModelRe
     collection_models = db_['db_info']['DB_MODELS_NOSQL_COLLECTIONS']['models']
 
     # check that model is the right format/type
-    is_lrs_model = (isinstance(model_reg, MLModelRegressionSimple) or
-                    is_dict_of_instances(model_reg, MLModelRegressionSimple))
+    is_lrs_model = (isinstance(model_reg, MLModelBaseRegressionSimple) or
+                    is_dict_of_instances(model_reg, MLModelBaseRegressionSimple))
 
     assert is_lrs_model
 

@@ -8,17 +8,17 @@ from fastapi import Request
 from db_engines.mysql_engine import MySQLEngine
 from db_engines.mysql_utils import perform_join_mysql_query
 from db_engines.mongodb_engine import MongoDBEngine
-from db_engines.mongodb_utils import get_mongodb_records_gen
+from db_engines.mongodb_utils import get_mongodb_records_gen, load_all_recs_with_distinct
 from ytpa_utils.gensim_utils import convert_string_to_gs_dictionary
 
 from src.crawler.crawler.constants import (VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL, VOCAB_ETL_CONFIG_COL,
-                                           STATS_ALL_COLS, META_ALL_COLS_NO_URL, COL_VIDEO_ID)
+                                           STATS_ALL_COLS, META_ALL_COLS_NO_URL, COL_VIDEO_ID,
+                                           FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL)
 from src.etl.etl_request_utils import get_validated_etl_request
 from src.etl.etl_request import ETLRequest, ETLRequestPrefeatures, ETLRequestFeatures, req_to_etl_config_record
 from src.api.app_secrets import (DB_MONGO_CONFIG, DB_MYSQL_CONFIG, DB_VIDEOS_TABLES, DB_FEATURES_NOSQL_COLLECTIONS,
                                  DB_FEATURES_NOSQL_DATABASE)
-
-
+from ytpa_utils.val_utils import is_subset
 
 
 
@@ -121,6 +121,64 @@ def get_preconfig(request: Request,
     return prefeatures_etl_configs[0]['preconfig']
 
 
+
+
+
+""" Configs """
+def load_config_timestamp_sets_for_features(configs: Optional[dict] = None) -> pd.DataFrame:
+    """
+    Load timestamped config info for features collection.
+    """
+    # setup
+    database = DB_FEATURES_NOSQL_DATABASE
+    collection = DB_FEATURES_NOSQL_COLLECTIONS['features']
+
+    cols_all = [PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
+                VOCAB_TIMESTAMP_COL, FEATURES_TIMESTAMP_COL]
+
+    # ensure specified cols are valid
+    if configs is not None:
+        assert is_subset(configs, cols_all)
+        cols_all = [col for col in cols_all if col not in configs] # remove specified names from search, maintain order
+
+    # if unique record specified, find and return it
+    if len(cols_all) == 0:
+        df_gen = get_mongodb_records_gen(database, collection, DB_MONGO_CONFIG, filter=configs)
+        dfs = [df for df in df_gen]
+        assert len(dfs) == 1
+        return dfs[0]
+
+    # breadth-first search on config/timestamp combinations
+    # TODO: find way to query unique sets at once instead of iterating in a worst-case-exponential fashion
+    df = pd.DataFrame()
+    for i, group in enumerate(cols_all):
+        # first col name
+        if i == 0:
+            if configs is None:
+                df = load_all_recs_with_distinct(database, collection, DB_MONGO_CONFIG, group)
+            else:
+                df = load_all_recs_with_distinct(database, collection, DB_MONGO_CONFIG, group,
+                                                 filter={'$match': configs})
+            continue
+
+        # iterate over unique combos so far
+        dfs = []
+        for _, rec in df.iterrows():
+            filter = {'$match': rec.to_dict()}  # limit search to this combo
+            if configs is not None:
+                filter['$match'] = {**filter['$match'], **configs}
+            df_ = load_all_recs_with_distinct(database, collection, DB_MONGO_CONFIG, group, filter=filter)
+            rec_tiled = pd.concat([rec.to_frame().T] * len(df_), axis=0, ignore_index=True) # tile rows to size of df_
+            df_ = pd.concat((rec_tiled, df_), axis=1)
+            dfs.append(df_)
+        df = pd.concat(dfs, axis=0, ignore_index=True)
+
+    # add back any pre-specified config options
+    if configs is not None:
+        for key, val in configs.items():
+            df[key] = val
+
+    return df
 
 
 

@@ -2,7 +2,6 @@
 
 from typing import Union, List, Dict
 import json
-from pprint import pprint
 import requests
 
 import pandas as pd
@@ -17,7 +16,7 @@ from ..constants import (COL_VIDEO_URL, MAX_LEN_DESCRIPTION, MAX_NUM_TAGS, MAX_L
                          COL_DURATION, COL_VIDEO_ID, COL_USERNAME, COL_LIKE_COUNT, COL_COMMENT_COUNT,
                          COL_SUBSCRIBER_COUNT, COL_VIEW_COUNT, COL_TIMESTAMP_ACCESSED, COL_COMMENT, COL_TITLE,
                          COL_KEYWORDS, COL_DESCRIPTION, COL_TAGS, COL_THUMBNAIL_URL)
-from ..logging.loggers import loggers
+from src.crawler.crawler.loggers import loggers
 
 LOGGER_CRAWLER = loggers.get('crawler')
 

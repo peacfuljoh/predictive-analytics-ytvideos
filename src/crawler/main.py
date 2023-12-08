@@ -22,6 +22,8 @@ while 1:
         run_crawler(YouTubeVideoStats.name)
     except KeyboardInterrupt:
         exit()
-    except:
-        print('\n\nCannot establish connection (internet may be down). '
-              'Resetting TimeLock and waiting until next attempt.')
+    except Exception as e:
+        print(e)
+        # print('\n\nCannot establish connection (internet may be down). '
+        #       'Resetting TimeLock and waiting until next attempt.')
+
