@@ -5,7 +5,6 @@ import requests
 
 import pandas as pd
 import numpy as np
-from scipy.interpolate import interp1d
 
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
                                            PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
@@ -15,12 +14,13 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            KEY_TRAIN_TIME_DIFF, SPLIT_TRAIN_BY_USERNAME, KEYS_FOR_PRED_NONBOW_ID,
                                            COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED,
                                            MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME,
-                                           TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE)
+                                           TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE,
+                                           COL_VIEW_COUNT, COL_LIKE_COUNT)
 from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT
 from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
-from ytpa_utils.val_utils import is_dict_of_instances
+from ytpa_utils.val_utils import is_dict_of_instances, is_subset
 from ytpa_utils.time_utils import get_ts_now_str
-from ytpa_utils.df_utils import df_dt_codec
+from ytpa_utils.df_utils import df_dt_codec, resample_one_df_in_time
 from ytpa_api_utils.websocket_utils import df_generator_ws
 from src.ml.ml_constants import KEYS_EXTRACT_LIN, KEYS_FEAT_SRC_LIN, KEYS_FEAT_TGT_LIN, KEYS_EXTRACT_SEQ2SEQ
 from src.ml.ml_request import MLRequest
@@ -39,6 +39,8 @@ def load_feature_records(configs: dict,
                          ml_request: MLRequest) \
         -> Tuple[Generator[pd.DataFrame, None, None], Dict[str, str]]:
     """Get DataFrame generator for features"""
+    print('\nLoading feature records')
+
     assert PREFEATURES_ETL_CONFIG_COL in configs
     assert VOCAB_ETL_CONFIG_COL in configs
     assert FEATURES_ETL_CONFIG_COL in configs
@@ -168,35 +170,33 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
 
     return df_data
 
-def resample_to_uniform_grid(df_all: pd.DataFrame, period: int = 3600):
+def resample_to_uniform_grid(df_all: pd.DataFrame,
+                             period: int = 3600):
     """
     Resample stats sequences in dataframe to uniform time spacing.
     Input arg 'period' is in units of seconds.
+
+    Note: when making changes to this function, ensure that ordering of numerical columns remains the same throughout.
     """
-    # TODO: write test for this and verify correctness visually
+    MAX_TS_GAP = 12 * 3600  # max gap in time before linear interpolation is used
 
-    df_resamp = []
-    for _, df in df_all.groupby(KEYS_TRAIN_ID):
-        # get time and numerical columns
-        dt_start = df[COL_TIMESTAMP_ACCESSED].iloc[0]
-        ts: np.ndarray = (df[COL_TIMESTAMP_ACCESSED] - dt_start).dt.total_seconds().to_numpy() # timestamps in seconds
-        data: np.ndarray = df.drop(columns=KEYS_TRAIN_ID + [COL_TIMESTAMP_ACCESSED]).to_numpy() # numerical data array
+    # validate columns and types
+    cols_non_num = KEYS_TRAIN_ID + [COL_TIMESTAMP_ACCESSED]
+    assert is_subset(cols_non_num, df_all.columns)
+    cols_num = list(set(df_all.columns) - set(cols_non_num)) # WARNING: use this ordering of numerical cols throughout
+    assert all([dtype in ['int32', 'int64', 'float32', 'float64']
+                for col, dtype in zip(df_all.columns, df_all.dtypes) if col in cols_num])
 
-        # interpolate
-        ts_resamp = np.arange(np.min(ts), np.max(ts), period) # starts at 0
-        f = interp1d(ts, data, kind='spline', axis=0, fill_value="extrapolate")
-        data_resamp = f(ts_resamp)
-        dt_resamp = dt_start + ts_resamp * datetime.timedelta(seconds=1)
+    # resample numerical data in groups (one group per video)
+    df_resamp_all = []
+    for ids, df in df_all.groupby(KEYS_TRAIN_ID):
+        # if ids[0] == 'FoxNews' and ids[1] == '48YaHEBPXQc':
+        #     a = 5
+        df_resamp = resample_one_df_in_time(df, period, KEYS_TRAIN_ID, cols_num, COL_TIMESTAMP_ACCESSED,
+                                            max_ts_gap=MAX_TS_GAP, omit_zeroes=True)
+        df_resamp_all.append(df_resamp)
 
-        # put together resampled DataFrame
-        df_resamp = pd.concat((
-            pd.DataFrame(data_resamp, columns=KEYS_TRAIN_NUM),
-            pd.Series(dt_resamp, name=COL_TIMESTAMP_ACCESSED)
-        ), axis=1)
-        for col_id in KEYS_TRAIN_ID:
-            df_resamp[col_id] = df.iloc[0][col_id]
-
-    return pd.concat(df_resamp, axis=0, ignore_index=True)
+    return pd.concat(df_resamp_all, axis=0, ignore_index=True)
 
 def prepare_feature_records_lin_reg(df_gen: Generator[pd.DataFrame, None, None],
                                     ml_request: MLRequest) \
@@ -220,6 +220,8 @@ def prepare_feature_records_seq2seq(df_gen: Generator[pd.DataFrame, None, None],
                                     ml_request: MLRequest) \
         -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
     """Prepare feature records for sequence-to-sequence model."""
+    show = False # debug
+
     # stream all raw_data into RAM
     df_data = stream_all_features_into_ram(df_gen, KEYS_EXTRACT_SEQ2SEQ)
 
@@ -230,7 +232,31 @@ def prepare_feature_records_seq2seq(df_gen: Generator[pd.DataFrame, None, None],
     model_embed = embed_bow_with_lin_proj_rand(ml_request, df_bow)  # df_bow modified in-place
 
     # resample to uniform grid
+    if show:
+        df_nonbow_orig = df_nonbow.copy()
     df_nonbow = resample_to_uniform_grid(df_nonbow)
+
+    # visualize (debug)
+    if show:
+        import matplotlib.pyplot as plt
+
+        for ids, df_nb_or in df_nonbow_orig.groupby(KEYS_TRAIN_ID):
+            if ids[0] in []:#'CNN', 'FoxNews', 'NBCNews', 'TheYoungTurks']:
+                continue
+            video_id_ = ids[1]
+            df_nb = df_nonbow[df_nonbow[COL_VIDEO_ID] == video_id_]
+
+            fig, axes = plt.subplots(4, 1, figsize=(10, 8))
+            for i, key in enumerate(KEYS_TRAIN_NUM):
+                axes[i].scatter(df_nb_or[COL_TIMESTAMP_ACCESSED], df_nb_or[key], c='k', s=5)
+                axes[i].scatter(df_nb[COL_TIMESTAMP_ACCESSED], df_nb[key], facecolor='none', edgecolor='r', s=20)
+                if i == 0:
+                    axes[i].set_title(str(ids))
+                if key in [COL_VIEW_COUNT, COL_LIKE_COUNT]:
+                    axes[i].set_ylim([0, 1.05 * df_nb_or[key].max()])
+                axes[i].set_ylabel(key)
+
+            plt.show()
 
     return dict(nonbow=df_nonbow, bow=df_bow), model_embed
 
@@ -238,6 +264,8 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
                             ml_request: MLRequest) \
         -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
     """Stream raw_data in and convert to format needed for ML"""
+    print('\nPreparing feature records')
+
     config_ml = ml_request.get_config()
     assert config_ml[ML_MODEL_TYPE] in ML_MODEL_TYPES
 
@@ -269,7 +297,7 @@ def train_test_split_video_id(data: Dict[str, pd.DataFrame],
     """Train-test split by video_id. Split is performed one a per-username basis and then merged across users."""
     data_train = []
     data_test = []
-    for _, df in data['non_bow'].groupby(COL_USERNAME):
+    for _, df in data['nonbow'].groupby(COL_USERNAME):
         video_ids = df[COL_VIDEO_ID].unique()
         num_vids = len(video_ids)
         num_train = int(num_vids * tt_split)
@@ -293,6 +321,8 @@ def train_test_split(data: Dict[str, pd.DataFrame],
     Split non-bow data into train and test sets.
     Input arg 'split_by' determines how examples are split (i.e. uniformly, by video_id, etc.).
     """
+    print('\nApplying train-test split')
+
     assert split_by in [None, 'video_id']
 
     tt_split: float = ml_request.get_config()[TRAIN_TEST_SPLIT]

@@ -65,9 +65,6 @@ class MLModelLinProjRandom(MLModelProjection):
     def __init__(self, ml_request: MLRequest):
         super().__init__(ml_request)
 
-        # ML request config
-        assert self._config[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
-
         # model
         hp = self._config[ML_MODEL_HYPERPARAMS]
         self._model = SparseRandomProjection(

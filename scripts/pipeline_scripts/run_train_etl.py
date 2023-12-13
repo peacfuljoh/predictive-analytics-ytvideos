@@ -1,5 +1,11 @@
 """Script for testing train and test"""
 
+import os
+
+
+from ytpa_utils.misc_utils import print_df_full
+from ytpa_utils.io_utils import load_pickle, save_pickle
+
 from src.ml.train_utils import (load_feature_records, train_test_split, prepare_feature_records,
                                 train_regression_model_simple, train_regression_model_seq2seq, save_reg_model)
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
@@ -9,8 +15,14 @@ from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CO
                                            ML_MODEL_TYPE_SEQ2SEQ,
                                            ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
                                            ML_HYPERPARAM_SR_CV_COUNT, SPLIT_TRAIN_BY_USERNAME)
-from ytpa_utils.misc_utils import print_df_full
 from src.ml.ml_request import MLRequest
+
+
+
+USE_LOCAL_DATA_CACHE = True # very dumb cache...be careful
+CACHE_FNAME = '/home/nuc/Desktop/temp/ytpa_data_for_ml.pickle'
+
+# os.remove(CACHE_FNAME) # delete cache file
 
 
 
@@ -48,12 +60,13 @@ if model_type == ML_MODEL_TYPE_LIN_PROJ_RAND:
 
     split_by = None
 elif model_type == ML_MODEL_TYPE_SEQ2SEQ:
-
+    rlp_density = 0.01  # density of sparse projector matrix
 
     config_ml = {
         ML_MODEL_TYPE: ML_MODEL_TYPE_SEQ2SEQ,
         ML_MODEL_HYPERPARAMS: {
             ML_HYPERPARAM_EMBED_DIM: VEC_EMBED_DIMS,
+            ML_HYPERPARAM_RLP_DENSITY: rlp_density
         }
     }
 
@@ -74,14 +87,19 @@ ml_request = MLRequest(config_ml)
 
 # get data, train model
 if 1:
-    # load feature records
-    df_gen, config_data = load_feature_records(preconfig, ml_request)
+    if USE_LOCAL_DATA_CACHE and os.path.exists(CACHE_FNAME):
+        data_all = load_pickle(CACHE_FNAME)
+    else:
+        # load feature records
+        df_gen, config_data = load_feature_records(preconfig, ml_request)
 
-    # preprocess feature records
-    data_all, model_embed = prepare_feature_records(df_gen, ml_request)
+        # preprocess feature records
+        data_all, model_embed = prepare_feature_records(df_gen, ml_request)
 
-    # split into train and test
-    train_test_split(data_all, ml_request, split_by=split_by)  # in-place
+        # split into train and test
+        train_test_split(data_all, ml_request, split_by=split_by)  # in-place
+
+        save_pickle(CACHE_FNAME, data_all)
 
     # train model
     if model_type == ML_MODEL_TYPE_LIN_PROJ_RAND:

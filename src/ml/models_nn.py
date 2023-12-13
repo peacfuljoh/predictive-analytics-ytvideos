@@ -90,6 +90,7 @@ class MLModelSeq2Seq():
         dataloader = DataLoader(dataset, batch_size=BATCH_SIZE,
                                 shuffle=True, num_workers=0)
 
+        # TODO: implement this
         pass
 
     def predict(self,
