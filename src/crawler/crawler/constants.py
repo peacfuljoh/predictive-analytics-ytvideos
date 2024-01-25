@@ -14,7 +14,7 @@ MAX_LEN_TAG = 25
 MAX_NUM_KEYWORDS = 25
 MAX_LEN_KEYWORD = 40
 
-VIDEO_STATS_CAPTURE_WINDOW_DAYS = 5 # number of days into the past to consider current videos
+VIDEO_STATS_CAPTURE_WINDOW_DAYS = 7 # number of days into the past to consider current videos
 
 # column name macros in raw data
 COL_VIDEO_URL = 'video_url'
