@@ -11,7 +11,7 @@ from ytpa_utils.time_utils import get_ts_now_str
 from ytpa_utils.df_utils import df_dt_codec
 from ytpa_utils.gensim_utils import convert_gs_dictionary_to_string, convert_string_to_gs_dictionary
 from ytpa_api_utils.websocket_utils import df_generator_ws
-from ytpa_api_utils.request_utils import df_sender_for_insert
+from ytpa_api_utils.request_utils import df_sender
 
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_VOCABULARY_COL, VOCAB_TIMESTAMP_COL,
                                            VOCAB_ETL_CONFIG_COL, PREFEATURES_TOKENS_COL, FEATURES_ETL_CONFIG_COL,
@@ -181,6 +181,6 @@ def etl_load_features_to_db_ws(feat_gen: Generator[pd.DataFrame, None, None],
         records = etl_load_prefeatures_prepare_for_insert(df, ts_feat, req)
         return {'database': 'DB_FEATURES_NOSQL_DATABASE', 'collection': 'features', 'records': records}
 
-    df_sender_for_insert(MONGO_INSERT_MANY_ENDPOINT, preprocess_func, feat_gen, print_json=True)
+    df_sender(MONGO_INSERT_MANY_ENDPOINT, preprocess_func, feat_gen, print_json=True)
 
 

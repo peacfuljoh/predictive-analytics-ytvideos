@@ -195,8 +195,14 @@ what determines them, a recurrent neural network (e.g. deep LSTM) is worth tryin
 
 ## API
 
-The (internal) API is implemented with FastAPI.
-On the host machine, REST endpoints are browsed via the Swagger docs at `http://<HOST>:<PORT>/docs`. This will not, 
+The (internal) API is implemented with FastAPI. This accomplishes several things:
+- Modularity/security: The API hides all database transactions from other microservices, i.e. the only way to 
+interact with the MySQL and MongoDB stores is through API calls (REST or websocket). 
+This means that only the API server needs to have db credentials. This isolates and secures the data.
+- All db transactions are implemented in one go-to interface (raw data, features, models, etc.).
+- New db-transaction endpoints are easy to develop and add.
+
+You can browse REST endpoints on the server via the Swagger docs at `http://<HOST>:<PORT>/docs`. This will not, 
 however, show spec info for websocket endpoints.
 
 For more on FastAPI documentation, see https://www.linode.com/docs/guides/documenting-a-fastapi-app-with-openapi/.
@@ -221,7 +227,7 @@ curl \
 
 ## Miscellaneous
 
-## Helpful links
+### Helpful links
 
 Managing Conda environments: https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#activating-an-environment
 
@@ -234,13 +240,13 @@ Working with FastAPI and the MongoDB Python API (PyMongo): https://www.mongodb.c
 Randomized delays between scrapy crawls: https://scrapeops.io/python-scrapy-playbook/scrapy-delay-between-requests/
 
 
-## Database engines
+### Database engines
 
 Once MongoDB is installed, you can run the interactive shell with `mongosh` on the command line. The linux process for
 the database server is `mongod` and can be inspected with `sudo systemctl status mongod`.
 
 
-## Make CLI commands
+### Make CLI commands
 
 There are several `make` commands for running processes from the command line.
 - `make crawl`

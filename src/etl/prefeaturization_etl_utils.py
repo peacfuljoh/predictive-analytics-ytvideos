@@ -24,7 +24,7 @@ from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
 
 from ytpa_api_utils.websocket_utils import df_generator_ws
-from ytpa_api_utils.request_utils import df_sender_for_insert
+from ytpa_api_utils.request_utils import df_sender
 from src.crawler.crawler.config import RAWDATA_JOIN_ENDPOINT, MONGO_INSERT_MANY_ENDPOINT
 from src.crawler.crawler.constants import TIMESTAMP_CONVERSION_FMTS_DECODE
 
@@ -403,5 +403,5 @@ def etl_load_prefeatures_ws(data: Dict[str, Generator[pd.DataFrame, None, None]]
         records: List[dict] = etl_load_prefeatures_prepare_for_insert(df, {'name': req.name})
         return {'database': 'DB_FEATURES_NOSQL_DATABASE', 'collection': 'prefeatures', 'records': records}
 
-    df_sender_for_insert(MONGO_INSERT_MANY_ENDPOINT, preprocess_func, data['stats'], print_json=True)
+    df_sender(MONGO_INSERT_MANY_ENDPOINT, preprocess_func, data['stats'], print_json=True)
 
