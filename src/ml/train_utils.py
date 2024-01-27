@@ -1,13 +1,16 @@
 """Train utils"""
+
 import datetime
 from typing import Generator, Tuple, Dict, List, Optional, Union
 import requests
+from pprint import pprint
 
 import pandas as pd
 import numpy as np
 
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL,
-                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, TIMESTAMP_FMT, MIN_VID_SAMPS_FOR_DATASET,
+                                           PREFEATURES_ETL_CONFIG_COL, FEATURES_TIMESTAMP_COL, TIMESTAMP_FMT,
+                                           MIN_VID_SAMPS_FOR_DATASET, MIN_VID_SAMPS_FOR_DATASET_SEQ2SEQ,
                                            NUM_INTVLS_PER_VIDEO, ML_MODEL_TYPE, ML_MODEL_TYPE_LIN_PROJ_RAND,
                                            ML_MODEL_TYPE_SEQ2SEQ, ML_MODEL_TYPES, KEYS_TRAIN_NUM,
                                            TRAIN_TEST_SPLIT, KEYS_TRAIN_ID, KEYS_TRAIN_NUM_TGT,
@@ -21,6 +24,7 @@ from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances, is_subset
 from ytpa_utils.time_utils import get_ts_now_str
 from ytpa_utils.df_utils import df_dt_codec, resample_one_df_in_time
+from ytpa_utils.misc_utils import print_df_full
 from ytpa_api_utils.websocket_utils import df_generator_ws
 from src.ml.ml_constants import KEYS_EXTRACT_LIN, KEYS_FEAT_SRC_LIN, KEYS_FEAT_TGT_LIN, KEYS_EXTRACT_SEQ2SEQ
 from src.ml.ml_request import MLRequest
@@ -171,7 +175,8 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
     return df_data
 
 def resample_to_uniform_grid(df_all: pd.DataFrame,
-                             period: int = 3600):
+                             period: int = 3600) \
+        -> pd.DataFrame:
     """
     Resample stats sequences in dataframe to uniform time spacing.
     Input arg 'period' is in units of seconds.
@@ -228,13 +233,16 @@ def prepare_feature_records_seq2seq(df_gen: Generator[pd.DataFrame, None, None],
     # filter by group and collect bag-of-words info in a separate DataFrame
     df_nonbow, df_bow = split_feature_df_and_filter(df_data, MIN_VID_SAMPS_FOR_DATASET)
 
-    # embed bag-of-words features: raw_data-independent dimensionality reduction
+    # embed bag-of-words features: data-independent dimensionality reduction
     model_embed = embed_bow_with_lin_proj_rand(ml_request, df_bow)  # df_bow modified in-place
 
     # resample to uniform grid
     if show:
         df_nonbow_orig = df_nonbow.copy()
     df_nonbow = resample_to_uniform_grid(df_nonbow)
+
+    # filter by sequence length after resampling
+    df_nonbow = filter_by_seq_len(df_nonbow, MIN_VID_SAMPS_FOR_DATASET_SEQ2SEQ)
 
     # visualize (debug)
     if show:
@@ -260,6 +268,15 @@ def prepare_feature_records_seq2seq(df_gen: Generator[pd.DataFrame, None, None],
 
     return dict(nonbow=df_nonbow, bow=df_bow), model_embed
 
+def filter_by_seq_len(df: pd.DataFrame,
+                      min_seq_len: int) \
+        -> pd.DataFrame:
+    """Filter DataFrame (nonbow) to have minimum sequence length per video"""
+    seq_lens: pd.Series = df.groupby(COL_VIDEO_ID).size()
+    video_ids_to_keep: List[str] = list(seq_lens[seq_lens >= min_seq_len].index)
+
+    return df[df[COL_VIDEO_ID].isin(video_ids_to_keep)]
+
 def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
                             ml_request: MLRequest) \
         -> Tuple[Dict[str, pd.DataFrame], MLModelLinProjRandom]:
@@ -278,6 +295,12 @@ def prepare_feature_records(df_gen: Generator[pd.DataFrame, None, None],
 
     return data_all, model_embed
 
+
+
+
+
+
+""" Train-test split """
 def train_test_split_uniform(data: Dict[str, pd.DataFrame],
                              tt_split: float) \
         -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -334,6 +357,10 @@ def train_test_split(data: Dict[str, pd.DataFrame],
 
     del data['nonbow'] # save on memory
 
+
+
+
+""" Train regression models """
 def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
                                    ml_request: MLRequest) \
         -> MLModelSeq2Seq:
@@ -407,6 +434,11 @@ def train_regression_model_simple(data: Dict[str, pd.DataFrame],
 
     return model
 
+
+
+
+
+""" Show and tell """
 def plot_predictions(data: Dict[str, pd.DataFrame],
                      model):
     """Plot test raw_data and predictions for various src times."""
@@ -493,6 +525,36 @@ def incremental_pred(idxs_start, model, df_i, t0_col, rec_last, n_pred) -> List[
 
     return df_pred
 
+def print_train_data_stats(data_all: Dict[str, pd.DataFrame],
+                           ml_request: MLRequest):
+    """List out training dataset information."""
+    print('\n\n=== ML data ===')
+
+    print(f'Data object has keys: {list(data_all.keys())}')
+
+    for key, df in data_all.items():
+        print(f'\nDataFrame "{key}" has {len(df)} rows.')# and columns {list(df.columns)}.')
+        if key == 'bow':
+            print(f'Column {FEATURES_VECTOR_COL} has length {len(df.iloc[0]["vec"])}')
+        if 'nonbow' in key:
+            uname_id_pairs = df[[COL_USERNAME, COL_VIDEO_ID]].drop_duplicates()
+            print(f'Dataset {key} has {len(uname_id_pairs)} videos across '
+                  f'{len(uname_id_pairs[COL_USERNAME].unique())} users.')
+        print('')
+        print_df_full(df.iloc[:3])
+
+    print('\n=== ML request object ===')
+
+    pprint(ml_request.get_config())
+
+    print('\n')
+
+
+
+
+
+
+""" Model save and load """
 def make_model_obj(model_,
                    _id: str,
                    uname_: Optional[str] = '') \

@@ -25,6 +25,7 @@ dir_config_nuc = '/home/nuc/crawler_config'
 
 
 if UPDATE_BACKUP_SQL or UPDATE_BACKUP_MONGO:
+    print('\n=== Creating subdir on drive for this backup ===')
     print(f'sudo mkdir "{dir_drive_subdir}"')
 
 

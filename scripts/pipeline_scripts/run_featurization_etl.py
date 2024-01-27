@@ -13,9 +13,9 @@ from src.crawler.crawler.constants import PREFEATURES_ETL_CONFIG_COL, VOCAB_ETL_
 
 # set up pipeline_scripts config options
 etl_config_prefeatures_name = 'test3'
-etl_config_name = 'test5544' # vocab and features
+etl_config_features_name = 'test4422' # vocab and features
 
-if etl_config_name == 'test5544':
+if etl_config_features_name == 'test4422':
     etl_config_vocab = {
         'extract': {
             'filters': {
@@ -28,12 +28,12 @@ if etl_config_name == 'test5544':
     }
 
     etl_config_features = copy.deepcopy(etl_config_vocab)
-    etl_config_features['preconfig'][VOCAB_ETL_CONFIG_COL] = etl_config_name
+    etl_config_features['preconfig'][VOCAB_ETL_CONFIG_COL] = etl_config_features_name
     etl_config_features['extract']['filters'][PREFEATURES_ETL_CONFIG_COL] = etl_config_prefeatures_name
 
 # set up request objects
-req_vocab = get_validated_etl_request('vocabulary', etl_config_vocab, etl_config_name)
-req_features = get_validated_etl_request('features', etl_config_features, etl_config_name)
+req_vocab = get_validated_etl_request('vocabulary', etl_config_vocab, etl_config_features_name)
+req_features = get_validated_etl_request('features', etl_config_features, etl_config_features_name)
 
 # run pipeline
 etl_features_main(req_vocab, req_features)

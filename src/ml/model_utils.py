@@ -14,7 +14,7 @@ def _dfs_to_arrs_with_src_tgt(data_bow: pd.DataFrame,
                               data_nonbow: pd.DataFrame,
                               mode: str) \
         -> Tuple[np.ndarray, np.ndarray]:
-    """Join dataframes on IDs and construct input and output arrays."""
+    """Join dataframes on IDs and construct input and output arrays. Some stats are given _src and _tgt suffixes."""
     assert mode in ['train', 'test']
 
     df_join = join_on_dfs(data_nonbow, data_bow, KEYS_TRAIN_ID, df1_keys_select=[FEATURES_VECTOR_COL])
@@ -28,7 +28,6 @@ def _dfs_to_arr_seq(data_bow: pd.DataFrame,
         -> np.ndarray:
     """Join dataframes on IDs and construct input and output arrays."""
     df_join = join_on_dfs(data_nonbow, data_bow, KEYS_TRAIN_ID, df1_keys_select=[FEATURES_VECTOR_COL])
-    X = convert_mixed_df_to_array(df_join, [FEATURES_VECTOR_COL, KEYS_TRAIN_NUM])
+    X = convert_mixed_df_to_array(df_join, KEYS_TRAIN_NUM + [FEATURES_VECTOR_COL])
 
     return X
-

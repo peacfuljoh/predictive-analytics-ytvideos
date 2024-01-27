@@ -98,21 +98,29 @@ to avoid an IP ban. Please use this functionality responsibly.
 
 This project spans several Python packages (maintained via Poetry and available on PyPI):
 
-- `ytpa_utils`: general utils used across entire project
-- `ytpa_api_utils`: API-specific tools
-- `db_engines`: convenience classes/methods for working with MySQL and MongoDB databases
+- `ytpa_utils`: general utils used across the entire project
+- `ytpa_api_utils`: API-specific tools (e.g. for handling communication over websockets)
+- `db_engines`: tools for working with MySQL and MongoDB databases
 
 ### Config file
 
 The file `config.json` is kept outside of the repo and contains sensitive db info (credentials) and paths, 
-plus other non-sensitive info needed by the crawler.
+plus other non-sensitive info needed by the crawler and ETL pipelines.
 
 ```json
 {
-  "DB_CONFIG": {
+  "DB_MYSQL_CONFIG": {
     "host": "localhost",
-    "user": "<USER>",
-    "password": "<PASSWORD>"
+    "user": "root",
+    "password": "<MYSQL_PASSWORD>"
+  },
+  "DB_MONGO_CONFIG": {
+  	"host": "localhost",
+  	"port": 27017
+  },
+  "API_CONFIG": {
+    "host": "<IP_ADDRESS>",
+    "port": "<CUSTOM_PORT>"
   },
   "DATA_ROOT": "<DATA_DIR_PATH>",
   "REPO_ROOT": "<REPO_DIR_PATH>",
@@ -122,6 +130,24 @@ plus other non-sensitive info needed by the crawler.
       "users": "users",
       "meta": "video_meta",
       "stats": "video_stats"
+    },
+    "DB_VIDEOS_NOSQL_DATABASE": "ytvideos",
+    "DB_VIDEOS_NOSQL_COLLECTIONS": {
+      "thumbnails": "thumbnails"
+    },
+    "DB_FEATURES_NOSQL_DATABASE": "ytfeatures",
+    "DB_FEATURES_NOSQL_COLLECTIONS": {
+      "prefeatures": "prefeatures",
+      "features": "features",
+      "vocabulary": "vocabulary",
+      "etl_config_prefeatures": "etl_config_prefeatures",
+      "etl_config_features": "etl_config_features",
+      "etl_config_vocabulary": "etl_config_vocabulary"
+    },
+    "DB_MODELS_NOSQL_DATABASE": "ytmodels",
+    "DB_MODELS_NOSQL_COLLECTIONS": {
+      "models": "models",
+      "meta": "metadata"
     }
   },
   "AUTOCRAWL_CONFIG": {

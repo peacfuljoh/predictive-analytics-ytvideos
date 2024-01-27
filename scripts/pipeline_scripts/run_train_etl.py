@@ -1,13 +1,13 @@
-"""Script for testing train and test"""
+"""Script for running model train and test"""
 
 import os
-
 
 from ytpa_utils.misc_utils import print_df_full
 from ytpa_utils.io_utils import load_pickle, save_pickle
 
 from src.ml.train_utils import (load_feature_records, train_test_split, prepare_feature_records,
-                                train_regression_model_simple, train_regression_model_seq2seq, save_reg_model)
+                                train_regression_model_simple, train_regression_model_seq2seq, save_reg_model,
+                                print_train_data_stats)
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                                            FEATURES_TIMESTAMP_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
                                            ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_EMBED_DIM,
@@ -29,8 +29,8 @@ CACHE_FNAME = '/home/nuc/Desktop/temp/ytpa_data_for_ml.pickle'
 # specify which version of the feature store to use
 preconfig = {
     PREFEATURES_ETL_CONFIG_COL: 'test3',
-    VOCAB_ETL_CONFIG_COL: 'test5544',
-    FEATURES_ETL_CONFIG_COL: 'test5544',
+    VOCAB_ETL_CONFIG_COL: 'test4422', # same as features config name
+    FEATURES_ETL_CONFIG_COL: 'test4422',
     # FEATURES_TIMESTAMP_COL: '2023-10-05 17:13:16.668'
 }
 
@@ -87,19 +87,18 @@ ml_request = MLRequest(config_ml)
 
 # get data, train model
 if 1:
+    # get data
     if USE_LOCAL_DATA_CACHE and os.path.exists(CACHE_FNAME):
         data_all = load_pickle(CACHE_FNAME)
     else:
-        # load feature records
         df_gen, config_data = load_feature_records(preconfig, ml_request)
-
-        # preprocess feature records
         data_all, model_embed = prepare_feature_records(df_gen, ml_request)
-
-        # split into train and test
         train_test_split(data_all, ml_request, split_by=split_by)  # in-place
+        if USE_LOCAL_DATA_CACHE:
+            save_pickle(CACHE_FNAME, data_all)
 
-        save_pickle(CACHE_FNAME, data_all)
+    # show training data stats
+    print_train_data_stats(data_all, ml_request)
 
     # train model
     if model_type == ML_MODEL_TYPE_LIN_PROJ_RAND:
@@ -110,5 +109,4 @@ if 1:
 # store model
 if 0:
     save_reg_model(model_reg, ml_request, preconfig)
-
 
