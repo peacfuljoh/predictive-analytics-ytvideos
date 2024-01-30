@@ -1,19 +1,25 @@
 """Utils for model fit and predict internals"""
 
-from typing import Tuple, List, Dict, Iterator
+import os
+from typing import Tuple, List, Dict, Iterator, Optional
 
 import numpy as np
 import pandas as pd
+
 import torch
 from torch.utils.data import Dataset, Sampler
+from torch import optim, nn
+from torch.utils.data import DataLoader
 
+from ytpa_utils.io_utils import load_pickle
 from ytpa_utils.df_utils import join_on_dfs, convert_mixed_df_to_array
 
 from src.crawler.crawler.constants import (KEYS_TRAIN_ID, FEATURES_VECTOR_COL, KEYS_FOR_FIT_NONBOW_SRC,
                                            KEYS_FOR_FIT_NONBOW_TGT, KEYS_TRAIN_NUM, COL_VIDEO_ID,
                                            COL_TIMESTAMP_ACCESSED)
 from src.ml.ml_constants import KEYS_EXTRACT_SEQ2SEQ, SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_INFO_GROUP_ID, \
-    COL_SEQ_LEN_GROUP
+    COL_SEQ_LEN_GROUP, MIN_SAMP_SWITCH_FRAC, MAX_SAMP_SWITCH_FRAC
+# from src.rnnoise.constants import DEVICE, MODELS_DIR, MODEL_TYPES
 
 
 def _dfs_to_arrs_with_src_tgt(data_bow: pd.DataFrame,
@@ -45,10 +51,11 @@ def _dfs_to_train_seqs(data_bow: pd.DataFrame,
     video_id = data_nonbow.iloc[0][COL_VIDEO_ID]
     assert (data_nonbow[COL_VIDEO_ID] == video_id).all() # ensure that only one video is being processed
 
-    X_td = data_nonbow[KEYS_TRAIN_NUM].to_numpy() # time-dependent 2D array
-    X_ti = np.array(list(data_bow[data_bow[COL_VIDEO_ID] == video_id].iloc[0][FEATURES_VECTOR_COL])) # time-independent 1D array
+    arr_td = data_nonbow[KEYS_TRAIN_NUM].to_numpy() # time-dependent 2D array
+    df_ti = data_bow[data_bow[COL_VIDEO_ID] == video_id].iloc[0][FEATURES_VECTOR_COL]
+    arr_ti = np.array(list(df_ti)) # time-independent 1D array
 
-    return X_td, X_ti
+    return arr_td, arr_ti
 
 
 
@@ -116,18 +123,19 @@ class YTStatsDataset(Dataset):
 
         input_ = self._data[video_id]
 
-        # input_ = input_[:, :4] # only stats, no embedded feats
+        num_samps = input_['stats'].shape[0]
+        samp_switch = np.random.randint(int(num_samps * MIN_SAMP_SWITCH_FRAC), int(num_samps * MAX_SAMP_SWITCH_FRAC))
 
         sample = {
-            'stats': torch.tensor(input_['stats']),
+            'stats': torch.tensor(input_['stats'][:samp_switch]),
             'embeds': torch.tensor(input_['embeds']),
-            # 'target': torch.tensor(out_)
+            'target': torch.tensor(input_['stats'][samp_switch:])
         }
 
         return sample
 
 
-class YTStatsSampler(Sampler[List[int]]):
+class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
     """
     Batch sampler for variable-length sequence modeling.
     Generated batches are comprised of same-length sequences with uniform sampling over the entire dataset.
@@ -172,3 +180,120 @@ class YTStatsSampler(Sampler[List[int]]):
             yield batch
 
 
+
+
+
+
+"""Utils for training and evaluating RNN model"""
+def perform_train_epoch(model: nn.Module,
+                        loss_fn,
+                        optimizer: optim.Optimizer,
+                        dataloader_train: DataLoader,
+                        device: Optional[int] = None,
+                        max_grad_norm: Optional[float] = None) \
+        -> float:
+    """Perform one training epoch"""
+    # if device is None:
+    #     device = DEVICE
+
+    is_training = model.training
+    model.train()
+
+    epoch_losses = []
+    for i, (X, Y) in enumerate(dataloader_train):
+        # if X.device != device and Y.device != device:
+        #     X, Y = X.to(device), Y.to(device)
+        model.zero_grad(set_to_none=True)
+        _, loss = forward_pass_through_seq(model, X, Y=Y, loss_fn=loss_fn, return_Y_pred=False)#, device=device)
+        loss.backward()
+        if max_grad_norm is not None:
+            nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+        optimizer.step()
+
+        epoch_losses.append(loss.detach().item())
+
+    train_loss = torch.tensor(epoch_losses).sum().item()
+
+    model.training = is_training
+
+    return train_loss
+
+
+@torch.no_grad()
+def perform_test_epoch(model: nn.Module,
+                       loss_fn,
+                       dataloader_test: DataLoader,
+                       device: Optional[int] = None) \
+        -> float:
+    """Evaluate trained RNNoise denoisers on a test dataset"""
+    # if device is None:
+    #     device = DEVICE
+
+    is_training = model.training
+    model.eval()
+
+    epoch_losses = []
+    for i, (X, Y) in enumerate(dataloader_test):
+        # if X.device != device and Y.device != device:
+        #     X, Y = X.to(device), Y.to(device)
+        _, loss = forward_pass_through_seq(model, X, Y=Y, loss_fn=loss_fn, return_Y_pred=False)#, device=device)
+
+        epoch_losses.append(loss.detach().item())
+
+    test_loss = torch.tensor(epoch_losses).sum().item()
+
+    model.training = is_training
+
+    return test_loss
+
+
+def forward_pass_through_seq(model: nn.Module,
+                             X: torch.Tensor,
+                             Y: Optional[torch.Tensor] = None,
+                             loss_fn = None,
+                             return_Y_pred: bool = True,
+                             device: Optional[int] = None) \
+        -> Tuple[Optional[torch.Tensor], torch.Tensor]:
+    """Full forward pass through sequence, accumulating loss along the way."""
+    # if device is None:
+    #     device = DEVICE
+
+    # assert model._type in MODEL_TYPES
+
+    batch_size, num_frames, _ = X.shape
+    if Y is not None:
+        assert Y.shape == (batch_size, num_frames, model._output_size)
+
+    # perform forward pass, save outputs and loss
+    loss = torch.zeros(1, dtype=torch.float)#, device=device)
+    model.reset_hidden()
+
+    # process
+    out = model(X)
+    if Y is not None and loss_fn is not None:
+        loss = loss_fn(out, Y)
+    Y_pred = out.detach().clone() if return_Y_pred else None
+
+    return Y_pred, loss
+
+
+# def load_model(model_id: str,
+#                epoch: Optional[int] = None) \
+#         -> [nn.Module, str, str, str]:
+#     """Load neural network model from model store"""
+#     model_subdir = os.path.join(MODELS_DIR, model_id)
+#     model_fnames = [fname for fname in sorted(os.listdir(model_subdir)) if '.pickle' in fname and 'meta' not in fname]
+#
+#     if epoch is None: # last snapshot
+#         model_fname = model_fnames[-1]
+#     else: # get closest one
+#         epoch_nums = np.array([int(fname[:3]) for fname in model_fnames])
+#         idx_ = np.argmin(np.abs(epoch_nums - epoch))
+#         model_fname = model_fnames[idx_]
+#
+#     model_fpath = os.path.join(model_subdir, model_fname)
+#     model_obj = load_pickle(model_fpath)
+#
+#     model = model_obj['model']
+#
+#     return model, model_fname, model_fpath, model_subdir

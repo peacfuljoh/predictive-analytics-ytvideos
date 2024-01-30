@@ -16,3 +16,6 @@ COL_SEQ_LEN_GROUP = 'seq_len_group'
 
 SEQ_LEN_GROUP_WIDTH = 5 # width of divisions along seq len dimension
 TRAIN_BATCH_SIZE = 5
+
+MIN_SAMP_SWITCH_FRAC = 0.25
+MAX_SAMP_SWITCH_FRAC = 0.75
