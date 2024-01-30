@@ -1,6 +1,8 @@
 """Neural-network models"""
 
-from typing import Union, Optional, Callable, Tuple, List, Iterator
+from typing import Union, Optional, Callable, Tuple, List, Iterator, Dict
+import math
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -15,11 +17,15 @@ from src.ml.ml_request import MLRequest
 from src.ml.ml_constants import KEYS_EXTRACT_SEQ2SEQ
 from src.crawler.crawler.constants import (KEYS_TRAIN_ID, FEATURES_VECTOR_COL, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED,
                                            COL_USERNAME)
-from src.ml.model_utils import _dfs_to_arr_seq
+from src.ml.model_utils import _dfs_to_train_seqs
 
 
 BATCH_SIZE = 5
 SEQ_LEN_GROUP_WIDTH = 5 # width of divisions along seq len dimension
+
+COL_SEQ_LEN_ORIG = 'seq_len_orig'
+COL_SEQ_INFO_GROUP_ID = 'group_id'
+COL_SEQ_LEN_GROUP = 'seq_len_group'
 
 
 """
@@ -33,7 +39,12 @@ Tensor of feature vector sequences:
 
 
 class YTStatsDataset(Dataset):
-    """YouTube statistics dataset."""
+    """
+    YouTube statistics dataset.
+
+    This Dataset class takes bow and non-bow DataFrames and prepares arrays for training for each video_id.
+    Group information is also determined so that a sampler can group same-length sequences together.
+    """
     def __init__(self,
                  data_nonbow: pd.DataFrame,
                  data_bow: pd.DataFrame):
@@ -50,54 +61,101 @@ class YTStatsDataset(Dataset):
         assert set(data_nonbow) == set(keys_nonbow)
         assert set(data_bow) == set(keys_bow)
 
+        # figure out grouping of sequences by length
+        self._seq_info = pd.DataFrame(columns=[COL_SEQ_LEN_ORIG, COL_SEQ_INFO_GROUP_ID, COL_SEQ_LEN_GROUP])
+        self._seq_info[COL_SEQ_LEN_ORIG] = data_nonbow.groupby(COL_VIDEO_ID).size() # access size via seq_lens[<video_id>]
+        self._seq_info[COL_SEQ_INFO_GROUP_ID] = (self._seq_info[COL_SEQ_LEN_ORIG] / SEQ_LEN_GROUP_WIDTH).astype(int)
+        self._seq_info[COL_SEQ_LEN_GROUP] = self._seq_info[COL_SEQ_INFO_GROUP_ID] * SEQ_LEN_GROUP_WIDTH
+
         # extract metadata
         # Note: data_bow acts like a metadata store for train and test combined, so it generally contains more
-        #       video_id's than data_nonbow. That is why we can't get the relevant video_id's directly data_bow.
-        self._video_ids: List[str] = list(data_nonbow[COL_VIDEO_ID].unique())
+        #       video_id's than data_nonbow. That is why we can't get the relevant video_id's directly from data_bow.
+        self._video_ids: List[str] = list(self._seq_info.index) # same order as index of seq_info
         self._num_seqs = len(self._video_ids)
 
-        # figure out grouping of sequences by length
-        seq_lens = data_nonbow.groupby(COL_VIDEO_ID).size() # access size via self._seq_lens[<video_id_string>]
-        self._seq_info = pd.DataFrame({'seq_len': seq_lens, 'group': (seq_lens / SEQ_LEN_GROUP_WIDTH).astype(int)})
-        self._seq_info['seq_len_group'] = self._seq_info['group'] * SEQ_LEN_GROUP_WIDTH
-
         # store DataFrames
-        self._data_nonbow = data_nonbow.sort_values(by=[COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED])
-        self._data_bow = data_bow
+        # self._data_nonbow = data_nonbow.sort_values(by=[COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED])
+        # self._data_bow = data_bow
+
+        # prepare for quick access in __getitem__()
+        self._data: Dict[str, Dict[str, np.ndarray]] = {}
+        for video_id, df_nonbow in data_nonbow.groupby(COL_VIDEO_ID):
+            # ensure time-sequential order
+            df_nonbow = df_nonbow.sort_values(by=COL_TIMESTAMP_ACCESSED)
+
+            # verify uniform sampling through time (COL_TIMESTAMP_ACCESSED entries are of type Timestamp())
+            dt_seconds = df_nonbow[COL_TIMESTAMP_ACCESSED].apply(lambda x: x.timestamp()).to_numpy()
+            dt_diffs = dt_seconds[1:] - dt_seconds[:-1]
+            assert (np.abs(dt_diffs - dt_diffs[0]) < 1.0).all() # no more than 1 second error in sampling period
+
+            # save sequences
+            stats, embeds = _dfs_to_train_seqs(data_bow, df_nonbow)
+            stats = stats[:self._seq_info[COL_SEQ_LEN_GROUP][video_id], :] # truncate to length for this seq's group
+            self._data[video_id] = dict(stats=stats, embeds=embeds)
 
     def __len__(self):
         return self._num_seqs
 
     def __getitem__(self, idx: int):
-        video_id_: str = self._video_ids[idx]
+        video_id: str = self._video_ids[idx]
 
-        mask = self._data_nonbow[COL_VIDEO_ID] == video_id_
-        input_: np.ndarray = _dfs_to_arr_seq(self._data_bow, self._data_nonbow[mask])
+        input_ = self._data[video_id]
 
         # input_ = input_[:, :4] # only stats, no embedded feats
 
-        sample = {'input': torch.tensor(input_)}#, 'target': torch.tensor(out_)}
+        sample = {
+            'stats': torch.tensor(input_['stats']),
+            'embeds': torch.tensor(input_['embeds']),
+            # 'target': torch.tensor(out_)
+        }
 
         return sample
 
 
 
-class SequenceBatchSampler(Sampler[List[int]]):
+class YTStatsSampler(Sampler[List[int]]):
+    """
+    Batch sampler for variable-length sequence modeling.
+    Generated batches are comprised of same-length sequences with uniform sampling over the entire dataset.
+    """
     def __init__(self,
-                 data: List[str],
+                 group_ids: List[int],
                  batch_size: int):
         super().__init__()
 
-        self.data = data
         self.batch_size = batch_size
 
+        # collect batch info for each group
+        self._batch_info = {}
+        g_ids_np = np.array(group_ids)
+        for group_id in set(group_ids):
+            idxs_ = list(np.where(g_ids_np == group_id)[0])
+            num_batches = len(idxs_) // batch_size
+            if num_batches == 0:
+                continue
+            self._batch_info[group_id] = {'idxs_in_dataset': idxs_, 'num_batches': num_batches}
+
+        # [self._batch_info[group_id]['num_batches'] for group_id in self._batch_info.keys()] # batch counts in groups
+        self._num_batches_total = sum([g['num_batches'] for g in self._batch_info.values()])
+
     def __len__(self) -> int:
-        return (len(self.data) + self.batch_size - 1) // self.batch_size
+        return self._num_batches_total
 
     def __iter__(self) -> Iterator[List[int]]:
-        sizes = torch.tensor([len(x) for x in self.data])
-        for batch in torch.chunk(torch.argsort(sizes), len(self)):
-            yield batch.tolist()
+        # make batches of data indices
+        batches = []
+        for group_id, d in self._batch_info.items():
+            num_idxs_tot = self.batch_size * d['num_batches']
+            idxs_perm = np.random.permutation(d['idxs_in_dataset'])[:num_idxs_tot]
+            batches_group = idxs_perm.reshape(d['num_batches'], self.batch_size).tolist()
+            batches += batches_group
+
+        # scramble the batches
+        batches = [batches[i] for i in np.random.permutation(len(batches))]
+
+        # yield them
+        for batch in batches:
+            yield batch
 
 
 
@@ -141,8 +199,16 @@ class MLModelSeq2Seq():
                                         data_bow: pd.DataFrame) \
             -> Tuple[YTStatsDataset, DataLoader]:
         """Make dataset and dataloader for a training run"""
+        # dataset
         dataset = YTStatsDataset(data_nonbow, data_bow)
-        sampler = SequenceBatchSampler()
+
+        # sampler
+        group_ids = list(dataset._seq_info[COL_SEQ_LEN_GROUP])
+        sampler = YTStatsSampler(group_ids, BATCH_SIZE)
+
+        next(iter(sampler))
+        return
+        # dataloader
         dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, sampler=sampler,
                                 shuffle=True, num_workers=0, pin_memory=False)
 
