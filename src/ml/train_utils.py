@@ -18,7 +18,7 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED,
                                            MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE,
-                                           COL_VIEW_COUNT, COL_LIKE_COUNT)
+                                           COL_VIEW_COUNT, COL_LIKE_COUNT, TRAIN_SEQ_PERIOD)
 from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT
 from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances, is_subset
@@ -175,7 +175,7 @@ def prepare_input_output_vectors(df_data: pd.DataFrame,
     return df_data
 
 def resample_to_uniform_grid(df_all: pd.DataFrame,
-                             period: int = 3600) \
+                             period: int) \
         -> pd.DataFrame:
     """
     Resample stats sequences in dataframe to uniform time spacing.
@@ -239,7 +239,7 @@ def prepare_feature_records_seq2seq(df_gen: Generator[pd.DataFrame, None, None],
     # resample to uniform grid
     if show:
         df_nonbow_orig = df_nonbow.copy()
-    df_nonbow = resample_to_uniform_grid(df_nonbow)
+    df_nonbow = resample_to_uniform_grid(df_nonbow, TRAIN_SEQ_PERIOD)
 
     # filter by sequence length after resampling
     df_nonbow = filter_by_seq_len(df_nonbow, MIN_VID_SAMPS_FOR_DATASET_SEQ2SEQ)
@@ -369,8 +369,23 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_SEQ2SEQ
 
     # fit model
-    model = MLModelSeq2Seq(ml_request, verbose=True)
-    model.fit(data['nonbow_train'], data['bow'])
+    if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
+        model = MLModelSeq2Seq(ml_request, verbose=True)
+        model.fit(data['nonbow_train'], data['bow'])
+    else:
+        usernames = data['nonbow_train'][COL_USERNAME].drop_duplicates()
+        model = {uname: MLModelSeq2Seq(ml_request, verbose=True) for uname in usernames}
+        for uname, model_ in model.items():
+            df_nonbow = data['nonbow_train']
+            df_nonbow = df_nonbow[df_nonbow[COL_USERNAME] == uname]
+            df_bow = data['bow']
+            df_bow = df_bow[df_bow[COL_USERNAME] == uname]
+            model_.fit(df_nonbow, df_bow)
+
+    exit(0)
+
+    # predict
+    Y_pred = model.predict(data['nonbow_test'], data['bow'])
 
     # see predictions
     if 1:

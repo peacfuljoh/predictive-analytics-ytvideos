@@ -1,6 +1,6 @@
 """Neural-network models"""
 
-from typing import Union, Tuple, List, Dict
+from typing import Union, Tuple, List, Dict, Optional
 import math
 import time
 
@@ -16,8 +16,9 @@ from torch.utils.data import DataLoader
 from ytpa_utils.val_utils import is_subset
 
 from src.ml.ml_request import MLRequest
-from src.crawler.crawler.constants import COL_VIDEO_ID
-from src.ml.model_utils import YTStatsDataset, VariableLengthSequenceBatchSampler, perform_train_epoch, perform_test_epoch
+from src.crawler.crawler.constants import COL_VIDEO_ID, TRAIN_SEQ_PERIOD
+from src.ml.torch_utils import perform_train_epoch, perform_test_epoch
+from src.ml.datasets import YTStatsDataset, VariableLengthSequenceBatchSampler
 from src.ml.ml_constants import SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_LEN_GROUP, TRAIN_BATCH_SIZE
 
 
@@ -69,7 +70,7 @@ class MLModelSeq2Seq():
         assert is_subset(list(data_nonbow[COL_VIDEO_ID]), list(data_bow[COL_VIDEO_ID]))
 
         # setup
-        self._dataloader_train = self._prepare_dataloader(data_nonbow, data_bow)
+        self._dataloader_train = self._prepare_dataloader(data_nonbow, data_bow, 'train')
         preproc_params = self._init_preprocessor(self._dataloader_train)
 
         self._model = Seq2Seq(MODEL_OPTS, preproc_params)
@@ -81,7 +82,8 @@ class MLModelSeq2Seq():
 
     @staticmethod
     def _prepare_dataloader(data_nonbow: pd.DataFrame,
-                            data_bow: pd.DataFrame) \
+                            data_bow: pd.DataFrame,
+                            mode: str) \
             -> DataLoader:
         """Make dataset and dataloader for a training run"""
         # dataset
@@ -89,10 +91,9 @@ class MLModelSeq2Seq():
 
         # sampler
         group_ids = list(dataset._seq_info[COL_SEQ_LEN_GROUP])
-        sampler = VariableLengthSequenceBatchSampler(group_ids, TRAIN_BATCH_SIZE)
+        sampler = VariableLengthSequenceBatchSampler(group_ids, TRAIN_BATCH_SIZE, mode)
 
         # dataloader
-        # TODO: adapt to dataloader generating input-output pairs
         dataloader = DataLoader(dataset, batch_sampler=sampler, num_workers=8, pin_memory=True)
 
         if 0:
@@ -221,9 +222,43 @@ class MLModelSeq2Seq():
 
     def predict(self,
                 data_nonbow: pd.DataFrame,
-                mode: Union[np.ndarray, pd.DataFrame] = pd.DataFrame) \
-            -> Union[np.ndarray, pd.DataFrame]:
-        raise NotImplementedError
+                data_bow: pd.DataFrame,
+                pred_opts: Optional[dict] = None) \
+            -> pd.DataFrame:
+        """Feed test data through model"""
+        if pred_opts is None:
+            pred_opts = {}
+
+        pred_horizon = pred_opts.get('pred_horizon', 7 * 24 * 3600) # seconds to predict from start of each video's records
+
+        dataloader_test = self._prepare_dataloader(data_nonbow, data_bow, 'test')
+
+        is_training = self._model.training
+        self._model.eval()
+
+        df_out = []
+
+        for _, (X, Y) in enumerate(dataloader_test):
+            # reset hidden state
+            self._model.reset_hidden()
+
+            # determine number of steps to predict
+            num_steps_data = X['stats'].shape[1]
+            num_steps_pred_tot = int(pred_horizon / TRAIN_SEQ_PERIOD)
+            num_steps_pred = num_steps_pred_tot - num_steps_data
+            X['num_predict'] = num_steps_pred
+
+            # make prediction
+            out = self._model(X)
+
+            # pack into output DataFrame
+            # TODO: implement this
+
+        self._model.training = is_training
+
+        df_out = pd.concat(df_out, axis=0, ignore_index=True)
+
+        return df_out
 
 
 
@@ -255,25 +290,32 @@ class Seq2Seq(nn.Module):
 
         # model definition for embedding
         for i in range(self._num_layers_embed):
-            self.__dict__['embed_linear' + str(i)] = nn.Linear(
-                self._num_units_embed[i],
-                self._num_units_embed[i + 1]
-            )
-        self.embed_dropout = nn.Dropout(0.2)
+            lyr = nn.Linear(self._num_units_embed[i], self._num_units_embed[i + 1])
+            setattr(self, 'embed_linear' + str(i), lyr)
+        dropout = model_opts.get('dropout', 0.2)
+        self.embed_dropout = nn.Dropout(dropout)
 
         # model definition for recurrence
-        self.encoder = nn.LSTM(
+        # self.encoder = nn.LSTM(
+        #     self._input_size_rnn_merged,
+        #     self._hidden_size_rnn,
+        #     num_layers=self._num_layers_rnn,
+        #     batch_first=True
+        # )
+        # self.decoder = nn.LSTM(
+        #     self._decoder_input_size,
+        #     self._hidden_size_rnn,
+        #     num_layers=self._num_layers_rnn,
+        #     batch_first=True
+        # )
+        self.rnn = nn.LSTM(
             self._input_size_rnn_merged,
             self._hidden_size_rnn,
             num_layers=self._num_layers_rnn,
             batch_first=True
         )
-        self.decoder = nn.LSTM(
-            self._decoder_input_size,
-            self._hidden_size_rnn,
-            num_layers=self._num_layers_rnn,
-            batch_first=True
-        )
+
+        # output layer
         self.h2o = nn.Linear(self._hidden_size_rnn, self._output_size_rnn)
 
         # preprocessing
@@ -287,8 +329,9 @@ class Seq2Seq(nn.Module):
             std_embeds=torch.as_tensor(preproc_params['std_embeds'], dtype=torch.float)#, device=self._device),
         )
 
-        # reset hidden state
+        # init
         self._hidden = None
+        self._steps_pred = None
 
     def forward(self, data: Dict[str, Union[torch.Tensor, int]]) -> torch.Tensor:
         """
@@ -304,7 +347,8 @@ class Seq2Seq(nn.Module):
         """
         x_stats = data['stats']
         x_embeds = data['embeds']
-        num_predict = data['num_predict']
+        if not self.training:
+            num_predict = data['num_predict']
 
         assert x_stats.ndim == 3
         assert x_embeds.ndim == 1
@@ -318,8 +362,38 @@ class Seq2Seq(nn.Module):
         x_stats, x_embeds = self._preprocess(x_stats, x_embeds)
 
         # encode and decode
-        self._encode(x_stats, x_embeds)
-        out = self._decode(num_predict)
+        x_embeds = self._process_embeddings(x_embeds)
+        out = self._process_inputs(x_stats, x_embeds)
+        if not self.training:
+            out_pred = self._predict(out[:, -1:, :], x_embeds, num_predict)
+            out = torch.concat((out, out_pred), dim=2)
+        # self._encode(x_stats, x_embeds)
+        # out = self._decode(num_predict)
+
+        return out
+
+    def _process_inputs(self,
+                        x_stats: torch.Tensor,
+                        x_embeds: torch.Tensor) \
+            -> torch.Tensor:
+        """Feed preprocessed inputs through network"""
+        x_merge = self._merge_stats_embeds(x_stats, x_embeds)
+        x_out = self._feed_to_rnn(x_merge)
+        return x_out
+
+    def _predict(self,
+                 x_stats: torch.Tensor,
+                 x_embeds: torch.Tensor,
+                 num_predict: int) \
+            -> torch.Tensor:
+        """Predict future values"""
+        out = torch.zeros((x_stats.shape[0], num_predict, x_stats.shape[2]), dtype=torch.float)
+
+        x_out = x_stats
+        for i in range(num_predict):
+            x_merge = self._merge_stats_embeds(x_out, x_embeds)
+            x_out = self._feed_to_rnn(x_merge)
+            out[:, i, :] = x_out[:, 0, :]
 
         return out
 
@@ -327,29 +401,35 @@ class Seq2Seq(nn.Module):
                 x_stats: torch.Tensor,
                 x_embeds: torch.Tensor):
         """Run encoder"""
-        # process embeddings
-        x_embeds = self._process_embeddings(x_embeds)
+        x_merge = self._merge_stats_embeds(x_stats, x_embeds)
+        self._feed_to_rnn(x_merge)
 
-        # concatenate stats and compressed embeddings
+    def _merge_stats_embeds(self,
+                            x_stats: torch.Tensor,
+                            x_embeds: torch.Tensor) \
+            -> torch.Tensor:
+        """Merge stats tensor with embeddings tensor"""
         x_embeds = x_embeds[:, None, :]
         x_embeds = x_embeds.repeat(1, x_stats.shape[1], 1)
         x_merge = torch.concat((x_stats, x_embeds), dim=2)
-
-        # process merged features
-        _, hidden_new = self.encoder(x_merge, self._hidden)
-        self._update_hidden(hidden_new)
+        return x_merge
 
     def _decode(self, num_predict: int) -> torch.Tensor:
         """Run decoder"""
         # recurrence
         batch_size = self._hidden[0].shape[1]
         x_decode = torch.zeros((batch_size, num_predict, self._decoder_input_size))
-        out, hidden_new = self.encoder(x_decode, self._hidden)
-        self._update_hidden(hidden_new)
+        out = self._feed_to_rnn(x_decode)
 
         # output layer
         out = self.h2o(out)
 
+        return out
+
+    def _feed_to_rnn(self, input_: torch.Tensor) -> torch.Tensor:
+        """Feed tensor to RNN model"""
+        out, hidden_new = self.rnn(input_, self._hidden)
+        self._update_hidden(hidden_new)
         return out
 
     def _update_hidden(self, hidden_new):
@@ -369,7 +449,7 @@ class Seq2Seq(nn.Module):
     def _process_embeddings(self, x_embeds: torch.Tensor) -> torch.Tensor:
         """Process embeddings"""
         for i in range(self._num_layers_embed):
-            lyr = self.__dict__['embed_linear' + str(i)]
+            lyr = getattr(self, 'embed_linear' + str(i))
             x_embeds = lyr(x_embeds)
             # if i < self._num_layers_embed - 1:
             x_embeds = F.relu(x_embeds)
@@ -385,4 +465,5 @@ class Seq2Seq(nn.Module):
         hidden = torch.zeros(self._num_layers_rnn, batch_size, self._hidden_size_rnn, requires_grad=False)#, device=self._device)
         cell = torch.zeros(self._num_layers_rnn, batch_size, self._hidden_size_rnn, requires_grad=False)#, device=self._device)
         self._hidden = (hidden, cell)
+
 
