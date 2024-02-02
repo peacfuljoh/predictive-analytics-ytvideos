@@ -372,7 +372,7 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
     # create new directory for models in this run
     if not os.path.exists(MODEL_ROOT):
         os.makedirs(MODEL_ROOT)
-    dt_str = datetime.datetime.now().strftime('$Y-%m-%d_%H-%M-%S')
+    dt_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     model_dir = os.path.join(MODEL_ROOT, dt_str)
     os.makedirs(model_dir)
 

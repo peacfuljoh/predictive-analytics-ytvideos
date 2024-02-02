@@ -244,7 +244,8 @@ class MLModelSeq2Seq():
                     scheduler=self._scheduler,
                     model_opts=MODEL_OPTS,
                     train_opts=TRAIN_OPTS,
-                    metadata=self._metadata
+                    metadata=self._metadata,
+                    epoch=epoch
                 )
                 dt_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
                 fpath = os.path.join(self._model_dir, dt_str + '.pickle')
