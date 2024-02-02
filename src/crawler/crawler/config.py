@@ -38,6 +38,9 @@ if is_local: # local
 
     # logger info
     LOG_DIR_PATH = os.path.join(DATA_ROOT, 'logs')
+
+    # models root
+    MODEL_ROOT = os.path.join(DATA_ROOT, config['MODEL_ROOT'])
 else: # CI/CD
     DB_MYSQL_CONFIG = dict(
         host="localhost",
@@ -51,6 +54,7 @@ else: # CI/CD
     REPO_ROOT = '/home/runner/work/predictive-analytics-ytvideos/predictive-analytics-ytvideos'
     API_CONFIG = dict(host=0, port=0)
     LOG_DIR_PATH = None
+    MODEL_ROOT = None
 
 # determine DB_INFO
 is_testing = 'RUN_TESTS' in os.environ and os.environ['RUN_TESTS'] == 'yes'

@@ -54,7 +54,7 @@ class YTStatsDataset(Dataset):
         # self._data_bow = data_bow
 
         # prepare for quick access in __getitem__()
-        self._data: Dict[str, Dict[str, np.ndarray]] = {}
+        self._data: Dict[str, Dict[str, torch.Tensor]] = {}
         for video_id, df_nonbow in data_nonbow.groupby(COL_VIDEO_ID):
             # ensure time-sequential order
             df_nonbow = df_nonbow.sort_values(by=COL_TIMESTAMP_ACCESSED)
@@ -67,7 +67,10 @@ class YTStatsDataset(Dataset):
             # save sequences
             stats, embeds = _dfs_to_train_seqs(data_bow, df_nonbow)
             stats = stats[:self._seq_info[COL_SEQ_LEN_GROUP][video_id], :] # truncate to length for this seq's group
-            self._data[video_id] = dict(stats=stats, embeds=embeds)
+            self._data[video_id] = dict(
+                stats=torch.tensor(stats, dtype=torch.float),
+                embeds=torch.tensor(embeds, dtype=torch.float)
+            )
 
     def __len__(self):
         return self._num_seqs
@@ -77,7 +80,7 @@ class YTStatsDataset(Dataset):
         #       Diff amplifies changes over time but may cause drift of predictions.
         video_id: str = self._video_ids[idx]
 
-        input_ = self._data[video_id]
+        data_ = self._data[video_id]
 
         # num_samps = input_['stats'].shape[0]
         # samp_switch = np.random.randint(int(num_samps * MIN_SAMP_SWITCH_FRAC), int(num_samps * MAX_SAMP_SWITCH_FRAC))
@@ -87,14 +90,14 @@ class YTStatsDataset(Dataset):
         #     'embeds': torch.tensor(input_['embeds']),
         #     'target': torch.tensor(input_['stats'][samp_switch:])
         # }
-        sample = {
+        input_ = {
             'video_id': [video_id],
-            'stats': torch.tensor(input_['stats'][:-1]), # (num_steps - 1) x num_stats_features
-            'embeds': torch.tensor(input_['embeds']) # num_embeds_features
+            'stats': data_['stats'][:-1], # (num_steps - 1) x num_stats_features
+            'embeds': data_['embeds'] # num_embeds_features
         }
-        target = torch.tensor(input_['stats'][1:]) # (num_steps - 1) x num_stats_features
+        ouput_ = data_['stats'][1:] # (num_steps - 1) x num_stats_features
 
-        return sample, target
+        return input_, ouput_
 
 
 class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
@@ -108,7 +111,7 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
                  mode: str):
         """Init.
 
-        group_ids: list of group ids (unique integers)
+        group_ids: list of group ids (unique integers), one per sequence
         batch_size: size of batches
         mode: 'train' or 'test'
         """
@@ -118,7 +121,6 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
         self._mode = mode
 
         assert mode in ['train', 'test']
-        assert len(set(group_ids)) == len(group_ids)
 
         # collect batch info for each group
         self._batch_info = {}
@@ -134,30 +136,15 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
             self._batch_info[group_id] = {'idxs_in_dataset': idxs_}#, 'num_batches': num_batches}
 
         # [self._batch_info[group_id]['num_batches'] for group_id in self._batch_info.keys()] # batch counts in groups
-        self._num_batches_total = sum([g['num_batches'] for g in self._batch_info.values()])
+        # self._num_batches_total = sum([g['num_batches'] for g in self._batch_info.values()])
+        self._num_batches_tot = len(self._make_batches())
 
     def __len__(self) -> int:
-        return self._num_batches_total
+        return self._num_batches_tot
 
     def __iter__(self) -> Iterator[List[int]]:
         # make batches of data indices
-        batches = []
-        for group_id, d in self._batch_info.items():
-            num_idxs = len(d['idxs_in_dataset'])
-            if self._mode == 'train': # permute and truncate list of indices to get integer number of full batches
-                num_batches_full = num_idxs // self.batch_size
-                if num_batches_full == 0:
-                    continue
-                num_idxs_tot = self.batch_size * num_batches_full
-                idxs_perm = np.random.permutation(d['idxs_in_dataset'])[:num_idxs_tot]
-                batches_group = idxs_perm.reshape(d['num_batches'], self.batch_size).tolist()
-                batches += batches_group
-            else: # don't permute (shuffle) and include all samples
-                num_batches = int(math.ceil(num_idxs / self.batch_size))
-                for i in range(num_batches):
-                    batch_group = d['idxs_in_dataset'][i * self.batch_size:(i + 1) * self.batch_size].tolist()
-                    assert len(batch_group) > 0
-                    batches += batch_group
+        batches = self._make_batches()
 
         # scramble the batches
         batches = [batches[i] for i in np.random.permutation(len(batches))]
@@ -165,3 +152,27 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
         # yield them
         for batch in batches:
             yield batch
+
+    def _make_batches(self):
+        """Make a new set of batches. Always the same number of batches."""
+        batches = []
+        for group_id, d in self._batch_info.items():
+            num_idxs = len(d['idxs_in_dataset'])
+            if self._mode == 'train':  # permute and truncate list of indices to get integer number of full batches
+                num_batches_full = num_idxs // self.batch_size
+                if num_batches_full == 0:
+                    continue
+                num_idxs_tot = self.batch_size * num_batches_full
+                idxs_perm = np.random.permutation(d['idxs_in_dataset'])[:num_idxs_tot]
+                batches_group = idxs_perm.reshape(num_batches_full, self.batch_size).tolist()
+                batches += batches_group
+            else: # don't permute (shuffle) and include all samples
+                num_batches = int(math.ceil(num_idxs / self.batch_size))
+                for i in range(num_batches):
+                    batches_group = d['idxs_in_dataset'][i * self.batch_size:(i + 1) * self.batch_size].tolist()
+                    assert len(batches_group) > 0
+                    batches += batches_group
+
+        return batches
+
+

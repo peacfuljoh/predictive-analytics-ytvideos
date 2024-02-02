@@ -15,7 +15,9 @@ COL_SEQ_INFO_GROUP_ID = 'group_id'
 COL_SEQ_LEN_GROUP = 'seq_len_group'
 
 SEQ_LEN_GROUP_WIDTH = 5 # width of divisions along seq len dimension
-TRAIN_BATCH_SIZE = 5
+TRAIN_BATCH_SIZE = 10
+NUM_EPOCHS_PER_SNAPSHOT = 5
 
 MIN_SAMP_SWITCH_FRAC = 0.25
 MAX_SAMP_SWITCH_FRAC = 0.75
+

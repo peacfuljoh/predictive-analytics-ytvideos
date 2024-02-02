@@ -51,7 +51,7 @@ def perform_test_epoch(model: nn.Module,
                        dataloader_test: DataLoader,
                        device: Optional[int] = None) \
         -> float:
-    """Evaluate trained RNNoise denoisers on a test dataset"""
+    """Evaluate on a test dataset"""
     # if device is None:
     #     device = DEVICE
 
@@ -80,7 +80,7 @@ def forward_pass_through_seq(model: nn.Module,
                              return_Y_pred: bool = True,
                              device: Optional[int] = None) \
         -> Tuple[Optional[torch.Tensor], torch.Tensor]:
-    """Full forward pass through sequence, accumulating loss along the way."""
+    """Full forward pass through sequence."""
     # if device is None:
     #     device = DEVICE
 
@@ -95,10 +95,11 @@ def forward_pass_through_seq(model: nn.Module,
     model.reset_hidden()
 
     # process
-    out = model(X)
+    out: torch.Tensor = model(X)
+    Y = model._preprocess(Y) # scale the output stats the same way as the input
     if Y is not None and loss_fn is not None:
         loss = loss_fn(out, Y)
-    Y_pred = out.detach().clone() if return_Y_pred else None
+    Y_pred = model._unpreprocess(out).detach().clone() if return_Y_pred else None # undo the effect of preprocessing
 
     return Y_pred, loss
 

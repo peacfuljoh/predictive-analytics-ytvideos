@@ -1,8 +1,10 @@
 """Neural-network models"""
 
+import os
 from typing import Union, Tuple, List, Dict, Optional
 import math
 import time
+import datetime
 
 import numpy as np
 import pandas as pd
@@ -14,12 +16,14 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from ytpa_utils.val_utils import is_subset
+from ytpa_utils.io_utils import save_pickle
 
 from src.ml.ml_request import MLRequest
-from src.crawler.crawler.constants import COL_VIDEO_ID, TRAIN_SEQ_PERIOD
 from src.ml.torch_utils import perform_train_epoch, perform_test_epoch
 from src.ml.datasets import YTStatsDataset, VariableLengthSequenceBatchSampler
-from src.ml.ml_constants import SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_LEN_GROUP, TRAIN_BATCH_SIZE
+from src.ml.ml_constants import (SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_LEN_GROUP, TRAIN_BATCH_SIZE,
+                                 NUM_EPOCHS_PER_SNAPSHOT)
+from src.crawler.crawler.constants import COL_VIDEO_ID, TRAIN_SEQ_PERIOD, VEC_EMBED_DIMS
 
 
 
@@ -37,10 +41,12 @@ MODEL_OPTS = dict(
     hidden_size_rnn=30,
     input_size_rnn=4,
     output_size_rnn=4,
-    num_units_embed=[100, 10]
+    num_units_embed=[VEC_EMBED_DIMS, 100, 10]
 )
 TRAIN_OPTS = dict(
     num_epochs=200,
+    lr=0.01,
+    momentum=0.3,
     max_grad_norm=3.0
 )
 
@@ -51,12 +57,16 @@ class MLModelSeq2Seq():
     """Wrapper class for handling sequence-to-sequence model train and test"""
     def __init__(self,
                  ml_request: MLRequest,
-                 verbose: bool = False):
+                 verbose: bool = False,
+                 model_dir: Optional[str] = None,
+                 metadata: Optional[dict] = None):
         self._verbose = verbose
 
         # fields
         self._config = None
         self._model = None
+        self._model_dir: Optional[str] = model_dir
+        self._metadata: Optional[dict] = metadata
 
         # validate and store config
         assert ml_request.get_valid()
@@ -65,7 +75,9 @@ class MLModelSeq2Seq():
     def fit(self,
             data_nonbow: pd.DataFrame,
             data_bow: pd.DataFrame):
-        """Fit the model with static (bow) and dynamic (nonbow) features."""
+        """
+        Fit the model with static (bow) and dynamic (nonbow) features.
+        """
         # make sure metadata is available for all videos
         assert is_subset(list(data_nonbow[COL_VIDEO_ID]), list(data_bow[COL_VIDEO_ID]))
 
@@ -123,7 +135,7 @@ class MLModelSeq2Seq():
         xsq: Dict[str, np.ndarray] = dict(stats=None, embeds=None)
         count = dict(stats=0, embeds=0)
 
-        for i, data in enumerate(dataloader):
+        for i, (data, _) in enumerate(dataloader):
             x_stats = data['stats']
             x_embeds = data['embeds']
 
@@ -160,12 +172,12 @@ class MLModelSeq2Seq():
 
     def _prepare_train_modules(self):
         """Set up training modules, hyperparameters, etc."""
-        LEARNING_RATE = 0.1
-        MOMENTUM = 0.3
+        LEARNING_RATE = TRAIN_OPTS['lr']
+        MOMENTUM = TRAIN_OPTS['momentum']
         DAMPENING = 0.0
         WEIGHT_DECAY = 1e-8
 
-        self._num_batches_train = len(self._dataloader)
+        self._num_batches_train = len(self._dataloader_train)
 
         # set up loss function
         self._loss_fn = nn.MSELoss()
@@ -219,6 +231,24 @@ class MLModelSeq2Seq():
             # if eval_test:
             #     test_abs_err = math.sqrt(test_losses[epoch] / (num_batches_test))
             #     print(f' epoch: {epoch + 1}, test loss: {test_losses[epoch]}, test abs err: {test_abs_err}'
+
+            # save latest info to pickle file
+            if (self._model_dir is not None and
+                    ((not np.mod(epoch, NUM_EPOCHS_PER_SNAPSHOT)) or (epoch == num_epochs - 1))):
+                obj = dict(
+                    model=self._model,
+                    loss_train=train_losses,
+                    loss_test=test_losses,
+                    loss_fn=self._loss_fn,
+                    optimizer=self._optimizer,
+                    scheduler=self._scheduler,
+                    model_opts=MODEL_OPTS,
+                    train_opts=TRAIN_OPTS,
+                    metadata=self._metadata
+                )
+                dt_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+                fpath = os.path.join(self._model_dir, dt_str + '.pickle')
+                save_pickle(fpath, obj)
 
     def predict(self,
                 data_nonbow: pd.DataFrame,
@@ -323,10 +353,10 @@ class Seq2Seq(nn.Module):
         assert np.all(preproc_params['std_stats'] > 1e-5)
         assert np.all(preproc_params['std_embeds'] > 1e-5)
         self._preproc_params = dict(
-            mu_stats=torch.as_tensor(preproc_params['mu_stats'], dtype=torch.float),#, device=self._device),
-            std_stats=torch.as_tensor(preproc_params['std_stats'], dtype=torch.float),#, device=self._device)
-            mu_embeds=torch.as_tensor(preproc_params['mu_embeds'], dtype=torch.float),#, device=self._device),
-            std_embeds=torch.as_tensor(preproc_params['std_embeds'], dtype=torch.float)#, device=self._device),
+            mu_stats=torch.tensor(preproc_params['mu_stats'], dtype=torch.float, requires_grad=False),#, device=self._device),
+            std_stats=torch.tensor(preproc_params['std_stats'], dtype=torch.float, requires_grad=False),#, device=self._device)
+            mu_embeds=torch.tensor(preproc_params['mu_embeds'], dtype=torch.float, requires_grad=False),#, device=self._device),
+            std_embeds=torch.tensor(preproc_params['std_embeds'], dtype=torch.float, requires_grad=False)#, device=self._device),
         )
 
         # init
@@ -351,7 +381,7 @@ class Seq2Seq(nn.Module):
             num_predict = data['num_predict']
 
         assert x_stats.ndim == 3
-        assert x_embeds.ndim == 1
+        assert x_embeds.ndim == 2
         assert x_stats.shape[-1] == self._input_size_rnn
         assert x_embeds.shape[-1] == self._num_units_embed[0]
 
@@ -359,14 +389,14 @@ class Seq2Seq(nn.Module):
         self._init_zero_hidden(x_stats.shape[0])
 
         # preprocess
-        x_stats, x_embeds = self._preprocess(x_stats, x_embeds)
+        x_stats, x_embeds = self._preprocess(x_stats, x_embeds=x_embeds)
 
         # encode and decode
         x_embeds = self._process_embeddings(x_embeds)
         out = self._process_inputs(x_stats, x_embeds)
         if not self.training:
             out_pred = self._predict(out[:, -1:, :], x_embeds, num_predict)
-            out = torch.concat((out, out_pred), dim=2)
+            out = torch.concat((out, out_pred), dim=1)
         # self._encode(x_stats, x_embeds)
         # out = self._decode(num_predict)
 
@@ -379,6 +409,8 @@ class Seq2Seq(nn.Module):
         """Feed preprocessed inputs through network"""
         x_merge = self._merge_stats_embeds(x_stats, x_embeds)
         x_out = self._feed_to_rnn(x_merge)
+        x_out = self.h2o(x_out)
+
         return x_out
 
     def _predict(self,
@@ -393,6 +425,7 @@ class Seq2Seq(nn.Module):
         for i in range(num_predict):
             x_merge = self._merge_stats_embeds(x_out, x_embeds)
             x_out = self._feed_to_rnn(x_merge)
+            x_out = self.h2o(x_out)
             out[:, i, :] = x_out[:, 0, :]
 
         return out
@@ -412,16 +445,14 @@ class Seq2Seq(nn.Module):
         x_embeds = x_embeds[:, None, :]
         x_embeds = x_embeds.repeat(1, x_stats.shape[1], 1)
         x_merge = torch.concat((x_stats, x_embeds), dim=2)
+
         return x_merge
 
     def _decode(self, num_predict: int) -> torch.Tensor:
         """Run decoder"""
-        # recurrence
         batch_size = self._hidden[0].shape[1]
         x_decode = torch.zeros((batch_size, num_predict, self._decoder_input_size))
         out = self._feed_to_rnn(x_decode)
-
-        # output layer
         out = self.h2o(out)
 
         return out
@@ -430,6 +461,7 @@ class Seq2Seq(nn.Module):
         """Feed tensor to RNN model"""
         out, hidden_new = self.rnn(input_, self._hidden)
         self._update_hidden(hidden_new)
+
         return out
 
     def _update_hidden(self, hidden_new):
@@ -438,13 +470,27 @@ class Seq2Seq(nn.Module):
 
     def _preprocess(self,
                     x_stats: torch.Tensor,
-                    x_embeds: torch.Tensor) \
-            -> Tuple[torch.Tensor, torch.Tensor]:
+                    x_embeds: Optional[torch.Tensor] = None) \
+            -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """Apply preprocessing to feature vectors. Operates on last (feature) dim."""
         x_stats = (x_stats - self._preproc_params['mu_stats']) / self._preproc_params['std_stats']
-        x_embeds = (x_embeds - self._preproc_params['mu_embeds']) / self._preproc_params['std_embeds']
+        if x_embeds is not None:
+            x_embeds = (x_embeds - self._preproc_params['mu_embeds']) / self._preproc_params['std_embeds']
+            return x_stats, x_embeds
+        else:
+            return x_stats
 
-        return x_stats, x_embeds
+    def _unpreprocess(self,
+                      x_stats: torch.Tensor,
+                      x_embeds: Optional[torch.Tensor] = None) \
+            -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        """Undo effect of preprocessing."""
+        x_stats = x_stats * self._preproc_params['std_stats'] + self._preproc_params['mu_stats']
+        if x_embeds is not None:
+            x_embeds = x_embeds * self._preproc_params['std_embeds'] + self._preproc_params['mu_embeds']
+            return x_stats, x_embeds
+        else:
+            return x_stats
 
     def _process_embeddings(self, x_embeds: torch.Tensor) -> torch.Tensor:
         """Process embeddings"""

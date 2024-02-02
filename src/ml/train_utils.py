@@ -1,6 +1,7 @@
 """Train utils"""
 
 import datetime
+import os
 from typing import Generator, Tuple, Dict, List, Optional, Union
 import requests
 from pprint import pprint
@@ -19,7 +20,7 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE,
                                            COL_VIEW_COUNT, COL_LIKE_COUNT, TRAIN_SEQ_PERIOD)
-from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT
+from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT, MODEL_ROOT
 from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances, is_subset
 from ytpa_utils.time_utils import get_ts_now_str
@@ -368,19 +369,40 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
     config_ml = ml_request.get_config()
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_SEQ2SEQ
 
+    # create new directory for models in this run
+    if not os.path.exists(MODEL_ROOT):
+        os.makedirs(MODEL_ROOT)
+    dt_str = datetime.datetime.now().strftime('$Y-%m-%d_%H-%M-%S')
+    model_dir = os.path.join(MODEL_ROOT, dt_str)
+    os.makedirs(model_dir)
+
     # fit model
     if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
-        model = MLModelSeq2Seq(ml_request, verbose=True)
+        metadata = dict(
+            usernames=data['nonbow_train'][COL_USERNAME].unique().tolist(),
+            video_ids=data['nonbow_train'][COL_VIDEO_ID].unique().tolist()
+        )
+        model = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
         model.fit(data['nonbow_train'], data['bow'])
     else:
         usernames = data['nonbow_train'][COL_USERNAME].drop_duplicates()
-        model = {uname: MLModelSeq2Seq(ml_request, verbose=True) for uname in usernames}
-        for uname, model_ in model.items():
+        model = {}
+        for uname in usernames:
             df_nonbow = data['nonbow_train']
             df_nonbow = df_nonbow[df_nonbow[COL_USERNAME] == uname]
             df_bow = data['bow']
             df_bow = df_bow[df_bow[COL_USERNAME] == uname]
-            model_.fit(df_nonbow, df_bow)
+
+            metadata = dict(
+                usernames=df_nonbow[COL_USERNAME].unique().tolist(),
+                video_ids=df_nonbow[COL_VIDEO_ID].unique().tolist()
+            )
+
+            print(f'\n== Training seq2seq model for user {uname} ==')
+            print(f'  {len(df_nonbow[COL_VIDEO_ID].unique())} videos, {len(df_nonbow)} samples')
+
+            model[uname] = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
+            model[uname].fit(df_nonbow, df_bow)
 
     exit(0)
 
