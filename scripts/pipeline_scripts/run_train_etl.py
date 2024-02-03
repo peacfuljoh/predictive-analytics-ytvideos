@@ -25,6 +25,9 @@ CACHE_FNAME = '/home/nuc/Desktop/temp/ytpa_data_for_ml.pickle'
 
 # os.remove(CACHE_FNAME) # delete cache file
 
+run_train = False
+run_predict = True
+
 
 
 # specify which version of the feature store to use
@@ -103,14 +106,16 @@ if 1:
     print_train_data_stats(data_all, ml_request)
 
     # train model
-    if model_type == ML_MODEL_TYPE_LIN_PROJ_RAND:
-        model_reg = train_regression_model_simple(data_all, ml_request)
-    elif model_type == ML_MODEL_TYPE_SEQ2SEQ:
-        model_reg = train_regression_model_seq2seq(data_all, ml_request)
+    if run_train:
+        if model_type == ML_MODEL_TYPE_LIN_PROJ_RAND:
+            model_reg = train_regression_model_simple(data_all, ml_request)
+        elif model_type == ML_MODEL_TYPE_SEQ2SEQ:
+            model_reg = train_regression_model_seq2seq(data_all, ml_request)
 
     # predict and visualize
-    if model_type == ML_MODEL_TYPE_SEQ2SEQ:
-        predict_seq2seq(data_all, ml_request)
+    if run_predict:
+        if model_type == ML_MODEL_TYPE_SEQ2SEQ:
+            predict_seq2seq(data_all, ml_request)
 
 # store model
 if 0:

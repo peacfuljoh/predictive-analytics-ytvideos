@@ -126,6 +126,10 @@ KEYS_TRAIN_NUM_TGT = [key for key in KEYS_TRAIN_NUM if key != COL_SUBSCRIBER_COU
 KEY_TRAIN_TIME_DIFF = 'time_after_upload' # seconds
 
 MODEL_ID = 'model_id'
+COL_SEQ_SPLIT_FOR_PRED = 'seq_split_for_pred'
+SEQ_SPLIT_INCLUDE = 'include'
+SEQ_SPLIT_EXCLUDE = 'include'
+SEQ_SPLIT_PREDICT = 'predict'
 
 # dict key names for encoded model
 MODEL_DICT_PREPROCESSOR = 'preprocessor'

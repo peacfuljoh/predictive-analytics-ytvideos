@@ -1,14 +1,17 @@
 """Utils for model fit and predict internals"""
-
-from typing import Tuple
+import os
+from typing import Tuple, Dict
 
 import numpy as np
 import pandas as pd
 
 from ytpa_utils.df_utils import join_on_dfs, convert_mixed_df_to_array
+from ytpa_utils.io_utils import load_pickle
 
+from src.crawler.crawler.config import MODEL_ROOT
 from src.crawler.crawler.constants import (KEYS_TRAIN_ID, FEATURES_VECTOR_COL, KEYS_FOR_FIT_NONBOW_SRC,
-                                           KEYS_FOR_FIT_NONBOW_TGT, KEYS_TRAIN_NUM, COL_VIDEO_ID)
+                                           KEYS_FOR_FIT_NONBOW_TGT, KEYS_TRAIN_NUM, COL_VIDEO_ID, MODEL_ID)
+from src.ml.ml_request import MLRequest
 
 
 # from src.rnnoise.constants import DEVICE, MODELS_DIR, MODEL_TYPES
@@ -49,3 +52,29 @@ def _dfs_to_train_seqs(data_bow: pd.DataFrame,
 
     return arr_td, arr_ti
 
+
+def load_models(ml_request: MLRequest) -> Dict[str, dict]:
+    """Load trained model info"""
+    # get model id and corresponding subdir
+    config_ml = ml_request.get_config()
+    model_id = config_ml[MODEL_ID]
+    model_subdir = os.path.join(MODEL_ROOT, model_id)
+
+    # get pickle filenames in the subdir for this run
+    fnames = [fname for fname in sorted(os.listdir(model_subdir)) if '.pickle' in fname]
+    dt_strs = [fname.split('__')[0] for fname in fnames] # get sub-model datetimes # TODO: do this with a regex
+    dt_strs = list(np.unique(dt_strs))
+
+    # get latest models
+    models_info = {}
+    for model_sub_id in dt_strs:
+        # get fnames for this model and find latest snapshot
+        fnames_snapshot = [fname for fname in fnames if model_sub_id in fname]
+        idx_ = np.argmax([int(fname.split('__')[-1].split('.')[0]) for fname in fnames_snapshot])
+        fname_to_load = fnames_snapshot[idx_]
+
+        # load model info
+        fpath_to_load = os.path.join(model_subdir, fname_to_load)
+        models_info[model_sub_id] = load_pickle(fpath_to_load)
+
+    return models_info

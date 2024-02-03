@@ -102,27 +102,3 @@ def forward_pass_through_seq(model: nn.Module,
     Y_pred = model._unpreprocess(out).detach().clone() if return_Y_pred else None # undo the effect of preprocessing
 
     return Y_pred, loss
-
-
-
-
-# def load_model(model_id: str,
-#                epoch: Optional[int] = None) \
-#         -> [nn.Module, str, str, str]:
-#     """Load neural network model from model store"""
-#     model_subdir = os.path.join(MODELS_DIR, model_id)
-#     model_fnames = [fname for fname in sorted(os.listdir(model_subdir)) if '.pickle' in fname and 'meta' not in fname]
-#
-#     if epoch is None: # last snapshot
-#         model_fname = model_fnames[-1]
-#     else: # get closest one
-#         epoch_nums = np.array([int(fname[:3]) for fname in model_fnames])
-#         idx_ = np.argmin(np.abs(epoch_nums - epoch))
-#         model_fname = model_fnames[idx_]
-#
-#     model_fpath = os.path.join(model_subdir, model_fname)
-#     model_obj = load_pickle(model_fpath)
-#
-#     model = model_obj['model']
-#
-#     return model, model_fname, model_fpath, model_subdir

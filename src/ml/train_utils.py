@@ -19,17 +19,19 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            COL_VIDEO_ID, COL_USERNAME, COL_TIMESTAMP_ACCESSED,
                                            MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE,
-                                           COL_VIEW_COUNT, COL_LIKE_COUNT, TRAIN_SEQ_PERIOD, MODEL_ID)
+                                           COL_VIEW_COUNT, COL_LIKE_COUNT, TRAIN_SEQ_PERIOD, MODEL_ID,
+                                           COL_SEQ_SPLIT_FOR_PRED, SEQ_SPLIT_INCLUDE, SEQ_SPLIT_EXCLUDE,
+                                           SEQ_SPLIT_PREDICT)
 from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT, MODEL_ROOT
 from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances, is_subset
 from ytpa_utils.time_utils import get_ts_now_str
 from ytpa_utils.df_utils import df_dt_codec, resample_one_df_in_time
 from ytpa_utils.misc_utils import print_df_full
-from ytpa_utils.io_utils import load_pickle
 from ytpa_api_utils.websocket_utils import df_generator_ws
 from src.ml.ml_constants import KEYS_EXTRACT_LIN, KEYS_FEAT_SRC_LIN, KEYS_FEAT_TGT_LIN, KEYS_EXTRACT_SEQ2SEQ
 from src.ml.ml_request import MLRequest
+from src.ml.model_utils import load_models
 from src.ml.models_linear import MLModelBaseRegressionSimple
 from src.ml.models_nn import MLModelSeq2Seq
 from src.ml.models_projection import MLModelLinProjRandom
@@ -363,6 +365,52 @@ def train_test_split(data: Dict[str, pd.DataFrame],
 
 
 """ Train regression models """
+def train_regression_model_simple(data: Dict[str, pd.DataFrame],
+                                  ml_request: MLRequest) \
+        -> Union[MLModelBaseRegressionSimple, Dict[str, MLModelBaseRegressionSimple]]:
+    """Train simple regression model"""
+    config_ml = ml_request.get_config()
+    assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
+
+    # fit model
+    if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
+        model = MLModelBaseRegressionSimple(ml_request, verbose=True)
+        model.fit(data['nonbow_train'], data['bow'])
+    else:
+        usernames = data['nonbow_train'][COL_USERNAME].drop_duplicates()
+        model = {uname: MLModelBaseRegressionSimple(ml_request, verbose=True) for uname in usernames}
+        for uname, model_ in model.items():
+            df_nonbow = data['nonbow_train']
+            df_nonbow = df_nonbow[df_nonbow[COL_USERNAME] == uname]
+            df_bow = data['bow']
+            df_bow = df_bow[df_bow[COL_USERNAME] == uname]
+            model_.fit(df_nonbow, df_bow)
+
+        if 0:
+            # try model encoding and decoding
+            model_dicts = {}
+            for uname, model_ in model.items():
+                model_dicts[uname] = model_.encode()
+            model = {}
+            for uname in usernames:
+                model[uname] = MLModelBaseRegressionSimple(verbose=True, model_dict=model_dicts[uname])
+
+    # see predictions
+    if 1:
+        import matplotlib.pyplot as plt
+
+        if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
+            plot_predictions(data, model)
+        else:
+            for uname, model_ in model.items():
+                df_nonbow = data['nonbow_test']
+                data_ = dict(nonbow_test=df_nonbow[df_nonbow[COL_USERNAME] == uname])
+                plot_predictions(data_, model_)
+
+        plt.show()
+
+    return model
+
 def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
                                    ml_request: MLRequest) \
         -> MLModelSeq2Seq:
@@ -438,78 +486,70 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
 def predict_seq2seq(data: Dict[str, pd.DataFrame],
                     ml_request: MLRequest):
     """Perform sequential predictions with a desired model."""
+    print(f'\n\n ===== Running prediction for seq2seq model =====\n')
+
     config_ml = ml_request.get_config()
     assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_SEQ2SEQ
     assert MODEL_ID in config_ml
 
     # load model
     models_info = load_models(ml_request)
-    model = None
+    model_ids = list(models_info.keys())
+
+    # print useful info
+    if 1:
+        # dict_keys(['model', 'stats', 'modules', 'options', 'metadata', 'epoch'])
+        for model_id in model_ids:
+            model_ = models_info[model_id]
+            print(f'== Trained model info ==')
+            print(f"  Epoch: {model_['epoch']}")
+            print(f"  Usernames: {model_['metadata']['usernames']}")
+            print(f"  Number of videos: {len(model_['metadata']['video_ids'])}")
+
+    # make sequence splits (decide where to predict from in each sequence)
+    make_seq_splits_for_predict(data)
 
     # predict
-    Y_pred = model.predict(data['nonbow_test'], data['bow'])
-
-def load_models(ml_request: MLRequest) -> Dict[str, dict]:
-    """Load trained model info"""
-    config_ml = ml_request.get_config()
-    model_id = config_ml[MODEL_ID]
-    model_subdir = os.path.join(MODEL_ROOT, model_id)
-
-    models_info = {}
-    fnames = [fname for fname in sorted(os.listdir(model_subdir)) if '.pickle' in fname]
-    dt_strs = [fname.split('__')[0] for fname in fnames] # get sub-model datetimes # TODO: do this with a regex
-    dt_strs = list(np.unique(dt_strs))
-    for model_sub_id in dt_strs:
-        fname_to_load = max([fname for fname in fnames if model_sub_id in fname])
-        models_info[model_sub_id] = load_pickle(fname_to_load)
-
-    return models_info
-
-def train_regression_model_simple(data: Dict[str, pd.DataFrame],
-                                  ml_request: MLRequest) \
-        -> Union[MLModelBaseRegressionSimple, Dict[str, MLModelBaseRegressionSimple]]:
-    """Train simple regression model"""
-    config_ml = ml_request.get_config()
-    assert config_ml[ML_MODEL_TYPE] == ML_MODEL_TYPE_LIN_PROJ_RAND
-
-    # fit model
-    if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
-        model = MLModelBaseRegressionSimple(ml_request, verbose=True)
-        model.fit(data['nonbow_train'], data['bow'])
-    else:
-        usernames = data['nonbow_train'][COL_USERNAME].drop_duplicates()
-        model = {uname: MLModelBaseRegressionSimple(ml_request, verbose=True) for uname in usernames}
-        for uname, model_ in model.items():
-            df_nonbow = data['nonbow_train']
-            df_nonbow = df_nonbow[df_nonbow[COL_USERNAME] == uname]
-            df_bow = data['bow']
-            df_bow = df_bow[df_bow[COL_USERNAME] == uname]
-            model_.fit(df_nonbow, df_bow)
-
-        if 0:
-            # try model encoding and decoding
-            model_dicts = {}
-            for uname, model_ in model.items():
-                model_dicts[uname] = model_.encode()
-            model = {}
-            for uname in usernames:
-                model[uname] = MLModelBaseRegressionSimple(verbose=True, model_dict=model_dicts[uname])
+    df_preds = make_seq2seq_predictions_with_models(data, models_info)
 
     # see predictions
-    if 1:
-        import matplotlib.pyplot as plt
+    pass
 
-        if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
-            plot_predictions(data, model)
-        else:
-            for uname, model_ in model.items():
-                df_nonbow = data['nonbow_test']
-                data_ = dict(nonbow_test=df_nonbow[df_nonbow[COL_USERNAME] == uname])
-                plot_predictions(data_, model_)
+def make_seq_splits_for_predict(data: Dict[str, pd.DataFrame]):
+    """Make decisions about where to split test sequences into input and to-predict. In-place modification."""
+    split_flags = pd.Series(index=data['nonbow_test'].index)
+    split_flags[:] = SEQ_SPLIT_EXCLUDE
+    for video_id, df_ in data['nonbow_test'].groupby(COL_VIDEO_ID):
+        idx_split = int(0.5 * len(df_))
+        split_flags[df_.index[:idx_split]] = SEQ_SPLIT_INCLUDE
+    data['nonbow_test'][COL_SEQ_SPLIT_FOR_PRED] = split_flags
 
-        plt.show()
+def make_seq2seq_predictions_with_models(data: Dict[str, pd.DataFrame],
+                                         models_info: Dict[str, dict]) \
+        -> pd.DataFrame:
+    """Make seq2seq predictions with loaded models"""
+    model_ids = list(models_info.keys())
 
-    return model
+    dfs = []
+    for model_id in model_ids:
+        model_info_ = models_info[model_id]
+
+        unames = model_info_['metadata']['usernames']
+
+        model = model_info_['model']
+        model.eval()
+
+        query = f"({COL_USERNAME} in {unames}) & ({COL_SEQ_SPLIT_FOR_PRED} == {SEQ_SPLIT_INCLUDE})"
+        df_nonbow_input = data['nonbow_test'].query(query)
+        df_pred_ = model.predict(df_nonbow_input, data['bow'])
+        dfs.append(df_pred_)
+
+    df_pred_all = pd.concat(dfs, axis=0, ignore_index=True)
+
+    return df_pred_all
+
+
+
 
 
 
