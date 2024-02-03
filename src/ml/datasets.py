@@ -117,10 +117,10 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
         """
         super().__init__()
 
+        assert mode in ['train', 'test']
+
         self.batch_size = batch_size
         self._mode = mode
-
-        assert mode in ['train', 'test']
 
         # collect batch info for each group
         self._batch_info = {}
@@ -143,15 +143,9 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
         return self._num_batches_tot
 
     def __iter__(self) -> Iterator[List[int]]:
-        # make batches of data indices
         batches = self._make_batches()
-
-        # scramble the batches
-        batches = [batches[i] for i in np.random.permutation(len(batches))]
-
-        # yield them
-        for batch in batches:
-            yield batch
+        for i in np.random.permutation(len(batches)):
+            yield batches[i]
 
     def _make_batches(self):
         """Make a new set of batches. Always the same number of batches."""
@@ -171,7 +165,7 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
                 for i in range(num_batches):
                     batches_group = d['idxs_in_dataset'][i * self.batch_size:(i + 1) * self.batch_size].tolist()
                     assert len(batches_group) > 0
-                    batches += batches_group
+                    batches.append(batches_group)
 
         return batches
 

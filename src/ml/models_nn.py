@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 
 from ytpa_utils.val_utils import is_subset
@@ -68,21 +69,29 @@ class MLModelSeq2Seq():
         self._model_dir: Optional[str] = model_dir
         self._metadata: Optional[dict] = metadata
 
+        self._dataloader_train = None
+        self._dataloader_test = None
+
         # validate and store config
         assert ml_request.get_valid()
         self._config = ml_request.get_config()
 
     def fit(self,
             data_nonbow: pd.DataFrame,
-            data_bow: pd.DataFrame):
+            data_bow: pd.DataFrame,
+            data_nonbow_test: Optional[pd.DataFrame] = None):
         """
         Fit the model with static (bow) and dynamic (nonbow) features.
         """
         # make sure metadata is available for all videos
         assert is_subset(list(data_nonbow[COL_VIDEO_ID]), list(data_bow[COL_VIDEO_ID]))
 
+        self._dt_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+
         # setup
         self._dataloader_train = self._prepare_dataloader(data_nonbow, data_bow, 'train')
+        if data_nonbow_test is not None:
+            self._dataloader_test = self._prepare_dataloader(data_nonbow_test, data_bow, 'test')
         preproc_params = self._init_preprocessor(self._dataloader_train)
 
         self._model = Seq2Seq(MODEL_OPTS, preproc_params)
@@ -98,6 +107,8 @@ class MLModelSeq2Seq():
                             mode: str) \
             -> DataLoader:
         """Make dataset and dataloader for a training run"""
+        assert mode in ['train', 'test']
+
         # dataset
         dataset = YTStatsDataset(data_nonbow, data_bow)
 
@@ -176,8 +187,13 @@ class MLModelSeq2Seq():
         MOMENTUM = TRAIN_OPTS['momentum']
         DAMPENING = 0.0
         WEIGHT_DECAY = 1e-8
+        SCHEDULER = 'None'
+        NUM_EPOCHS = TRAIN_OPTS['num_epochs']
+
+        self._eval_test = self._dataloader_test is not None
 
         self._num_batches_train = len(self._dataloader_train)
+        self._num_batches_test = max(len(self._dataloader_test), 1) if self._eval_test else 1
 
         # set up loss function
         self._loss_fn = nn.MSELoss()
@@ -187,15 +203,19 @@ class MLModelSeq2Seq():
                                     weight_decay=WEIGHT_DECAY)
 
         # set up scheduler
-        self._scheduler = None
-        # if SCHEDULER == 'MultiStepLR':
-        #     milestones = [int(0.5 * num_epochs), int(0.8 * num_epochs)]
-        #     self._scheduler = MultiStepLR(optimizer, milestones=milestones, gamma=0.2)
+        if SCHEDULER == 'None':
+            self._scheduler = None
+        elif SCHEDULER == 'MultiStepLR':
+            milestones = [int(0.5 * NUM_EPOCHS), int(0.8 * NUM_EPOCHS)]
+            self._scheduler = MultiStepLR(self._optimizer, milestones=milestones, gamma=0.2)
+        else:
+            raise NotImplementedError
 
     def _train(self):
         """Training procedure"""
         num_epochs = TRAIN_OPTS['num_epochs']
         max_grad_norm = TRAIN_OPTS['max_grad_norm']
+
 
         # train
         print("===== Training =====")
@@ -215,11 +235,11 @@ class MLModelSeq2Seq():
             print(f'Time elapsed in train epoch: {int(time.time() - t00)} seconds.')
 
             # test
-            # if eval_test:
-            #     t11 = time.time()
-            #     test_loss_ = perform_test_epoch(model, loss_fn, dataloader_test)
-            #     test_losses.append(test_loss_)
-            #     print(f'Time elapsed in test epoch: {int(time.time() - t11)} seconds.')
+            if self._eval_test:
+                t11 = time.time()
+                test_loss_ = perform_test_epoch(self._model, self._loss_fn, self._dataloader_test)
+                test_losses.append(test_loss_)
+                print(f'Time elapsed in test epoch: {int(time.time() - t11)} seconds.')
 
             # update rate scheduler
             if self._scheduler is not None:
@@ -228,13 +248,13 @@ class MLModelSeq2Seq():
             # print
             train_abs_err = math.sqrt(train_losses[epoch] / (self._num_batches_train))
             print(f' epoch: {epoch + 1}, train loss: {train_losses[epoch]}, train abs err: {train_abs_err}')
-            # if eval_test:
-            #     test_abs_err = math.sqrt(test_losses[epoch] / (num_batches_test))
-            #     print(f' epoch: {epoch + 1}, test loss: {test_losses[epoch]}, test abs err: {test_abs_err}'
+            if self._eval_test:
+                test_abs_err = math.sqrt(test_losses[epoch] / (self._num_batches_test))
+                print(f' epoch: {epoch + 1}, test loss: {test_losses[epoch]}, test abs err: {test_abs_err}')
 
             # save latest info to pickle file
-            if (self._model_dir is not None and
-                    ((not np.mod(epoch, NUM_EPOCHS_PER_SNAPSHOT)) or (epoch == num_epochs - 1))):
+            epoch_to_save = (not np.mod(epoch, NUM_EPOCHS_PER_SNAPSHOT)) or (epoch == num_epochs - 1)
+            if (self._model_dir is not None) and epoch_to_save:
                 obj = dict(
                     model=self._model,
                     loss_train=train_losses,
@@ -247,8 +267,7 @@ class MLModelSeq2Seq():
                     metadata=self._metadata,
                     epoch=epoch
                 )
-                dt_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-                fpath = os.path.join(self._model_dir, dt_str + '.pickle')
+                fpath = os.path.join(self._model_dir, self._dt_str + '__' + str(epoch) + '.pickle')
                 save_pickle(fpath, obj)
 
     def predict(self,
@@ -378,8 +397,8 @@ class Seq2Seq(nn.Module):
         """
         x_stats = data['stats']
         x_embeds = data['embeds']
-        if not self.training:
-            num_predict = data['num_predict']
+        # if not self.training:
+        #     num_predict = data['num_predict']
 
         assert x_stats.ndim == 3
         assert x_embeds.ndim == 2
@@ -395,9 +414,9 @@ class Seq2Seq(nn.Module):
         # encode and decode
         x_embeds = self._process_embeddings(x_embeds)
         out = self._process_inputs(x_stats, x_embeds)
-        if not self.training:
-            out_pred = self._predict(out[:, -1:, :], x_embeds, num_predict)
-            out = torch.concat((out, out_pred), dim=1)
+        # if not self.training:
+        #     out_pred = self._predict(out[:, -1:, :], x_embeds, num_predict)
+        #     out = torch.concat((out, out_pred), dim=1)
         # self._encode(x_stats, x_embeds)
         # out = self._decode(num_predict)
 

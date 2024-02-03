@@ -376,6 +376,16 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
     model_dir = os.path.join(MODEL_ROOT, dt_str)
     os.makedirs(model_dir)
 
+    # training data overview
+    df_overview = data['nonbow_train'].groupby([COL_USERNAME, COL_VIDEO_ID]).size().to_frame('num_frames').reset_index()
+    # df_overview = df_overview.reset_index()#.rename(columns={0: 'num_frames'})
+    groupby = df_overview.drop(columns=COL_VIDEO_ID).groupby(COL_USERNAME)
+    df_overview_counts = groupby.sum()
+    df_overview_counts['num_videos'] = groupby.size()
+
+    print(f'\n== Training seq2seq models for individual users ==')
+    print_df_full(df_overview_counts)
+
     # fit model
     if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
         metadata = dict(
@@ -398,11 +408,15 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
                 video_ids=df_nonbow[COL_VIDEO_ID].unique().tolist()
             )
 
+            df_nonbow_test = data['nonbow_test']
+            df_nonbow_test = df_nonbow_test[df_nonbow_test[COL_USERNAME] == uname]
+
             print(f'\n== Training seq2seq model for user {uname} ==')
-            print(f'  {len(df_nonbow[COL_VIDEO_ID].unique())} videos, {len(df_nonbow)} samples')
+            print(f'  {df_overview_counts.loc[uname]["num_videos"]} videos, '
+                  f'{df_overview_counts.loc[uname]["num_frames"]} frames')
 
             model[uname] = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
-            model[uname].fit(df_nonbow, df_bow)
+            model[uname].fit(df_nonbow, df_bow, data_nonbow_test=df_nonbow_test)
 
     exit(0)
 
