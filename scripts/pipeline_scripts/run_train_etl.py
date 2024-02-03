@@ -7,14 +7,15 @@ from ytpa_utils.io_utils import load_pickle, save_pickle
 
 from src.ml.train_utils import (load_feature_records, train_test_split, prepare_feature_records,
                                 train_regression_model_simple, train_regression_model_seq2seq, save_reg_model,
-                                print_train_data_stats)
+                                print_train_data_stats, predict_seq2seq)
 from src.crawler.crawler.constants import (VOCAB_ETL_CONFIG_COL, FEATURES_ETL_CONFIG_COL, PREFEATURES_ETL_CONFIG_COL,
                                            FEATURES_TIMESTAMP_COL, ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS,
                                            ML_HYPERPARAM_RLP_DENSITY, ML_HYPERPARAM_EMBED_DIM,
                                            ML_MODEL_TYPE_LIN_PROJ_RAND, VEC_EMBED_DIMS, TRAIN_TEST_SPLIT,
                                            ML_MODEL_TYPE_SEQ2SEQ,
                                            ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
-                                           ML_HYPERPARAM_SR_CV_COUNT, SPLIT_TRAIN_BY_USERNAME)
+                                           ML_HYPERPARAM_SR_CV_COUNT, SPLIT_TRAIN_BY_USERNAME,
+                                           MODEL_ID)
 from src.ml.ml_request import MLRequest
 
 
@@ -76,6 +77,7 @@ else:
 
 config_ml[TRAIN_TEST_SPLIT] = train_test_split_fract
 config_ml[SPLIT_TRAIN_BY_USERNAME] = split_train_by_username
+config_ml[MODEL_ID] = '2024-02-03_11-27-06'
 
 
 ml_request = MLRequest(config_ml)
@@ -105,6 +107,10 @@ if 1:
         model_reg = train_regression_model_simple(data_all, ml_request)
     elif model_type == ML_MODEL_TYPE_SEQ2SEQ:
         model_reg = train_regression_model_seq2seq(data_all, ml_request)
+
+    # predict and visualize
+    if model_type == ML_MODEL_TYPE_SEQ2SEQ:
+        predict_seq2seq(data_all, ml_request)
 
 # store model
 if 0:

@@ -6,7 +6,8 @@ from src.crawler.crawler.constants import (ML_MODEL_TYPE, ML_MODEL_HYPERPARAMS, 
                                            ML_HYPERPARAM_EMBED_DIM, ML_HYPERPARAM_RLP_DENSITY, ML_CONFIG_KEYS,
                                            ML_MODEL_TYPES, TRAIN_TEST_SPLIT,
                                            TRAIN_TEST_SPLIT_DFLT, ML_HYPERPARAM_SR_ALPHAS, ML_HYPERPARAM_SR_CV_SPLIT,
-                                           ML_HYPERPARAM_SR_CV_COUNT, ML_MODEL_TYPE_SEQ2SEQ)
+                                           ML_HYPERPARAM_SR_CV_COUNT, ML_MODEL_TYPE_SEQ2SEQ, SPLIT_TRAIN_BY_USERNAME,
+                                           MODEL_ID)
 from ytpa_utils.val_utils import is_list_of_floats
 
 
@@ -38,6 +39,10 @@ class MLRequest():
 
         # insert defaults if not present
         config[TRAIN_TEST_SPLIT] = config.get(TRAIN_TEST_SPLIT, TRAIN_TEST_SPLIT_DFLT)
+        if SPLIT_TRAIN_BY_USERNAME in config:
+            assert isinstance(config[SPLIT_TRAIN_BY_USERNAME], bool)
+        if MODEL_ID in config:
+            assert isinstance(config[MODEL_ID], str)
 
         # mark request as valid
         self._valid = True

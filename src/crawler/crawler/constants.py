@@ -125,6 +125,8 @@ KEYS_TRAIN_NUM = [COL_COMMENT_COUNT, COL_LIKE_COUNT, COL_VIEW_COUNT, COL_SUBSCRI
 KEYS_TRAIN_NUM_TGT = [key for key in KEYS_TRAIN_NUM if key != COL_SUBSCRIBER_COUNT]
 KEY_TRAIN_TIME_DIFF = 'time_after_upload' # seconds
 
+MODEL_ID = 'model_id'
+
 # dict key names for encoded model
 MODEL_DICT_PREPROCESSOR = 'preprocessor'
 MODEL_DICT_DATA_BOW = 'data_bow'

@@ -23,8 +23,9 @@ from src.ml.ml_request import MLRequest
 from src.ml.torch_utils import perform_train_epoch, perform_test_epoch
 from src.ml.datasets import YTStatsDataset, VariableLengthSequenceBatchSampler
 from src.ml.ml_constants import (SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_LEN_GROUP, TRAIN_BATCH_SIZE,
-                                 NUM_EPOCHS_PER_SNAPSHOT)
-from src.crawler.crawler.constants import COL_VIDEO_ID, TRAIN_SEQ_PERIOD, VEC_EMBED_DIMS
+                                 NUM_EPOCHS_PER_SNAPSHOT, KEYS_TRAIN_NUM)
+from src.crawler.crawler.constants import (COL_VIDEO_ID, TRAIN_SEQ_PERIOD, VEC_EMBED_DIMS, COL_USERNAME,
+                                           COL_TIMESTAMP_ACCESSED)
 
 
 
@@ -40,8 +41,8 @@ Tensor of feature vector sequences:
 MODEL_OPTS = dict(
     num_layers_rnn=2,
     hidden_size_rnn=30,
-    input_size_rnn=4,
-    output_size_rnn=4,
+    input_size_rnn=len(KEYS_TRAIN_NUM),
+    output_size_rnn=len(KEYS_TRAIN_NUM),
     num_units_embed=[VEC_EMBED_DIMS, 100, 10]
 )
 TRAIN_OPTS = dict(
@@ -107,10 +108,10 @@ class MLModelSeq2Seq():
                             mode: str) \
             -> DataLoader:
         """Make dataset and dataloader for a training run"""
-        assert mode in ['train', 'test']
+        assert mode in ['train', 'test', 'predict']
 
         # dataset
-        dataset = YTStatsDataset(data_nonbow, data_bow)
+        dataset = YTStatsDataset(data_nonbow, data_bow, mode)
 
         # sampler
         group_ids = list(dataset._seq_info[COL_SEQ_LEN_GROUP])
@@ -222,6 +223,7 @@ class MLModelSeq2Seq():
 
         train_losses = []
         test_losses = []
+        test_loss_ = 0.0
 
         # iterate
         for epoch in range(num_epochs):
@@ -238,8 +240,8 @@ class MLModelSeq2Seq():
             if self._eval_test:
                 t11 = time.time()
                 test_loss_ = perform_test_epoch(self._model, self._loss_fn, self._dataloader_test)
-                test_losses.append(test_loss_)
                 print(f'Time elapsed in test epoch: {int(time.time() - t11)} seconds.')
+            test_losses.append(test_loss_)
 
             # update rate scheduler
             if self._scheduler is not None:
@@ -255,15 +257,23 @@ class MLModelSeq2Seq():
             # save latest info to pickle file
             epoch_to_save = (not np.mod(epoch, NUM_EPOCHS_PER_SNAPSHOT)) or (epoch == num_epochs - 1)
             if (self._model_dir is not None) and epoch_to_save:
+                df_info = pd.DataFrame(dict(
+                    epoch=list(range(epoch + 1)),
+                    loss_train=train_losses,
+                    loss_test=test_losses
+                ))
                 obj = dict(
                     model=self._model,
-                    loss_train=train_losses,
-                    loss_test=test_losses,
-                    loss_fn=self._loss_fn,
-                    optimizer=self._optimizer,
-                    scheduler=self._scheduler,
-                    model_opts=MODEL_OPTS,
-                    train_opts=TRAIN_OPTS,
+                    stats=df_info,
+                    modules=dict(
+                        loss_fn=self._loss_fn,
+                        optimizer=self._optimizer,
+                        scheduler=self._scheduler
+                    ),
+                    options=dict(
+                        model_opts=MODEL_OPTS,
+                        train_opts=TRAIN_OPTS
+                    ),
                     metadata=self._metadata,
                     epoch=epoch
                 )
@@ -281,34 +291,65 @@ class MLModelSeq2Seq():
 
         pred_horizon = pred_opts.get('pred_horizon', 7 * 24 * 3600) # seconds to predict from start of each video's records
 
-        dataloader_test = self._prepare_dataloader(data_nonbow, data_bow, 'test')
+        # set up dataloader and model options
+        dataloader_pred = self._prepare_dataloader(data_nonbow, data_bow, 'predict')
 
         is_training = self._model.training
         self._model.eval()
+        self._model.predicting = True
 
+        # predict
         df_out = []
-
-        for _, (X, Y) in enumerate(dataloader_test):
+        for _, (X, _) in enumerate(dataloader_pred):
             # reset hidden state
             self._model.reset_hidden()
 
             # determine number of steps to predict
-            num_steps_data = X['stats'].shape[1]
+            num_videos, num_steps_data, _ = X['stats'].shape
             num_steps_pred_tot = int(pred_horizon / TRAIN_SEQ_PERIOD)
             num_steps_pred = num_steps_pred_tot - num_steps_data
+            if num_steps_pred <= 0:
+                continue
             X['num_predict'] = num_steps_pred
 
             # make prediction
             out = self._model(X)
 
             # pack into output DataFrame
-            # TODO: implement this
+            for b, video_id in enumerate(X['video_id']):
+                preds = out[b, :, :].numpy()
+                df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM)
+                df_[COL_USERNAME] = data_bow.query(f'{COL_VIDEO_ID} == {video_id}').iloc[0][COL_USERNAME]
+                df_[COL_VIDEO_ID] = video_id
+                ts_last = data_nonbow.query(f'{COL_VIDEO_ID} == {video_id}')[COL_TIMESTAMP_ACCESSED].max()
+                ts_pred = [ts_last + datetime.timedelta(seconds=(i + 1) * TRAIN_SEQ_PERIOD)
+                           for i in range(num_steps_pred)]
+                df_[COL_TIMESTAMP_ACCESSED] = ts_pred
+                df_out.append(df_)
+            # preds = out.numpy().transpose(1, 0, 2).reshape(num_videos * num_steps_data, len(KEYS_TRAIN_NUM))
+            # df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM)
+            # video_ids = [video_id for _ in range(num_steps_pred) for video_id in X['video_id']]
+            # usernames = [data_nonbow[data_nonbow[COL_VIDEO_ID] == video_id][COL_USERNAME] for video_id in X['video_id']]
+            # usernames = [uname for _ in range(num_steps_pred) for uname in usernames]
+            # df_[COL_USERNAME] = usernames
+            # df_[COL_VIDEO_ID] = video_ids
 
         self._model.training = is_training
+        self._model.predicting = False
 
         df_out = pd.concat(df_out, axis=0, ignore_index=True)
 
         return df_out
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -346,18 +387,6 @@ class Seq2Seq(nn.Module):
         self.embed_dropout = nn.Dropout(dropout)
 
         # model definition for recurrence
-        # self.encoder = nn.LSTM(
-        #     self._input_size_rnn_merged,
-        #     self._hidden_size_rnn,
-        #     num_layers=self._num_layers_rnn,
-        #     batch_first=True
-        # )
-        # self.decoder = nn.LSTM(
-        #     self._decoder_input_size,
-        #     self._hidden_size_rnn,
-        #     num_layers=self._num_layers_rnn,
-        #     batch_first=True
-        # )
         self.rnn = nn.LSTM(
             self._input_size_rnn_merged,
             self._hidden_size_rnn,
@@ -382,6 +411,7 @@ class Seq2Seq(nn.Module):
         # init
         self._hidden = None
         self._steps_pred = None
+        self.predicting = False
 
     def forward(self, data: Dict[str, Union[torch.Tensor, int]]) -> torch.Tensor:
         """
@@ -397,9 +427,12 @@ class Seq2Seq(nn.Module):
         """
         x_stats = data['stats']
         x_embeds = data['embeds']
-        # if not self.training:
-        #     num_predict = data['num_predict']
 
+        if self.predicting:
+            num_predict = data['num_predict']
+            assert num_predict >= 1
+
+        assert not (self.training and self.predicting)
         assert x_stats.ndim == 3
         assert x_embeds.ndim == 2
         assert x_stats.shape[-1] == self._input_size_rnn
@@ -414,11 +447,9 @@ class Seq2Seq(nn.Module):
         # encode and decode
         x_embeds = self._process_embeddings(x_embeds)
         out = self._process_inputs(x_stats, x_embeds)
-        # if not self.training:
-        #     out_pred = self._predict(out[:, -1:, :], x_embeds, num_predict)
-        #     out = torch.concat((out, out_pred), dim=1)
-        # self._encode(x_stats, x_embeds)
-        # out = self._decode(num_predict)
+        if self.predicting:
+            out = self._predict(out[:, -1:, :], x_embeds, num_predict)
+            out = self._model._unpreprocess(out)
 
         return out
 
@@ -440,13 +471,12 @@ class Seq2Seq(nn.Module):
             -> torch.Tensor:
         """Predict future values"""
         out = torch.zeros((x_stats.shape[0], num_predict, x_stats.shape[2]), dtype=torch.float)
+        out[:, 0, :] = x_stats[:, 0, :]
 
         x_out = x_stats
-        for i in range(num_predict):
-            x_merge = self._merge_stats_embeds(x_out, x_embeds)
-            x_out = self._feed_to_rnn(x_merge)
-            x_out = self.h2o(x_out)
-            out[:, i, :] = x_out[:, 0, :]
+        for i in range(num_predict - 1):
+            x_out = self._process_inputs(x_out, x_embeds)
+            out[:, i + 1, :] = x_out[:, 0, :]
 
         return out
 
@@ -479,14 +509,9 @@ class Seq2Seq(nn.Module):
 
     def _feed_to_rnn(self, input_: torch.Tensor) -> torch.Tensor:
         """Feed tensor to RNN model"""
-        out, hidden_new = self.rnn(input_, self._hidden)
-        self._update_hidden(hidden_new)
+        out, self._hidden = apply_module_with_hidden(self.rnn, input_, self._hidden)
 
         return out
-
-    def _update_hidden(self, hidden_new):
-        """Set hidden var with new value"""
-        self._hidden = (hidden_new[0].detach().clone(), hidden_new[1].detach().clone())
 
     def _preprocess(self,
                     x_stats: torch.Tensor,
@@ -533,3 +558,17 @@ class Seq2Seq(nn.Module):
         self._hidden = (hidden, cell)
 
 
+
+
+
+
+### Helper methods ###
+def apply_module_with_hidden(nn_module: nn.Module,
+                             input_: torch.Tensor,
+                             hidden: Tuple[torch.Tensor, torch.Tensor]) \
+        -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    """Feed tensor to RNN model"""
+    out, hidden_new = nn_module(input_, hidden)
+    hidden = (hidden_new[0].detach().clone(), hidden_new[1].detach().clone())
+
+    return out, hidden

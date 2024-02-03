@@ -1,5 +1,5 @@
 import math
-from typing import List, Dict, Tuple, Iterator
+from typing import List, Dict, Tuple, Iterator, Optional
 
 import numpy as np
 import pandas as pd
@@ -23,7 +23,8 @@ class YTStatsDataset(Dataset):
     """
     def __init__(self,
                  data_nonbow: pd.DataFrame,
-                 data_bow: pd.DataFrame):
+                 data_bow: pd.DataFrame,
+                 mode: str):
         """
         Initialize the dataset.
 
@@ -31,6 +32,10 @@ class YTStatsDataset(Dataset):
             data_nonbow: DataFrame where each row has a timestamped sample of video stats
             data_bow: DataFrame with one row per video containing embedded static features (e.g. text, image)
         """
+        assert mode in ['train', 'test', 'predict']
+
+        self._mode = mode
+
         # verify columns
         keys_nonbow = [key for key in KEYS_EXTRACT_SEQ2SEQ if key is not FEATURES_VECTOR_COL]
         keys_bow = KEYS_TRAIN_ID + [FEATURES_VECTOR_COL]
@@ -75,29 +80,25 @@ class YTStatsDataset(Dataset):
     def __len__(self):
         return self._num_seqs
 
-    def __getitem__(self, idx: int) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-        # TODO: Use original values or sequential diffs as targets?
-        #       Diff amplifies changes over time but may cause drift of predictions.
+    def __getitem__(self, idx: int) -> Tuple[Dict[str, torch.Tensor], Optional[torch.Tensor]]:
         video_id: str = self._video_ids[idx]
-
         data_ = self._data[video_id]
 
-        # num_samps = input_['stats'].shape[0]
-        # samp_switch = np.random.randint(int(num_samps * MIN_SAMP_SWITCH_FRAC), int(num_samps * MAX_SAMP_SWITCH_FRAC))
-        #
-        # sample = {
-        #     'stats': torch.tensor(input_['stats'][:samp_switch]),
-        #     'embeds': torch.tensor(input_['embeds']),
-        #     'target': torch.tensor(input_['stats'][samp_switch:])
-        # }
         input_ = {
             'video_id': [video_id],
             'stats': data_['stats'][:-1], # (num_steps - 1) x num_stats_features
-            'embeds': data_['embeds'] # num_embeds_features
+            'embeds': data_['embeds']  # num_embeds_features
         }
-        ouput_ = data_['stats'][1:] # (num_steps - 1) x num_stats_features
 
-        return input_, ouput_
+        output_ = None
+        if self._mode in ['train', 'test']:
+            output_ = data_['stats'][1:] # (num_steps - 1) x num_stats_features
+        elif self._mode == 'predict':
+            pass
+        else:
+            raise NotImplementedError
+
+        return input_, output_
 
 
 class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
@@ -117,7 +118,7 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
         """
         super().__init__()
 
-        assert mode in ['train', 'test']
+        assert mode in ['train', 'test', 'predict']
 
         self.batch_size = batch_size
         self._mode = mode
@@ -160,12 +161,14 @@ class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
                 idxs_perm = np.random.permutation(d['idxs_in_dataset'])[:num_idxs_tot]
                 batches_group = idxs_perm.reshape(num_batches_full, self.batch_size).tolist()
                 batches += batches_group
-            else: # don't permute (shuffle) and include all samples
+            elif self._mode in ['test', 'predict']: # don't permute (shuffle) and include all samples
                 num_batches = int(math.ceil(num_idxs / self.batch_size))
                 for i in range(num_batches):
                     batches_group = d['idxs_in_dataset'][i * self.batch_size:(i + 1) * self.batch_size].tolist()
                     assert len(batches_group) > 0
                     batches.append(batches_group)
+            else:
+                raise NotImplementedError
 
         return batches
 
