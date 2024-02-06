@@ -8,7 +8,8 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, Sampler
 
-from src.crawler.crawler.constants import FEATURES_VECTOR_COL, KEYS_TRAIN_ID, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED
+from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, KEYS_TRAIN_ID, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED,
+                                           KEYS_TRAIN_NUM_STATIC_IDXS, KEYS_TRAIN_NUM_TGT_IDXS)
 from src.ml.ml_constants import KEYS_EXTRACT_SEQ2SEQ, COL_SEQ_LEN_ORIG, COL_SEQ_INFO_GROUP_ID, COL_SEQ_LEN_GROUP, \
     SEQ_LEN_GROUP_WIDTH
 from src.ml.model_utils import _dfs_to_train_seqs
@@ -86,15 +87,25 @@ class YTStatsDataset(Dataset):
         video_id: str = self._video_ids[idx]
         data_ = self._data[video_id]
 
+        # embeddings and other static (non-time-varying) features
+        embeds_ = torch.concat((
+            data_['embeds'],
+            data_['stats'][0, KEYS_TRAIN_NUM_STATIC_IDXS]
+        )) # num_embeds_features + 1
+
+        # dynamic (time-varying) features
+        stats_ = data_['stats'][:-1, KEYS_TRAIN_NUM_TGT_IDXS] # (num_steps - 1) x (num_stats_features - 1)
+
+        # pack tensors and other info into input and output objects
         input_ = {
-            'video_id': [video_id],
-            'stats': data_['stats'][:-1], # (num_steps - 1) x num_stats_features
-            'embeds': data_['embeds']  # num_embeds_features
+            'video_id': video_id,
+            'stats': stats_,
+            'embeds': embeds_
         }
 
-        output_ = [0]
+        output_ = 0
         if self._mode in ['train', 'test']:
-            output_ = data_['stats'][1:] # (num_steps - 1) x num_stats_features
+            output_ = data_['stats'][1:, KEYS_TRAIN_NUM_TGT_IDXS] # (num_steps - 1) x (num_stats_features - 1)
         elif self._mode == 'predict':
             pass
         else:

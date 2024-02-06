@@ -23,9 +23,10 @@ from src.ml.ml_request import MLRequest
 from src.ml.torch_utils import perform_train_epoch, perform_test_epoch
 from src.ml.datasets import YTStatsDataset, VariableLengthSequenceBatchSampler
 from src.ml.ml_constants import (SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_LEN_GROUP, TRAIN_BATCH_SIZE,
-                                 NUM_EPOCHS_PER_SNAPSHOT, KEYS_TRAIN_NUM)
+                                 NUM_EPOCHS_PER_SNAPSHOT)
 from src.crawler.crawler.constants import (COL_VIDEO_ID, TRAIN_SEQ_PERIOD, VEC_EMBED_DIMS, COL_USERNAME,
-                                           COL_TIMESTAMP_ACCESSED)
+                                           COL_TIMESTAMP_ACCESSED, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT_IDXS,
+                                           VEC_EMBED_DIMS_NN)
 
 
 
@@ -40,18 +41,19 @@ Tensor of feature vector sequences:
 
 MODEL_OPTS = dict(
     num_layers_rnn=2,
+    num_rnn_blocks=6,
     hidden_size_rnn=30,
-    input_size_rnn=len(KEYS_TRAIN_NUM),
-    output_size_rnn=len(KEYS_TRAIN_NUM),
-    num_units_embed=[VEC_EMBED_DIMS, 100, 10]
+    input_size_rnn=len(KEYS_TRAIN_NUM_TGT_IDXS),
+    output_size_rnn=len(KEYS_TRAIN_NUM_TGT_IDXS),
+    num_units_embed=[VEC_EMBED_DIMS_NN, 100, 10]
 )
 TRAIN_OPTS = dict(
-    num_epochs=200,
-    lr=0.01,
+    num_epochs=100,
+    lr=0.05,
     momentum=0.3,
-    max_grad_norm=3.0
+    max_grad_norm=3.0,
+    scheduler='None'#'MultiStepLR'
 )
-
 
 
 
@@ -109,7 +111,7 @@ class MLModelSeq2Seq():
         MOMENTUM = TRAIN_OPTS['momentum']
         DAMPENING = 0.0
         WEIGHT_DECAY = 1e-8
-        SCHEDULER = 'None'
+        SCHEDULER = TRAIN_OPTS.get('scheduler', 'None')
         NUM_EPOCHS = TRAIN_OPTS['num_epochs']
 
         self._eval_test = self._dataloader_test is not None
@@ -249,7 +251,9 @@ def _prepare_dataloader(data_nonbow: pd.DataFrame,
 
 def _init_preprocessor(dataloader: DataLoader) -> Dict[str, np.ndarray]:
     """Fit standard normalization preprocessor with one pass through dataset"""
-    preproc_params = dict(mu_stats=None, std_stats=None, mu_embeds=None, std_embeds=None)
+    preproc_params = dict(mu_stats=None, std_stats=None,
+                          mu_stats_un=None, std_stats_un=None,
+                          mu_embeds=None, std_embeds=None)
 
     # accumulate stats with one pass over dataset
     xs: Dict[str, np.ndarray] = dict(stats=None, embeds=None)
@@ -289,6 +293,11 @@ def _init_preprocessor(dataloader: DataLoader) -> Dict[str, np.ndarray]:
         preproc_params['mu_' + key] = mu
         preproc_params['std_' + key] = std
 
+    # include modified params for unprocessing outputs
+    idxs_un = KEYS_TRAIN_NUM_TGT_IDXS
+    preproc_params['mu_stats_un'] = preproc_params['mu_stats'][idxs_un]
+    preproc_params['std_stats_un'] = preproc_params['std_stats'][idxs_un]
+
     return preproc_params
 
 def _predict(data_nonbow: pd.DataFrame,
@@ -315,9 +324,6 @@ def _predict(data_nonbow: pd.DataFrame,
 
     df_out = []
     for n, (X, _) in enumerate(dataloader_pred):
-        if np.mod(n, len(dataloader_pred) // 10) == 0:
-            print(f"  video: {n + 1}/{num_videos_all}")
-
         # reset hidden state
         model.reset_hidden()
 
@@ -330,18 +336,17 @@ def _predict(data_nonbow: pd.DataFrame,
         X['num_predict'] = num_steps_pred
 
         # make prediction
-        print(X.keys())
         out = model(X)
 
         # pack into output DataFrame
         for b, video_id in enumerate(X['video_id']):
-            preds = out[b, :, :].detach().numpy()
+            preds = out[b, :, :].detach().numpy() # time steps x features
             df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM)
-            df_[COL_USERNAME] = data_bow.query(f'{COL_VIDEO_ID} == {video_id}').iloc[0][COL_USERNAME]
+            df_[COL_USERNAME] = data_bow.query(f"{COL_VIDEO_ID} == '{video_id}'").iloc[0][COL_USERNAME]
             df_[COL_VIDEO_ID] = video_id
-            ts_last = data_nonbow.query(f'{COL_VIDEO_ID} == {video_id}')[COL_TIMESTAMP_ACCESSED].max()
+            ts_last = data_nonbow.query(f"{COL_VIDEO_ID} == '{video_id}'")[COL_TIMESTAMP_ACCESSED].max()
             ts_pred = [ts_last + datetime.timedelta(seconds=(i + 1) * TRAIN_SEQ_PERIOD)
-                       for i in range(num_steps_pred)]
+                for i in range(num_steps_pred)]
             df_[COL_TIMESTAMP_ACCESSED] = ts_pred
             df_out.append(df_)
 
@@ -376,6 +381,7 @@ class Seq2Seq(nn.Module):
         super().__init__()
 
         # model config specific to recurrent structure
+        self._num_rnn_blocks: int = model_opts['num_rnn_blocks']
         self._num_layers_rnn: int = model_opts['num_layers_rnn']
         self._hidden_size_rnn: int = model_opts['hidden_size_rnn']
         self._input_size_rnn: int = model_opts['input_size_rnn']
@@ -396,23 +402,24 @@ class Seq2Seq(nn.Module):
         self.embed_dropout = nn.Dropout(dropout)
 
         # model definition for recurrence
-        self.rnn = nn.LSTM(
-            self._input_size_rnn_merged,
-            self._hidden_size_rnn,
-            num_layers=self._num_layers_rnn,
-            batch_first=True
-        )
+        self.i2h = nn.Linear(self._input_size_rnn_merged, self._hidden_size_rnn)
+        for i in range(self._num_rnn_blocks):
+            setattr(self, f"rnn{i + 1}", make_lstm_block(self._hidden_size_rnn, self._num_layers_rnn))
 
         # output layer
         self.h2o = nn.Linear(self._hidden_size_rnn, self._output_size_rnn)
 
         # preprocessing
-        assert set(preproc_params) == {'mu_stats', 'std_stats', 'mu_embeds', 'std_embeds'}
+        assert set(preproc_params) == {'mu_stats', 'std_stats',
+                                       'mu_stats_un', 'std_stats_un',
+                                       'mu_embeds', 'std_embeds'}
         assert np.all(preproc_params['std_stats'] > 1e-5)
         assert np.all(preproc_params['std_embeds'] > 1e-5)
         self._preproc_params = dict(
             mu_stats=torch.tensor(preproc_params['mu_stats'], dtype=torch.float, requires_grad=False),#, device=self._device),
             std_stats=torch.tensor(preproc_params['std_stats'], dtype=torch.float, requires_grad=False),#, device=self._device)
+            mu_stats_un=torch.tensor(preproc_params['mu_stats_un'], dtype=torch.float, requires_grad=False),#, device=self._device),
+            std_stats_un=torch.tensor(preproc_params['std_stats_un'], dtype=torch.float, requires_grad=False),#, device=self._device)
             mu_embeds=torch.tensor(preproc_params['mu_embeds'], dtype=torch.float, requires_grad=False),#, device=self._device),
             std_embeds=torch.tensor(preproc_params['std_embeds'], dtype=torch.float, requires_grad=False)#, device=self._device),
         )
@@ -474,27 +481,19 @@ class Seq2Seq(nn.Module):
         return x_out
 
     def _predict(self,
-                 x_stats: torch.Tensor,
+                 x_out: torch.Tensor,
                  x_embeds: torch.Tensor,
                  num_predict: int) \
             -> torch.Tensor:
         """Predict future values"""
-        out = torch.zeros((x_stats.shape[0], num_predict, x_stats.shape[2]), dtype=torch.float)
-        out[:, 0, :] = x_stats[:, 0, :]
+        out = torch.zeros((x_out.shape[0], num_predict, x_out.shape[2]), dtype=torch.float)
+        out[:, 0, :] = x_out[:, 0, :]
 
-        x_out = x_stats
         for i in range(num_predict - 1):
             x_out = self._process_inputs(x_out, x_embeds)
             out[:, i + 1, :] = x_out[:, 0, :]
 
         return out
-
-    def _encode(self,
-                x_stats: torch.Tensor,
-                x_embeds: torch.Tensor):
-        """Run encoder"""
-        x_merge = self._merge_stats_embeds(x_stats, x_embeds)
-        self._feed_to_rnn(x_merge)
 
     def _merge_stats_embeds(self,
                             x_stats: torch.Tensor,
@@ -507,27 +506,34 @@ class Seq2Seq(nn.Module):
 
         return x_merge
 
-    def _decode(self, num_predict: int) -> torch.Tensor:
-        """Run decoder"""
-        batch_size = self._hidden[0].shape[1]
-        x_decode = torch.zeros((batch_size, num_predict, self._decoder_input_size))
-        out = self._feed_to_rnn(x_decode)
-        out = self.h2o(out)
-
-        return out
-
     def _feed_to_rnn(self, input_: torch.Tensor) -> torch.Tensor:
         """Feed tensor to RNN model"""
-        out, self._hidden = apply_module_with_hidden(self.rnn, input_, self._hidden)
+        out = self.i2h(input_)
+        for i in range(self._num_rnn_blocks):
+            nn_module = getattr(self, f"rnn{i + 1}")
+            out_new, self._hidden[i] = apply_module_with_hidden(nn_module, out, self._hidden[i])
+            if i < self._num_rnn_blocks - 1:
+                out = out + out_new
+            else:
+                out = out_new
 
         return out
 
     def _preprocess(self,
                     x_stats: torch.Tensor,
-                    x_embeds: Optional[torch.Tensor] = None) \
+                    x_embeds: Optional[torch.Tensor] = None,
+                    mode: str = 'inputs') \
             -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """Apply preprocessing to feature vectors. Operates on last (feature) dim."""
-        x_stats = (x_stats - self._preproc_params['mu_stats']) / self._preproc_params['std_stats']
+        assert mode in ['inputs', 'outputs']
+
+        if mode == 'inputs':
+            x_stats = (x_stats - self._preproc_params['mu_stats']) / self._preproc_params['std_stats']
+        elif mode == 'outputs':
+            x_stats = (x_stats - self._preproc_params['mu_stats_un']) / self._preproc_params['std_stats_un']
+        else:
+            raise NotImplementedError
+
         if x_embeds is not None:
             x_embeds = (x_embeds - self._preproc_params['mu_embeds']) / self._preproc_params['std_embeds']
             return x_stats, x_embeds
@@ -539,9 +545,9 @@ class Seq2Seq(nn.Module):
                       x_embeds: Optional[torch.Tensor] = None) \
             -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """Undo effect of preprocessing."""
-        x_stats = x_stats * self._preproc_params['std_stats'] + self._preproc_params['mu_stats']
+        x_stats = x_stats * self._preproc_params['std_stats_un'] + self._preproc_params['mu_stats_un']
         if x_embeds is not None:
-            x_embeds = x_embeds * self._preproc_params['std_embeds'] + self._preproc_params['mu_embeds']
+            x_embeds = x_embeds * self._preproc_params['std_embeds_un'] + self._preproc_params['mu_embeds_un']
             return x_stats, x_embeds
         else:
             return x_stats
@@ -562,9 +568,9 @@ class Seq2Seq(nn.Module):
 
     def _init_zero_hidden(self, batch_size: int):
         """Returns a hidden state with specified batch size."""
-        hidden = torch.zeros(self._num_layers_rnn, batch_size, self._hidden_size_rnn, requires_grad=False)#, device=self._device)
-        cell = torch.zeros(self._num_layers_rnn, batch_size, self._hidden_size_rnn, requires_grad=False)#, device=self._device)
-        self._hidden = (hidden, cell)
+        self._hidden = [make_cell_states(self._num_layers_rnn, batch_size, self._hidden_size_rnn)
+                        for _ in range(self._num_rnn_blocks)]
+
 
 
 
@@ -572,6 +578,27 @@ class Seq2Seq(nn.Module):
 
 
 ### Helper methods ###
+def make_lstm_block(hidden_size_rnn: int,
+                    num_layers_rnn: int) \
+        -> nn.Module:
+    """Make a deep LSTM block"""
+    rnn = nn.LSTM(
+        hidden_size_rnn,
+        hidden_size_rnn,
+        num_layers=num_layers_rnn,
+        batch_first=True
+    )
+    return rnn
+
+def make_cell_states(num_layers_rnn: int,
+                     batch_size: int,
+                     hidden_size_rnn: int) \
+        -> Tuple[torch.Tensor, torch.Tensor]:
+    """Make LSTM hidden and cell state tensors"""
+    hidden = torch.zeros(num_layers_rnn, batch_size, hidden_size_rnn, requires_grad=False)  # , device=self._device)
+    cell = torch.zeros(num_layers_rnn, batch_size, hidden_size_rnn, requires_grad=False)  # , device=self._device)
+    return (hidden, cell)
+
 def apply_module_with_hidden(nn_module: nn.Module,
                              input_: torch.Tensor,
                              hidden: Tuple[torch.Tensor, torch.Tensor]) \

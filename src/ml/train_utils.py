@@ -21,7 +21,7 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE,
                                            COL_VIEW_COUNT, COL_LIKE_COUNT, TRAIN_SEQ_PERIOD, MODEL_ID,
                                            COL_SEQ_SPLIT_FOR_PRED, SEQ_SPLIT_INCLUDE, SEQ_SPLIT_EXCLUDE,
-                                           SEQ_SPLIT_PREDICT)
+                                           TRAIN_NUM_TGT_KEYS)
 from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT, MODEL_ROOT
 from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances, is_subset
@@ -424,6 +424,7 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
     dt_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     model_dir = os.path.join(MODEL_ROOT, dt_str)
     os.makedirs(model_dir)
+    print(f"Saving trained models to {model_dir}.")
 
     # training data overview
     df_overview = data['nonbow_train'].groupby([COL_USERNAME, COL_VIDEO_ID]).size().to_frame('num_frames').reset_index()
@@ -467,20 +468,6 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
             model_c[uname] = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
             model_c[uname].fit(df_nonbow, df_bow, data_nonbow_test=df_nonbow_test)
 
-    # see predictions
-    if 0:
-        import matplotlib.pyplot as plt
-
-        # if not config_ml[SPLIT_TRAIN_BY_USERNAME]:
-        #     plot_predictions(data, model)
-        # else:
-        #     for uname, model_ in model.items():
-        #         df_nonbow = data['nonbow_test']
-        #         data_ = dict(nonbow_test=df_nonbow[df_nonbow[COL_USERNAME] == uname])
-        #         plot_predictions(data_, model_)
-
-        plt.show()
-
     return model_c
 
 def predict_seq2seq(data: Dict[str, pd.DataFrame],
@@ -522,7 +509,7 @@ def make_seq_splits_for_predict(data: Dict[str, pd.DataFrame]):
     split_flags[:] = SEQ_SPLIT_EXCLUDE
     for video_id, df_ in data['nonbow_test'].groupby(COL_VIDEO_ID):
         idx_split = int(0.5 * len(df_))
-        split_flags[df_.index[:idx_split]] = SEQ_SPLIT_INCLUDE
+        split_flags.loc[df_.index[:idx_split]] = SEQ_SPLIT_INCLUDE
     data['nonbow_test'][COL_SEQ_SPLIT_FOR_PRED] = split_flags
 
 def make_seq2seq_predictions_with_models(data: Dict[str, pd.DataFrame],
@@ -675,21 +662,26 @@ def show_seq2seq_predictions(data: Dict[str, pd.DataFrame],
     import matplotlib.pyplot as plt
 
     usernames = list(df_preds[COL_USERNAME].unique())
-    n_vid_ids = 5
+    n_vid_ids = 2
 
     for uname in usernames:
-        fig, axes = plt.figure(nrows=len(KEYS_TRAIN_NUM), ncols=n_vid_ids, figsize=(12, 8))
+        fig, axes = plt.subplots(nrows=len(TRAIN_NUM_TGT_KEYS), ncols=n_vid_ids, figsize=(12, 8))
 
-        video_ids = list(df_preds.query(f"{COL_USERNAME} == {uname}")[COL_VIDEO_ID].unique())
+        video_ids = list(df_preds.query(f"{COL_USERNAME} == '{uname}'")[COL_VIDEO_ID].unique())
 
         for j in range(n_vid_ids):
             video_id_ = video_ids[j]
-            df_test_ = data['nonbow_test'].query(f"{COL_VIDEO_ID} == {video_id_}")
-            df_pred_ = df_preds.query(f"{COL_VIDEO_ID} == {video_id_}")
+            df_test_ = data['nonbow_test'].query(f"{COL_VIDEO_ID} == '{video_id_}'")
+            df_pred_ = df_preds.query(f"{COL_VIDEO_ID} == '{video_id_}'")
 
-            for i, key in enumerate(KEYS_TRAIN_NUM):
+            for i, key in enumerate(TRAIN_NUM_TGT_KEYS):
                 axes[i, j].plot(df_test_[COL_TIMESTAMP_ACCESSED], df_test_[key], c='k')
                 axes[i, j].plot(df_pred_[COL_TIMESTAMP_ACCESSED], df_pred_[key], c='b')
+
+                if i == 0:
+                    axes[i, j].set_title(f"{uname}, {video_id_}")
+                if j == 0:
+                    axes[i, j].set_ylabel(key)
 
     plt.show()
 

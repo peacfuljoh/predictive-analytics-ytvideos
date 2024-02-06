@@ -96,7 +96,7 @@ def forward_pass_through_seq(model: nn.Module,
 
     # process
     out: torch.Tensor = model(X)
-    Y = model._preprocess(Y) # scale the output stats the same way as the input
+    Y = model._preprocess(Y, mode='outputs') # scale the output stats the same way as the input
     if Y is not None and loss_fn is not None:
         loss = loss_fn(out, Y)
     Y_pred = model._unpreprocess(out).detach().clone() if return_Y_pred else None # undo the effect of preprocessing

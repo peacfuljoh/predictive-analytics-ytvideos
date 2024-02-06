@@ -25,8 +25,8 @@ CACHE_FNAME = '/home/nuc/Desktop/temp/ytpa_data_for_ml.pickle'
 
 # os.remove(CACHE_FNAME) # delete cache file
 
-run_train = False
-run_predict = True
+run_train = True
+run_predict = False
 
 
 
@@ -78,11 +78,17 @@ elif model_type == ML_MODEL_TYPE_SEQ2SEQ:
 else:
     raise NotImplementedError
 
+# additional config options
 config_ml[TRAIN_TEST_SPLIT] = train_test_split_fract
 config_ml[SPLIT_TRAIN_BY_USERNAME] = split_train_by_username
-config_ml[MODEL_ID] = '2024-02-03_11-27-06'
+config_ml[MODEL_ID] = [
+    '2024-02-06_15-45-14',
+    '2024-02-06_15-45-23',
+    '2024-02-06_15-45-30'
+][0] # CNN only, sub in embeds vec, LSTMs with varying numbers of 2-layer blocks (1, 3, 6)
 
 
+# create ML request object (includes field validation)
 ml_request = MLRequest(config_ml)
 
 # see all configs
@@ -104,6 +110,10 @@ if 1:
 
     # show training data stats
     print_train_data_stats(data_all, ml_request)
+
+    # choose subset of data
+    if 1:
+        data_all['nonbow_train'] = data_all['nonbow_train'].query(f"username == 'CNN'")
 
     # train model
     if run_train:
