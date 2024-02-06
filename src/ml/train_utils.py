@@ -33,7 +33,7 @@ from src.ml.ml_constants import KEYS_EXTRACT_LIN, KEYS_FEAT_SRC_LIN, KEYS_FEAT_T
 from src.ml.ml_request import MLRequest
 from src.ml.model_utils import load_models
 from src.ml.models_linear import MLModelBaseRegressionSimple
-from src.ml.models_nn import MLModelSeq2Seq
+from src.ml.models_nn import MLModelSeq2Seq, _predict
 from src.ml.models_projection import MLModelLinProjRandom
 from src.schemas.schema_validation import validate_mongodb_records_schema
 from src.schemas.schemas import SCHEMAS_MONGODB
@@ -441,11 +441,11 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
             usernames=data['nonbow_train'][COL_USERNAME].unique().tolist(),
             video_ids=data['nonbow_train'][COL_VIDEO_ID].unique().tolist()
         )
-        model = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
-        model.fit(data['nonbow_train'], data['bow'])
+        model_c = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
+        model_c.fit(data['nonbow_train'], data['bow'])
     else:
         usernames = data['nonbow_train'][COL_USERNAME].drop_duplicates()
-        model = {}
+        model_c = {}
         for uname in usernames:
             df_nonbow = data['nonbow_train']
             df_nonbow = df_nonbow[df_nonbow[COL_USERNAME] == uname]
@@ -464,8 +464,8 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
             print(f'  {df_overview_counts.loc[uname]["num_videos"]} videos, '
                   f'{df_overview_counts.loc[uname]["num_frames"]} frames')
 
-            model[uname] = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
-            model[uname].fit(df_nonbow, df_bow, data_nonbow_test=df_nonbow_test)
+            model_c[uname] = MLModelSeq2Seq(ml_request, verbose=True, model_dir=model_dir, metadata=metadata)
+            model_c[uname].fit(df_nonbow, df_bow, data_nonbow_test=df_nonbow_test)
 
     # see predictions
     if 0:
@@ -481,7 +481,7 @@ def train_regression_model_seq2seq(data: Dict[str, pd.DataFrame],
 
         plt.show()
 
-    return model
+    return model_c
 
 def predict_seq2seq(data: Dict[str, pd.DataFrame],
                     ml_request: MLRequest):
@@ -513,7 +513,8 @@ def predict_seq2seq(data: Dict[str, pd.DataFrame],
     df_preds = make_seq2seq_predictions_with_models(data, models_info)
 
     # see predictions
-    pass
+    if 1:
+        show_seq2seq_predictions(data, df_preds)
 
 def make_seq_splits_for_predict(data: Dict[str, pd.DataFrame]):
     """Make decisions about where to split test sequences into input and to-predict. In-place modification."""
@@ -530,6 +531,8 @@ def make_seq2seq_predictions_with_models(data: Dict[str, pd.DataFrame],
     """Make seq2seq predictions with loaded models"""
     model_ids = list(models_info.keys())
 
+    pred_opts = {}
+
     dfs = []
     for model_id in model_ids:
         model_info_ = models_info[model_id]
@@ -537,11 +540,11 @@ def make_seq2seq_predictions_with_models(data: Dict[str, pd.DataFrame],
         unames = model_info_['metadata']['usernames']
 
         model = model_info_['model']
-        model.eval()
 
-        query = f"({COL_USERNAME} in {unames}) & ({COL_SEQ_SPLIT_FOR_PRED} == {SEQ_SPLIT_INCLUDE})"
-        df_nonbow_input = data['nonbow_test'].query(query)
-        df_pred_ = model.predict(df_nonbow_input, data['bow'])
+        query = f"({COL_USERNAME} in {unames}) & ({COL_SEQ_SPLIT_FOR_PRED} == '{SEQ_SPLIT_INCLUDE}')"
+        df_nonbow_input = data['nonbow_test'].query(query).drop(columns=[COL_SEQ_SPLIT_FOR_PRED])
+
+        df_pred_ = _predict(df_nonbow_input, data['bow'], pred_opts=pred_opts, model=model)
         dfs.append(df_pred_)
 
     df_pred_all = pd.concat(dfs, axis=0, ignore_index=True)
@@ -665,6 +668,39 @@ def print_train_data_stats(data_all: Dict[str, pd.DataFrame],
     pprint(ml_request.get_config())
 
     print('\n')
+
+def show_seq2seq_predictions(data: Dict[str, pd.DataFrame],
+                             df_preds: pd.DataFrame):
+    """Plot sequence-to-sequence predictions."""
+    import matplotlib.pyplot as plt
+
+    usernames = list(df_preds[COL_USERNAME].unique())
+    n_vid_ids = 5
+
+    for uname in usernames:
+        fig, axes = plt.figure(nrows=len(KEYS_TRAIN_NUM), ncols=n_vid_ids, figsize=(12, 8))
+
+        video_ids = list(df_preds.query(f"{COL_USERNAME} == {uname}")[COL_VIDEO_ID].unique())
+
+        for j in range(n_vid_ids):
+            video_id_ = video_ids[j]
+            df_test_ = data['nonbow_test'].query(f"{COL_VIDEO_ID} == {video_id_}")
+            df_pred_ = df_preds.query(f"{COL_VIDEO_ID} == {video_id_}")
+
+            for i, key in enumerate(KEYS_TRAIN_NUM):
+                axes[i, j].plot(df_test_[COL_TIMESTAMP_ACCESSED], df_test_[key], c='k')
+                axes[i, j].plot(df_pred_[COL_TIMESTAMP_ACCESSED], df_pred_[key], c='b')
+
+    plt.show()
+
+
+
+
+
+
+
+
+
 
 
 

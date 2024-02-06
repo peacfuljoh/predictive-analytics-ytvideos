@@ -61,12 +61,13 @@ class MLModelSeq2Seq():
                  ml_request: MLRequest,
                  verbose: bool = False,
                  model_dir: Optional[str] = None,
-                 metadata: Optional[dict] = None):
+                 metadata: Optional[dict] = None,
+                 model: Optional[nn.Module] = None):
         self._verbose = verbose
 
         # fields
         self._config = None
-        self._model = None
+        self._model = model
         self._model_dir: Optional[str] = model_dir
         self._metadata: Optional[dict] = metadata
 
@@ -90,10 +91,10 @@ class MLModelSeq2Seq():
         self._dt_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
         # setup
-        self._dataloader_train = self._prepare_dataloader(data_nonbow, data_bow, 'train')
+        self._dataloader_train = _prepare_dataloader(data_nonbow, data_bow, 'train')
         if data_nonbow_test is not None:
-            self._dataloader_test = self._prepare_dataloader(data_nonbow_test, data_bow, 'test')
-        preproc_params = self._init_preprocessor(self._dataloader_train)
+            self._dataloader_test = _prepare_dataloader(data_nonbow_test, data_bow, 'test')
+        preproc_params = _init_preprocessor(self._dataloader_train)
 
         self._model = Seq2Seq(MODEL_OPTS, preproc_params)
 
@@ -101,86 +102,6 @@ class MLModelSeq2Seq():
 
         # run training epochs
         self._train()
-
-    @staticmethod
-    def _prepare_dataloader(data_nonbow: pd.DataFrame,
-                            data_bow: pd.DataFrame,
-                            mode: str) \
-            -> DataLoader:
-        """Make dataset and dataloader for a training run"""
-        assert mode in ['train', 'test', 'predict']
-
-        # dataset
-        dataset = YTStatsDataset(data_nonbow, data_bow, mode)
-
-        # sampler
-        group_ids = list(dataset._seq_info[COL_SEQ_LEN_GROUP])
-        sampler = VariableLengthSequenceBatchSampler(group_ids, TRAIN_BATCH_SIZE, mode)
-
-        # dataloader
-        dataloader = DataLoader(dataset, batch_sampler=sampler, num_workers=8, pin_memory=True)
-
-        if 0:
-            # see histogram of sequence lengths
-            import matplotlib.pyplot as plt
-
-            bin_width = SEQ_LEN_GROUP_WIDTH  # measurements (i.e. hours)
-            data_ = dataset._seq_info[COL_SEQ_LEN_ORIG]
-            max_val = data_.max()
-
-            fig, ax = plt.subplots(1, 1)
-            ax.hist(data_, bins=np.arange(0, max_val + bin_width, bin_width))
-            ax.set_ylabel('Count')
-            ax.set_xlabel('Sequence length')
-
-            plt.show()
-
-        return dataloader
-
-    @staticmethod
-    def _init_preprocessor(dataloader: DataLoader) -> Dict[str, np.ndarray]:
-        """Fit standard normalization preprocessor with one pass through dataset"""
-        preproc_params = dict(mu_stats=None, std_stats=None, mu_embeds=None, std_embeds=None)
-
-        # accumulate stats with one pass over dataset
-        xs: Dict[str, np.ndarray] = dict(stats=None, embeds=None)
-        xsq: Dict[str, np.ndarray] = dict(stats=None, embeds=None)
-        count = dict(stats=0, embeds=0)
-
-        for i, (data, _) in enumerate(dataloader):
-            x_stats = data['stats']
-            x_embeds = data['embeds']
-
-            if i == 0:
-                input_size = x_stats.shape[2]
-                xs['stats'] = np.zeros(input_size, dtype='float')
-                xsq['stats'] = np.zeros(input_size, dtype='float')
-
-                input_size = x_embeds.shape[1]
-                xs['embeds'] = np.zeros(input_size, dtype='float')
-                xsq['embeds'] = np.zeros(input_size, dtype='float')
-
-            if np.mod(i, 100) == 0:
-                print(f' batch {i}/{len(dataloader)}')
-
-            X_rav_stats = x_stats.reshape(x_stats.shape[0] * x_stats.shape[1], x_stats.shape[2])
-            xs['stats'] += X_rav_stats.sum(0).numpy()  # sum over batch and sequence dims, keep feat dim
-            xsq['stats'] += (X_rav_stats ** 2).sum(0).numpy()
-            count['stats'] += X_rav_stats.shape[0]
-
-            X_rav_embeds = x_embeds
-            xs['embeds'] += X_rav_embeds.sum(0).numpy()  # sum over batch and sequence dims, keep feat dim
-            xsq['embeds'] += (X_rav_embeds ** 2).sum(0).numpy()
-            count['embeds'] += X_rav_embeds.shape[0]
-
-        # compute mean and standard deviation
-        for key in ['stats', 'embeds']:
-            mu = xs[key] / count[key]
-            std = np.sqrt((xsq[key] - 2 * mu * xs[key] + count[key] * mu ** 2) / count[key])
-            preproc_params['mu_' + key] = mu
-            preproc_params['std_' + key] = std
-
-        return preproc_params
 
     def _prepare_train_modules(self):
         """Set up training modules, hyperparameters, etc."""
@@ -286,62 +207,150 @@ class MLModelSeq2Seq():
                 pred_opts: Optional[dict] = None) \
             -> pd.DataFrame:
         """Feed test data through model"""
-        if pred_opts is None:
-            pred_opts = {}
-
-        pred_horizon = pred_opts.get('pred_horizon', 7 * 24 * 3600) # seconds to predict from start of each video's records
-
-        # set up dataloader and model options
-        dataloader_pred = self._prepare_dataloader(data_nonbow, data_bow, 'predict')
-
-        is_training = self._model.training
-        self._model.eval()
-        self._model.predicting = True
-
-        # predict
-        df_out = []
-        for _, (X, _) in enumerate(dataloader_pred):
-            # reset hidden state
-            self._model.reset_hidden()
-
-            # determine number of steps to predict
-            num_videos, num_steps_data, _ = X['stats'].shape
-            num_steps_pred_tot = int(pred_horizon / TRAIN_SEQ_PERIOD)
-            num_steps_pred = num_steps_pred_tot - num_steps_data
-            if num_steps_pred <= 0:
-                continue
-            X['num_predict'] = num_steps_pred
-
-            # make prediction
-            out = self._model(X)
-
-            # pack into output DataFrame
-            for b, video_id in enumerate(X['video_id']):
-                preds = out[b, :, :].numpy()
-                df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM)
-                df_[COL_USERNAME] = data_bow.query(f'{COL_VIDEO_ID} == {video_id}').iloc[0][COL_USERNAME]
-                df_[COL_VIDEO_ID] = video_id
-                ts_last = data_nonbow.query(f'{COL_VIDEO_ID} == {video_id}')[COL_TIMESTAMP_ACCESSED].max()
-                ts_pred = [ts_last + datetime.timedelta(seconds=(i + 1) * TRAIN_SEQ_PERIOD)
-                           for i in range(num_steps_pred)]
-                df_[COL_TIMESTAMP_ACCESSED] = ts_pred
-                df_out.append(df_)
-            # preds = out.numpy().transpose(1, 0, 2).reshape(num_videos * num_steps_data, len(KEYS_TRAIN_NUM))
-            # df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM)
-            # video_ids = [video_id for _ in range(num_steps_pred) for video_id in X['video_id']]
-            # usernames = [data_nonbow[data_nonbow[COL_VIDEO_ID] == video_id][COL_USERNAME] for video_id in X['video_id']]
-            # usernames = [uname for _ in range(num_steps_pred) for uname in usernames]
-            # df_[COL_USERNAME] = usernames
-            # df_[COL_VIDEO_ID] = video_ids
-
-        self._model.training = is_training
-        self._model.predicting = False
-
-        df_out = pd.concat(df_out, axis=0, ignore_index=True)
-
-        return df_out
+        return _predict(data_nonbow, data_bow, pred_opts, self._model)
 
 
+
+
+def _prepare_dataloader(data_nonbow: pd.DataFrame,
+                        data_bow: pd.DataFrame,
+                        mode: str) \
+        -> DataLoader:
+    """Make dataset and dataloader for a training run"""
+    assert mode in ['train', 'test', 'predict']
+
+    # dataset
+    dataset = YTStatsDataset(data_nonbow, data_bow, mode)
+
+    # sampler
+    group_ids = list(dataset._seq_info[COL_SEQ_LEN_GROUP])
+    sampler = VariableLengthSequenceBatchSampler(group_ids, TRAIN_BATCH_SIZE, mode)
+
+    # dataloader
+    dataloader = DataLoader(dataset, batch_sampler=sampler, num_workers=8, pin_memory=True)
+
+    if 0:
+        # see histogram of sequence lengths
+        import matplotlib.pyplot as plt
+
+        bin_width = SEQ_LEN_GROUP_WIDTH  # measurements (i.e. hours)
+        data_ = dataset._seq_info[COL_SEQ_LEN_ORIG]
+        max_val = data_.max()
+
+        fig, ax = plt.subplots(1, 1)
+        ax.hist(data_, bins=np.arange(0, max_val + bin_width, bin_width))
+        ax.set_ylabel('Count')
+        ax.set_xlabel('Sequence length')
+
+        plt.show()
+
+    return dataloader
+
+
+def _init_preprocessor(dataloader: DataLoader) -> Dict[str, np.ndarray]:
+    """Fit standard normalization preprocessor with one pass through dataset"""
+    preproc_params = dict(mu_stats=None, std_stats=None, mu_embeds=None, std_embeds=None)
+
+    # accumulate stats with one pass over dataset
+    xs: Dict[str, np.ndarray] = dict(stats=None, embeds=None)
+    xsq: Dict[str, np.ndarray] = dict(stats=None, embeds=None)
+    count = dict(stats=0, embeds=0)
+
+    for i, (data, _) in enumerate(dataloader):
+        x_stats = data['stats']
+        x_embeds = data['embeds']
+
+        if i == 0:
+            input_size = x_stats.shape[2]
+            xs['stats'] = np.zeros(input_size, dtype='float')
+            xsq['stats'] = np.zeros(input_size, dtype='float')
+
+            input_size = x_embeds.shape[1]
+            xs['embeds'] = np.zeros(input_size, dtype='float')
+            xsq['embeds'] = np.zeros(input_size, dtype='float')
+
+        if np.mod(i, 100) == 0:
+            print(f' batch {i}/{len(dataloader)}')
+
+        X_rav_stats = x_stats.reshape(x_stats.shape[0] * x_stats.shape[1], x_stats.shape[2])
+        xs['stats'] += X_rav_stats.sum(0).numpy()  # sum over batch and sequence dims, keep feat dim
+        xsq['stats'] += (X_rav_stats ** 2).sum(0).numpy()
+        count['stats'] += X_rav_stats.shape[0]
+
+        X_rav_embeds = x_embeds
+        xs['embeds'] += X_rav_embeds.sum(0).numpy()  # sum over batch and sequence dims, keep feat dim
+        xsq['embeds'] += (X_rav_embeds ** 2).sum(0).numpy()
+        count['embeds'] += X_rav_embeds.shape[0]
+
+    # compute mean and standard deviation
+    for key in ['stats', 'embeds']:
+        mu = xs[key] / count[key]
+        std = np.sqrt((xsq[key] - 2 * mu * xs[key] + count[key] * mu ** 2) / count[key])
+        preproc_params['mu_' + key] = mu
+        preproc_params['std_' + key] = std
+
+    return preproc_params
+
+def _predict(data_nonbow: pd.DataFrame,
+             data_bow: pd.DataFrame,
+             pred_opts: dict,
+             model: nn.Module) \
+        -> pd.DataFrame:
+    """Predict video stats into the future"""
+    if pred_opts is None:
+        pred_opts = {}
+
+    pred_horizon = pred_opts.get('pred_horizon', 7 * 24 * 3600)  # seconds to predict from start of each video's records
+
+    # set up dataloader and model options
+    dataloader_pred = _prepare_dataloader(data_nonbow, data_bow, 'predict')
+
+    is_training = model.training
+    model.eval()
+    model.predicting = True
+
+    # predict
+    num_videos_all = len(data_nonbow[COL_VIDEO_ID].unique())
+    print(f"Making predictions for {num_videos_all} videos.")
+
+    df_out = []
+    for n, (X, _) in enumerate(dataloader_pred):
+        if np.mod(n, len(dataloader_pred) // 10) == 0:
+            print(f"  video: {n + 1}/{num_videos_all}")
+
+        # reset hidden state
+        model.reset_hidden()
+
+        # determine number of steps to predict
+        num_videos, num_steps_data, _ = X['stats'].shape
+        num_steps_pred_tot = int(pred_horizon / TRAIN_SEQ_PERIOD)
+        num_steps_pred = num_steps_pred_tot - num_steps_data
+        if num_steps_pred <= 0:
+            continue
+        X['num_predict'] = num_steps_pred
+
+        # make prediction
+        print(X.keys())
+        out = model(X)
+
+        # pack into output DataFrame
+        for b, video_id in enumerate(X['video_id']):
+            preds = out[b, :, :].detach().numpy()
+            df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM)
+            df_[COL_USERNAME] = data_bow.query(f'{COL_VIDEO_ID} == {video_id}').iloc[0][COL_USERNAME]
+            df_[COL_VIDEO_ID] = video_id
+            ts_last = data_nonbow.query(f'{COL_VIDEO_ID} == {video_id}')[COL_TIMESTAMP_ACCESSED].max()
+            ts_pred = [ts_last + datetime.timedelta(seconds=(i + 1) * TRAIN_SEQ_PERIOD)
+                       for i in range(num_steps_pred)]
+            df_[COL_TIMESTAMP_ACCESSED] = ts_pred
+            df_out.append(df_)
+
+    model.training = is_training
+    model.predicting = False
+
+    df_out = pd.concat(df_out, axis=0, ignore_index=True)
+
+    return df_out
 
 
 
@@ -449,7 +458,7 @@ class Seq2Seq(nn.Module):
         out = self._process_inputs(x_stats, x_embeds)
         if self.predicting:
             out = self._predict(out[:, -1:, :], x_embeds, num_predict)
-            out = self._model._unpreprocess(out)
+            out = self._unpreprocess(out)
 
         return out
 

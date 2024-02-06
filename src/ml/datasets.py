@@ -1,5 +1,7 @@
+"""Dataset and related classes"""
+
 import math
-from typing import List, Dict, Tuple, Iterator, Optional
+from typing import List, Dict, Tuple, Iterator, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -80,7 +82,7 @@ class YTStatsDataset(Dataset):
     def __len__(self):
         return self._num_seqs
 
-    def __getitem__(self, idx: int) -> Tuple[Dict[str, torch.Tensor], Optional[torch.Tensor]]:
+    def __getitem__(self, idx: int) -> Tuple[Dict[str, torch.Tensor], Union[int, torch.Tensor]]:
         video_id: str = self._video_ids[idx]
         data_ = self._data[video_id]
 
@@ -90,7 +92,7 @@ class YTStatsDataset(Dataset):
             'embeds': data_['embeds']  # num_embeds_features
         }
 
-        output_ = None
+        output_ = [0]
         if self._mode in ['train', 'test']:
             output_ = data_['stats'][1:] # (num_steps - 1) x num_stats_features
         elif self._mode == 'predict':
