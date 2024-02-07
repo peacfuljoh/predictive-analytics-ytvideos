@@ -41,7 +41,7 @@ Tensor of feature vector sequences:
 
 MODEL_OPTS = dict(
     num_layers_rnn=2,
-    num_rnn_blocks=6,
+    num_rnn_blocks=3,
     hidden_size_rnn=30,
     input_size_rnn=len(KEYS_TRAIN_NUM_TGT_IDXS),
     output_size_rnn=len(KEYS_TRAIN_NUM_TGT_IDXS),
@@ -509,6 +509,7 @@ class Seq2Seq(nn.Module):
     def _feed_to_rnn(self, input_: torch.Tensor) -> torch.Tensor:
         """Feed tensor to RNN model"""
         out = self.i2h(input_)
+        # out = self.embed_dropout(out) # try this
         for i in range(self._num_rnn_blocks):
             nn_module = getattr(self, f"rnn{i + 1}")
             out_new, self._hidden[i] = apply_module_with_hidden(nn_module, out, self._hidden[i])

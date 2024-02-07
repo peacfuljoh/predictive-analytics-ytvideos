@@ -84,8 +84,9 @@ config_ml[SPLIT_TRAIN_BY_USERNAME] = split_train_by_username
 config_ml[MODEL_ID] = [
     '2024-02-06_15-45-14',
     '2024-02-06_15-45-23',
+    '2024-02-06_17-19-58',
     '2024-02-06_15-45-30'
-][0] # CNN only, sub in embeds vec, LSTMs with varying numbers of 2-layer blocks (1, 3, 6)
+][0] # CNN only, sub in embeds vec, LSTMs with varying numbers of 2-layer blocks (1, 3, 3, 6)
 
 
 # create ML request object (includes field validation)
