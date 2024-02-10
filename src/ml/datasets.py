@@ -1,12 +1,11 @@
 """Dataset and related classes"""
 
-import math
-from typing import List, Dict, Tuple, Iterator, Optional, Union
+from typing import List, Dict, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset
 
 from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, KEYS_TRAIN_ID, COL_VIDEO_ID, COL_TIMESTAMP_ACCESSED,
                                            KEYS_TRAIN_NUM_STATIC_IDXS, KEYS_TRAIN_NUM_TGT_IDXS)
@@ -112,77 +111,3 @@ class YTStatsDataset(Dataset):
             raise NotImplementedError
 
         return input_, output_
-
-
-class VariableLengthSequenceBatchSampler(Sampler[List[int]]):
-    """
-    Batch sampler for variable-length sequence modeling.
-    Generated batches are comprised of same-length sequences with uniform sampling over the entire dataset.
-    """
-    def __init__(self,
-                 group_ids: List[int],
-                 batch_size: int,
-                 mode: str):
-        """Init.
-
-        group_ids: list of group ids (unique integers), one per sequence
-        batch_size: size of batches
-        mode: 'train' or 'test'
-        """
-        super().__init__()
-
-        assert mode in ['train', 'test', 'predict']
-
-        self.batch_size = batch_size
-        self._mode = mode
-
-        # collect batch info for each group
-        self._batch_info = {}
-        g_ids_np = np.array(group_ids)
-        for group_id in set(group_ids):
-            idxs_ = np.where(g_ids_np == group_id)[0]
-            # if mode == 'train':
-            #     num_batches = len(idxs_) // batch_size # throws away straggler
-            # else:
-            #     num_batches = int(math.ceil(len(idxs_) / batch_size))
-            # if num_batches == 0:
-            #     continue
-            self._batch_info[group_id] = {'idxs_in_dataset': idxs_}#, 'num_batches': num_batches}
-
-        # [self._batch_info[group_id]['num_batches'] for group_id in self._batch_info.keys()] # batch counts in groups
-        # self._num_batches_total = sum([g['num_batches'] for g in self._batch_info.values()])
-        self._num_batches_tot = len(self._make_batches())
-
-    def __len__(self) -> int:
-        return self._num_batches_tot
-
-    def __iter__(self) -> Iterator[List[int]]:
-        batches = self._make_batches()
-        for i in np.random.permutation(len(batches)):
-            yield batches[i]
-
-    def _make_batches(self):
-        """Make a new set of batches. Always the same number of batches."""
-        batches = []
-        for group_id, d in self._batch_info.items():
-            num_idxs = len(d['idxs_in_dataset'])
-            if self._mode == 'train':  # permute and truncate list of indices to get integer number of full batches
-                num_batches_full = num_idxs // self.batch_size
-                if num_batches_full == 0:
-                    continue
-                num_idxs_tot = self.batch_size * num_batches_full
-                idxs_perm = np.random.permutation(d['idxs_in_dataset'])[:num_idxs_tot]
-                batches_group = idxs_perm.reshape(num_batches_full, self.batch_size).tolist()
-                batches += batches_group
-            elif self._mode in ['test', 'predict']: # don't permute (shuffle) and include all samples
-                num_batches = int(math.ceil(num_idxs / self.batch_size))
-                for i in range(num_batches):
-                    batches_group = d['idxs_in_dataset'][i * self.batch_size:(i + 1) * self.batch_size].tolist()
-                    assert len(batches_group) > 0
-                    batches.append(batches_group)
-            else:
-                raise NotImplementedError
-
-        return batches
-
-

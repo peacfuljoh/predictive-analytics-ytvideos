@@ -12,21 +12,21 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 
 from ytpa_utils.val_utils import is_subset
 from ytpa_utils.io_utils import save_pickle
 
+from jtorch_utils.train import init_train_misc
+from jtorch_utils.datasets import VariableLengthSequenceBatchSampler
+
 from src.ml.ml_request import MLRequest
 from src.ml.torch_utils import perform_train_epoch, perform_test_epoch
-from src.ml.datasets import YTStatsDataset, VariableLengthSequenceBatchSampler
+from src.ml.datasets import YTStatsDataset
 from src.ml.ml_constants import (SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_LEN_GROUP, TRAIN_BATCH_SIZE,
                                  NUM_EPOCHS_PER_SNAPSHOT)
-from src.crawler.crawler.constants import (COL_VIDEO_ID, TRAIN_SEQ_PERIOD, VEC_EMBED_DIMS, COL_USERNAME,
-                                           COL_TIMESTAMP_ACCESSED, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT_IDXS,
-                                           VEC_EMBED_DIMS_NN, KEYS_TRAIN_NUM_TGT)
+from src.crawler.crawler.constants import (COL_VIDEO_ID, TRAIN_SEQ_PERIOD, COL_USERNAME, COL_TIMESTAMP_ACCESSED,
+                                           KEYS_TRAIN_NUM_TGT_IDXS, VEC_EMBED_DIMS_NN, KEYS_TRAIN_NUM_TGT)
 
 
 
@@ -38,7 +38,7 @@ Tensor of feature vector sequences:
 """
 
 
-USE_EMBEDDINGS = False
+USE_EMBEDDINGS = True
 
 
 
@@ -111,33 +111,20 @@ class MLModelSeq2Seq():
 
     def _prepare_train_modules(self):
         """Set up training modules, hyperparameters, etc."""
-        LEARNING_RATE = TRAIN_OPTS['lr']
-        MOMENTUM = TRAIN_OPTS['momentum']
-        DAMPENING = 0.0
-        WEIGHT_DECAY = 1e-8
-        SCHEDULER = TRAIN_OPTS.get('scheduler', 'None')
-        NUM_EPOCHS = TRAIN_OPTS['num_epochs']
+        optimizer_params = dict(lr=TRAIN_OPTS['lr'], momentum=TRAIN_OPTS['momentum'], dampening=0.0, weight_decay=1e-8)
+        milestones = [int(0.5 * TRAIN_OPTS['num_epochs']), int(0.8 * TRAIN_OPTS['num_epochs'])]
+        train_opts = dict(
+            loss_fn='MSELoss',
+            optimizer='SGD',
+            optimizer_params=optimizer_params,
+            scheduler=TRAIN_OPTS.get('scheduler', 'None'),
+            scheduler_params=dict(milestones=milestones, gamma=0.2)
+        )
+
+        self._loss_fn, self._optimizer, self._scheduler, self._num_batches_train, self._num_batches_test = \
+            init_train_misc(self._dataloader_train, self._model, train_opts, dataloader_test=self._dataloader_test)
 
         self._eval_test = self._dataloader_test is not None
-
-        self._num_batches_train = len(self._dataloader_train)
-        self._num_batches_test = max(len(self._dataloader_test), 1) if self._eval_test else 1
-
-        # set up loss function
-        self._loss_fn = nn.MSELoss()
-
-        # set up optimizer
-        self._optimizer = optim.SGD(self._model.parameters(), lr=LEARNING_RATE, momentum=MOMENTUM, dampening=DAMPENING,
-                                    weight_decay=WEIGHT_DECAY)
-
-        # set up scheduler
-        if SCHEDULER == 'None':
-            self._scheduler = None
-        elif SCHEDULER == 'MultiStepLR':
-            milestones = [int(0.5 * NUM_EPOCHS), int(0.8 * NUM_EPOCHS)]
-            self._scheduler = MultiStepLR(self._optimizer, milestones=milestones, gamma=0.2)
-        else:
-            raise NotImplementedError
 
     def _train(self):
         """Training procedure"""
@@ -316,7 +303,7 @@ def _predict(data_nonbow: pd.DataFrame,
     pred_horizon = pred_opts.get('pred_horizon', 7 * 24 * 3600)  # seconds to predict from start of each video's records
 
     # set up dataloader and model options
-    dataloader_pred = _prepare_dataloader(data_nonbow, data_bow, 'predict')
+    dataloader_pred = _prepare_dataloader(data_nonbow, data_bow, 'test')
 
     is_training = model.training
     model.eval()

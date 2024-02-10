@@ -1,19 +1,18 @@
 # Predictive analytics for YouTube content creators
 
-THIS PROJECT IS UNDER CONSTRUCTION. IT IS MOSTLY PARTITIONED INTO DISTINCT SERVICES AND WILL BE MIGRATED 
-TO AN AWS SERVERLESS ARCHITECTURE. STAY TUNED!!
-
-
-
-
 
 ## Summary
 
 ### Goal
 
-This repo contains an end-to-end, full-stack web application implementing predictive analytics for YouTube (YT) videos. 
-The goal is to predict future stats (e.g. likes, comments, views) from current stats, metadata (e.g. subscribers), 
+The goal with this repository is to create an end-to-end, full-stack web application implementing predictive 
+analytics for YouTube (YT) videos. 
+The system predicts future stats (e.g. likes, comments, views) from current stats, metadata (e.g. subscribers), 
 text (e.g. title, description, tags, keywords), and the video's thumbnail image.
+
+Note: as of 2/10/2024, the implementation is local, modular, and implements a seq2seq deep learning model.
+It does not yet have an MLOps serving infrastructure and migration to AWS is TBD (waiting on further model dev).
+
 
 ### Software components
 
@@ -26,7 +25,7 @@ from a desired subset of videos and users, and thus requires processing the enti
 3. Model training: A desired feature set is used to train a regression model that predicts future video stats from 
 past and current stats.
 4. Front-end dashboard: A Flask-served dashboard enables exploration of the database (slicing and filtering as 
-desired), training models with desired feature subsets, and visualizing predictions.
+desired), training models with desired feature subsets, and visualizing predictions. (Note: not started yet)
 
 ### Other details
 
@@ -43,18 +42,14 @@ produce the same outputs.
 Raw data is continuously crawled for the latest videos, so we can run predictive analytics in real-time!
 
 Frameworks/technologies used (initial dev, on-prem):
-- Database: MySQL, MongoDB, Redis
-- Web: Scrapy, Flask (w/ Jinja, Plotly)
+- Database: MySQL, MongoDB(, Redis)
+- Web: Scrapy, (Flask (w/ Jinja, Plotly))
 - API: FastAPI
 - Text: Gensim
 - Automation/Deployment: Make, Github Actions
 - Packaging: Poetry
 
-Frameworks/technologies used (cloud, serverless) (if different from on-prem dev):
-- Database: (RDS, DynamoDB, ElastiCache) -> TBD
-- API: FastAPI + API Gateway
-- ETL pipelines: Lambda
-
+On AWS, the various pipelines will be implemented as Lambda services. 
 
 
 
@@ -101,6 +96,7 @@ This project spans several Python packages (maintained via Poetry and available 
 - `ytpa_utils`: general utils used across the entire project
 - `ytpa_api_utils`: API-specific tools (e.g. for handling communication over websockets)
 - `db_engines`: tools for working with MySQL and MongoDB databases
+- `jtorch_utils`: helpful tools for simplifying model training and experimentation
 
 ### Config file
 
@@ -298,3 +294,4 @@ There are several `make` commands for running processes from the command line.
 - `make api`
 
 These activate the conda env, cd into a directory, and then run a script. See the `Makefile` for more info.
+
