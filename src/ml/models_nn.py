@@ -26,7 +26,7 @@ from src.ml.ml_constants import (SEQ_LEN_GROUP_WIDTH, COL_SEQ_LEN_ORIG, COL_SEQ_
                                  NUM_EPOCHS_PER_SNAPSHOT)
 from src.crawler.crawler.constants import (COL_VIDEO_ID, TRAIN_SEQ_PERIOD, VEC_EMBED_DIMS, COL_USERNAME,
                                            COL_TIMESTAMP_ACCESSED, KEYS_TRAIN_NUM, KEYS_TRAIN_NUM_TGT_IDXS,
-                                           VEC_EMBED_DIMS_NN)
+                                           VEC_EMBED_DIMS_NN, KEYS_TRAIN_NUM_TGT)
 
 
 
@@ -38,10 +38,14 @@ Tensor of feature vector sequences:
 """
 
 
+USE_EMBEDDINGS = False
+
+
+
 
 MODEL_OPTS = dict(
     num_layers_rnn=2,
-    num_rnn_blocks=3,
+    num_rnn_blocks=6,
     hidden_size_rnn=30,
     input_size_rnn=len(KEYS_TRAIN_NUM_TGT_IDXS),
     output_size_rnn=len(KEYS_TRAIN_NUM_TGT_IDXS),
@@ -341,7 +345,7 @@ def _predict(data_nonbow: pd.DataFrame,
         # pack into output DataFrame
         for b, video_id in enumerate(X['video_id']):
             preds = out[b, :, :].detach().numpy() # time steps x features
-            df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM)
+            df_ = pd.DataFrame(preds, columns=KEYS_TRAIN_NUM_TGT)
             df_[COL_USERNAME] = data_bow.query(f"{COL_VIDEO_ID} == '{video_id}'").iloc[0][COL_USERNAME]
             df_[COL_VIDEO_ID] = video_id
             ts_last = data_nonbow.query(f"{COL_VIDEO_ID} == '{video_id}'")[COL_TIMESTAMP_ACCESSED].max()
@@ -391,8 +395,11 @@ class Seq2Seq(nn.Module):
         self._num_units_embed: List[int] = model_opts['num_units_embed']
         self._num_layers_embed = len(self._num_units_embed) - 1
         self._num_embedded_features = self._num_units_embed[-1]
-        self._input_size_rnn_merged = self._input_size_rnn + self._num_embedded_features
-        self._decoder_input_size = 1  # self._input_size_rnn_merged
+        if USE_EMBEDDINGS:
+            self._input_size_rnn_merged = self._input_size_rnn + self._num_embedded_features
+        else:
+            self._input_size_rnn_merged = self._input_size_rnn
+        # self._decoder_input_size = 1  # self._input_size_rnn_merged
 
         # model definition for embedding
         for i in range(self._num_layers_embed):
@@ -461,7 +468,8 @@ class Seq2Seq(nn.Module):
         x_stats, x_embeds = self._preprocess(x_stats, x_embeds=x_embeds)
 
         # encode and decode
-        x_embeds = self._process_embeddings(x_embeds)
+        if USE_EMBEDDINGS:
+            x_embeds = self._process_embeddings(x_embeds)
         out = self._process_inputs(x_stats, x_embeds)
         if self.predicting:
             out = self._predict(out[:, -1:, :], x_embeds, num_predict)
@@ -474,7 +482,10 @@ class Seq2Seq(nn.Module):
                         x_embeds: torch.Tensor) \
             -> torch.Tensor:
         """Feed preprocessed inputs through network"""
-        x_merge = self._merge_stats_embeds(x_stats, x_embeds)
+        if USE_EMBEDDINGS:
+            x_merge = self._merge_stats_embeds(x_stats, x_embeds)
+        else:
+            x_merge = x_stats
         x_out = self._feed_to_rnn(x_merge)
         x_out = self.h2o(x_out)
 
@@ -536,8 +547,11 @@ class Seq2Seq(nn.Module):
             raise NotImplementedError
 
         if x_embeds is not None:
-            x_embeds = (x_embeds - self._preproc_params['mu_embeds']) / self._preproc_params['std_embeds']
-            return x_stats, x_embeds
+            if USE_EMBEDDINGS:
+                x_embeds = (x_embeds - self._preproc_params['mu_embeds']) / self._preproc_params['std_embeds']
+                return x_stats, x_embeds
+            else:
+                return x_stats, None
         else:
             return x_stats
 

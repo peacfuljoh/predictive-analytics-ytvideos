@@ -20,8 +20,7 @@ from src.crawler.crawler.constants import (FEATURES_VECTOR_COL, VOCAB_ETL_CONFIG
                                            MODEL_MODEL_OBJ, MODEL_META_ID, MODEL_SPLIT_NAME,
                                            TIMESTAMP_CONVERSION_FMTS_ENCODE, TIMESTAMP_CONVERSION_FMTS_DECODE,
                                            COL_VIEW_COUNT, COL_LIKE_COUNT, TRAIN_SEQ_PERIOD, MODEL_ID,
-                                           COL_SEQ_SPLIT_FOR_PRED, SEQ_SPLIT_INCLUDE, SEQ_SPLIT_EXCLUDE,
-                                           TRAIN_NUM_TGT_KEYS)
+                                           COL_SEQ_SPLIT_FOR_PRED, SEQ_SPLIT_INCLUDE, SEQ_SPLIT_EXCLUDE)
 from src.crawler.crawler.config import FEATURES_ENDPOINT, CONFIG_TIMESTAMP_SETS_ENDPOINT, MODEL_ROOT
 from src.etl.etl_utils import convert_ts_fmt_for_mongo_id
 from ytpa_utils.val_utils import is_dict_of_instances, is_subset
@@ -665,7 +664,7 @@ def show_seq2seq_predictions(data: Dict[str, pd.DataFrame],
     n_vid_ids = 2
 
     for uname in usernames:
-        fig, axes = plt.subplots(nrows=len(TRAIN_NUM_TGT_KEYS), ncols=n_vid_ids, figsize=(12, 8))
+        fig, axes = plt.subplots(nrows=len(KEYS_TRAIN_NUM_TGT), ncols=n_vid_ids, figsize=(12, 8))
 
         video_ids = list(df_preds.query(f"{COL_USERNAME} == '{uname}'")[COL_VIDEO_ID].unique())
 
@@ -674,7 +673,7 @@ def show_seq2seq_predictions(data: Dict[str, pd.DataFrame],
             df_test_ = data['nonbow_test'].query(f"{COL_VIDEO_ID} == '{video_id_}'")
             df_pred_ = df_preds.query(f"{COL_VIDEO_ID} == '{video_id_}'")
 
-            for i, key in enumerate(TRAIN_NUM_TGT_KEYS):
+            for i, key in enumerate(KEYS_TRAIN_NUM_TGT):
                 axes[i, j].plot(df_test_[COL_TIMESTAMP_ACCESSED], df_test_[key], c='k')
                 axes[i, j].plot(df_pred_[COL_TIMESTAMP_ACCESSED], df_pred_[key], c='b')
 
